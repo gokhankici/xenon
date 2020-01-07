@@ -201,7 +201,7 @@ tagReset stmt event = do
   stmtId = stmtData stmt
   tags m value subs v =
     subs |> (HVarTL0 v m, HBool value) |> (HVarTR0 v m, HBool value)
-
+{- HLINT ignore tagReset -}
 
 -- -------------------------------------------------------------------------------------------------
 srcTagReset :: FDS r => S -> Event Int -> Sem r (Horn ())
@@ -476,7 +476,7 @@ getUpdatedVariables = \case
   SummaryStmt {..}    -> do
     Module{..} <- asks (HM.! summaryType)
     mfoldM (\case
-      Output o -> return . getVariables $ summaryPorts HM.! (variableName o)
+      Output o -> return . getVariables $ summaryPorts HM.! variableName o
       Input _  -> return mempty
       ) ports
 

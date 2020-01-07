@@ -72,7 +72,7 @@ instance FromJSON Annotations where
       <*> o .:? "assert_eq"  .!= mempty
       <*> o .:? "tag_eq"     .!= mempty
     return $
-      annot & tagEquals %~ (mappend $ annot ^. sources <> annot ^. sinks)
+      annot & tagEquals %~ mappend (annot ^. sources <> annot ^. sinks)
 
 
 instance FromJSON Qualifier where
