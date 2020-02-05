@@ -43,13 +43,11 @@ default-extensions:
 - ConstraintKinds
 - DataKinds
 - FlexibleContexts
-- GADTs
 - LambdaCase
 - PolyKinds
 - RankNTypes
 - ScopedTypeVariables
 - TypeApplications
-- TypeFamilies
 - TypeOperators
 
 dependencies:

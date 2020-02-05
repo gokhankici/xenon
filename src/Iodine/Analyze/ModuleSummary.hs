@@ -1,9 +1,9 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
-
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
 
 module Iodine.Analyze.ModuleSummary
   (

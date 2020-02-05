@@ -1,4 +1,6 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
 
 module Iodine.Utils where
 

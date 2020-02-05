@@ -2,6 +2,8 @@
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
 
 module Iodine.Analyze.ModuleDependency
  (

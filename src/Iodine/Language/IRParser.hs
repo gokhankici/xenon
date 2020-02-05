@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
 
 module Iodine.Language.IRParser (parse , ParsedIR) where
 

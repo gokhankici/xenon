@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
 
 module Iodine.Transform.TransitionRelation
   (

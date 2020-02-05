@@ -2,6 +2,8 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
 
 
 module Iodine.Pipeline (pipeline) where
