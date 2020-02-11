@@ -18,7 +18,7 @@ where
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
-import           Iodine.Transform.VCGen ( getVariables )
+import           Iodine.Transform.VCGen ( getVariables, moduleVariables )
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -124,9 +124,10 @@ generateConstraint Horn {..} = do
 
 -- | Create a well formedness constraint for every statement of the module
 generateWFConstraints :: FD r => Module Int -> Sem r ()
-generateWFConstraints Module {..} =
-  traverse_ (generateWFConstraint moduleName . abStmt) alwaysBlocks >>
+generateWFConstraints m@Module{..} = do
+  traverse_ (generateWFConstraint moduleName . abStmt) alwaysBlocks
   traverse_ (generateWFConstraintMI moduleName) moduleInstances
+  generateWFConstraintM m
 
 
 
@@ -161,6 +162,20 @@ generateWFConstraintMI :: FD r
                        -> ModuleInstance Int
                        -> Sem r ()
 generateWFConstraintMI _ _ = notSupportedM
+
+generateWFConstraintM :: FD r => Module Int -> Sem r ()
+generateWFConstraintM m@Module{..} = do
+  (ienv, _) <-
+    traverse_ convertExpr (moduleVariables m)
+    & runState mempty
+  case FT.wfC ienv (mkInt e) md of
+    [wf] -> modify ((wellFormednessConstraints . at kvar) ?~ wf)
+    wfcs -> throw $ "did not get only 1 wfc: " ++ show wfcs
+  where
+    n  = moduleData
+    kvar = mkKVar n
+    e  = FT.PKVar kvar mempty
+    md = HornClauseId n SummaryInv
 
 -- -----------------------------------------------------------------------------
 -- HornExpr -> FT.Expr

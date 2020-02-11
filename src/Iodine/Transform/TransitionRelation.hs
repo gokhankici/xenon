@@ -42,13 +42,13 @@ transitionRelation' conds r stmt =
 
     Assignment {..} ->
       HAnd $
-      HBinary HEquals (val assignmentLhs) (val assignmentRhs) |:>
-      HBinary HIff (tag assignmentLhs) (tagWithCond conds assignmentRhs)
+      (val assignmentLhs `heq` val assignmentRhs) |:>
+      (tag assignmentLhs `hiff` tagWithCond conds assignmentRhs)
 
     IfStmt {..} ->
       let conds' = ifStmtCondition <| conds
           hc     = val ifStmtCondition
-          c      = HBinary HEquals    hc (HInt 0)
+          c      = hc `heq` HInt 0
           not_c  = HBinary HNotEquals hc (HInt 0)
           t      = transitionRelation' conds' r ifStmtThen
           e      = transitionRelation' conds' r ifStmtElse
@@ -56,9 +56,6 @@ transitionRelation' conds r stmt =
 
     Skip {..} ->
       HBool True
-
-    SummaryStmt {..} ->
-      undefined
 
  where
   ufVal :: Id -> HornAppReturnType -> L (Expr Int) -> HornExpr
@@ -106,6 +103,9 @@ transitionRelation' conds r stmt =
     IfExpr {..} -> ufTag (ifExprCondition |:> ifExprThen |> ifExprElse)
     Str {..}    -> HBool False
     Select {..} -> ufTag (selectVar <| selectIndices)
+
+  heq  = HBinary HEquals
+  hiff = HBinary HIff
 
 {- |
 Given a list of expressions, this returns a list of variables that appear in the

@@ -93,8 +93,6 @@ handleStmt IfStmt{..} = do
   modify $ pathVars %~ IS.union newPathVars
   traverse_ handleStmt [ifStmtThen, ifStmtElse]
   modify $ pathVars .~ (currentSt ^. pathVars)
-handleStmt SummaryStmt{..} =
-  error "unreachable" -- there shouldn't be any summary stmt at this point
 
 addNode :: FD r => (Int, Int, VarDepEdgeType) -> Sem r ()
 addNode edge@(fromNode, toNode, _) = do

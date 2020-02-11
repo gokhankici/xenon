@@ -43,7 +43,10 @@ data St =
 
 makeLenses ''St
 
-type G r = Members '[Reader AnnotationFile , Reader SummaryMap , Reader ModuleMap , Error IodineException] r
+type G r = Members '[ Reader AnnotationFile
+                    , Reader SummaryMap
+                    , Reader ModuleMap
+                    , Error IodineException] r
 
 -- -----------------------------------------------------------------------------
 merge :: G r => ParsedIR -> Sem r ParsedIR
@@ -53,12 +56,11 @@ merge = traverse mergeModule
 -- | make gate statements a always* block, and merge with the rest
 mergeModule :: G r => Module () -> Sem r (Module ())
 mergeModule Module {..} = do
-  (miBlocks, moduleInstances') <- tryToSummarize moduleInstances
-  alwaysBlocks' <- mergeAlwaysBlocks $ alwaysBlocks <> gateBlocks <> miBlocks
+  alwaysBlocks' <- mergeAlwaysBlocks $ alwaysBlocks <> gateBlocks
   return $
     Module { alwaysBlocks    = alwaysBlocks'
            , gateStmts       = mempty
-           , moduleInstances = moduleInstances'
+           , moduleInstances = moduleInstances
            , ..
            }
   where
@@ -173,15 +175,6 @@ buildDependencyGraph stmts =
       updateN n ifStmtThen
       updateN n ifStmtElse
     updateN _ Skip {..} = return ()
-    updateN n SummaryStmt {..} = do
-      Module{..} <- asks (HM.! summaryType)
-      for_ ports $ \case
-        Input i ->
-          for_ (getVariables (summaryPorts HM.! variableName i)) (insertToReads n)
-        Output o ->
-          for_ (getVariables (summaryPorts HM.! variableName o)) (insertToWrites n)
-
-
 
     insertToWrites n v =
       modify $ writtenBy %~ HM.alter (append IS.insert n) v

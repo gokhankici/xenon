@@ -105,7 +105,6 @@ handleAssignment handler = go
     go IfStmt{..}         = gos (ifStmtThen SQ.<| ifStmtElse SQ.<| SQ.empty)
     go Assignment{..}     = handler assignmentType assignmentLhs assignmentRhs
     go Skip{..}           = pure ()
-    go SummaryStmt{..}    = error "unreachable"
 
 -- -----------------------------------------------------------------------------
 checkSameAssignmentType :: SC r => Sem r ()
@@ -152,7 +151,6 @@ checkUniqueUpdateLocationOfVariables =
     asgnVars IfStmt{..}         = asgnVars ifStmtThen <> asgnVars ifStmtElse
     asgnVars Assignment{..}     = HS.singleton (varName assignmentLhs, varModuleName assignmentLhs)
     asgnVars Skip{..}           = mempty
-    asgnVars SummaryStmt{..}    = error "unreachable"
 
 runUniqueUpdateCheck :: SC r => Sem (UniqueUpdateCheck ': r) a -> Sem (State S1 ': r) a
 runUniqueUpdateCheck = reinterpret $ \case

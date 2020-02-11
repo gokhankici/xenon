@@ -37,6 +37,7 @@ data HornType = Init
               | Interference
               | AssertEqCheck
               | WellFormed
+              | SummaryInv
               deriving (Eq, Show, Generic)
 
 data HornVarType = Tag | Value
@@ -136,6 +137,7 @@ instance FT.Fixpoint HornType where
        toFix Interference  = PP.text "interference"
        toFix AssertEqCheck = PP.text "assert-eq"
        toFix WellFormed    = PP.text "wellformed"
+       toFix SummaryInv    = PP.text "summary-inv"
 
 instance NFData HornType
 

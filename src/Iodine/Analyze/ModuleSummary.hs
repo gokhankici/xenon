@@ -8,7 +8,7 @@
 module Iodine.Analyze.ModuleSummary
   (
     createModuleSummaries
-  , tryToSummarize
+  -- , tryToSummarize
   , ModuleSummary(..)
   , SummaryMap
   )
@@ -133,27 +133,27 @@ dependencyGraphFromModule Module{..} =
 
 -- #############################################################################
 
-{- |
-Turn the given module instances to always-* blocks if possible.
--}
-tryToSummarize :: (Member (Reader SummaryMap) r, Foldable t)
-               => t (ModuleInstance ())
-               -> Sem r (L (AlwaysBlock ()), L (ModuleInstance ()))
-tryToSummarize mis =
-  foldlM' mempty mis $ \acc mi -> do
-  mAB <- summarizeAsAlwaysStar mi
-  return $
-    case mAB of
-      Nothing -> acc & _2 %~ (|> mi)
-      Just ab -> acc & _1 %~ (|> ab)
+-- {- |
+-- Turn the given module instances to always-* blocks if possible.
+-- -}
+-- tryToSummarize :: (Member (Reader SummaryMap) r, Foldable t)
+--                => t (ModuleInstance ())
+--                -> Sem r (L (AlwaysBlock ()), L (ModuleInstance ()))
+-- tryToSummarize mis =
+--   foldlM' mempty mis $ \acc mi -> do
+--   mAB <- summarizeAsAlwaysStar mi
+--   return $
+--     case mAB of
+--       Nothing -> acc & _2 %~ (|> mi)
+--       Just ab -> acc & _1 %~ (|> ab)
 
 
-summarizeAsAlwaysStar :: Member (Reader SummaryMap) r
-                      => ModuleInstance ()
-                      -> Sem r (Maybe (AlwaysBlock ()))
-summarizeAsAlwaysStar ModuleInstance{..} = do
-  ModuleSummary{..} <- asks (HM.! moduleInstanceType)
-  return $
-    if isCombinatorial
-    then Just $ AlwaysBlock Star $ SummaryStmt moduleInstanceType moduleInstancePorts ()
-    else Nothing
+-- summarizeAsAlwaysStar :: Member (Reader SummaryMap) r
+--                       => ModuleInstance ()
+--                       -> Sem r (Maybe (AlwaysBlock ()))
+-- summarizeAsAlwaysStar ModuleInstance{..} = do
+--   ModuleSummary{..} <- asks (HM.! moduleInstanceType)
+--   return $
+--     if isCombinatorial
+--     then Just $ AlwaysBlock Star $ SummaryStmt moduleInstanceType moduleInstancePorts ()
+--     else Nothing

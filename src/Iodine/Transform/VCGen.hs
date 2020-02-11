@@ -8,6 +8,7 @@
 module Iodine.Transform.VCGen
   ( vcgen
   , getVariables
+  , moduleVariables
   , VCGenOutput
   )
 where
@@ -51,7 +52,6 @@ data StmtSt = StmtSt { _currentVariables     :: Ids -- ^ all vars in this block
 
 makeLenses ''StmtSt
 
-
 {- |
 Verification condition generation creates the following 7 type of horn
 constraints to encode our check:
@@ -92,22 +92,19 @@ vcgenMod m@Module {..} = do
 
   combine regularChecks alwaysBlocks
     <||> interferenceChecks allStmts
+    ||>  return (moduleSummary m)
+    <||> instanceCheck moduleInstances
     & runReader m
     & runReader annots
 
   where
-    allStmts = (abStmt <$> alwaysBlocks) <> (mi2Stmt <$> moduleInstances)
+    allStmts = (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
     allEvents = void <$> toList (abEvent <$> alwaysBlocks)
     singleBlockForEvent = length allEvents == length (nub allEvents)
-    mi2Stmt ModuleInstance{..} =
-      SummaryStmt { summaryType  = moduleInstanceType
-                  , summaryPorts = fmap (const 0) <$> moduleInstancePorts
-                  , stmtData     = moduleInstanceData
-                  }
 
 regularChecks :: FDM r => AlwaysBlock Int -> Sem r Horns
-regularChecks AlwaysBlock{..} =
-  withStmt abStmt
+regularChecks ab@AlwaysBlock{..} =
+  withAB ab
   $    return mempty
   ||>  initialize abStmt abEvent
   ||>  tagReset abStmt abEvent
@@ -116,6 +113,8 @@ regularChecks AlwaysBlock{..} =
   <||> sinkCheck abStmt
   <||> assertEqCheck abStmt
 
+instanceCheck :: L (ModuleInstance Int) -> Sem r (L (Horn ()))
+instanceCheck = traverse undefined
 
 -- -------------------------------------------------------------------------------------------------
 initialize :: FDS r => S -> Event Int -> Sem r (Horn ())
@@ -306,15 +305,15 @@ assertEqCheck stmt = do
 
 
 -- -------------------------------------------------------------------------------------------------
-interferenceChecks :: FDM r => Ss -> Sem r Horns
+interferenceChecks :: FDM r => L ABMI -> Sem r Horns
 -- -------------------------------------------------------------------------------------------------
-interferenceChecks stmts =
-  traverse_ interferenceCheck stmts
+interferenceChecks abmis =
+  traverse_ interferenceCheck abmis
   & evalState @ICSts mempty
   & runState @Horns mempty
   & fmap fst
 
-data ICSt = ICSt { icStmt      :: S
+data ICSt = ICSt { icABMI      :: ABMI
                  , writtenVars :: Ids
                  , allVars     :: Ids
                  , aeVars      :: Ids -- ^ always_eq vars
@@ -322,13 +321,13 @@ data ICSt = ICSt { icStmt      :: S
 type ICSts = IM.IntMap ICSt
 
 interferenceCheck :: (FDM r, Members '[State ICSts, State Horns] r)
-                  => S -> Sem r ()
-interferenceCheck stmt = do
+                  => ABMI -> Sem r ()
+interferenceCheck abmi = do
   -- traverse the statements we have looked at so far
-  stmtSt <- computeStmtStM stmt
-  currentWrittenVars <- getUpdatedVariables stmt
+  stmtSt <- computeStmtStM abmi
+  currentWrittenVars <- getUpdatedVariables abmi
   let currentSt =
-        ICSt { icStmt      = stmt
+        ICSt { icABMI      = abmi
              , writtenVars = currentWrittenVars
              , allVars     = currentAllVars
              , aeVars      = stmtSt ^. currentAlwaysEquals
@@ -347,10 +346,10 @@ interferenceCheck stmt = do
           h <- interferenceCheckWR icSt currentSt
           modify @Horns (|> h)
     )
-  modify $ IM.insert stmtId currentSt
+  modify $ IM.insert abmiId currentSt
  where
-  stmtId = stmtData stmt
-  currentAllVars = getVariables stmt
+  abmiId = getData abmi
+  currentAllVars = getVariables abmi
 
 -- return the write/read interference check
 interferenceCheckWR :: FDM r
@@ -359,37 +358,70 @@ interferenceCheckWR :: FDM r
                     -> Sem r (Horn ())
 interferenceCheckWR wSt rSt = do
   Module {..} <- ask
-  wNext       <- (IM.! stmtData wStmt) <$> asks getNextVars
-  let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
-      subs = toSubs moduleName rNext
-      rId = stmtData rStmt
-      wId = stmtData wStmt
-      mkAEs acc v =
-        (case HM.lookup v rNext of
-           Just n  -> acc
-                      |> (HVar v moduleName n Tag   LeftRun, HVar v moduleName n Tag   RightRun)
-                      |> (HVar v moduleName n Value LeftRun, HVar v moduleName n Value RightRun)
-           Nothing -> acc)
-        |> (HVarTL0 v moduleName, HVarTR0 v moduleName)
-        |> (HVarVL0 v moduleName, HVarVR0 v moduleName)
-      rAlwaysEqs = HS.foldl' mkAEs mempty (aeVars wSt `HS.union` aeVars rSt)
-  trace (printf "w:%d, r:%d, %s" wId rId (show rAlwaysEqs))
-  return $
-    Horn { hornHead   = KVar rId subs
-         , hornBody   = HAnd
-                        $   KVar rId mempty
-                        |:> KVar wId mempty
-                        |>  HAnd (mkEqual <$> rAlwaysEqs)
-                        |>  transitionRelation wStmt
-         , hornType   = Interference
-         , hornStmtId = wId
-         , hornData   = ()
-         }
+  case (rABMI, wABMI) of
+    (AB rAB, AB wAB) -> do
+      let rStmt = abStmt rAB
+          wStmt = abStmt wAB
+      wNext <- (IM.! getData wStmt) <$> asks getNextVars
+      let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
+          subs = toSubs moduleName rNext
+          rId = getData rStmt
+          wId = getData wStmt
+          mkAEs acc v =
+            (case HM.lookup v rNext of
+               Just n  -> acc
+                          |> (HVar v moduleName n Tag   LeftRun, HVar v moduleName n Tag   RightRun)
+                          |> (HVar v moduleName n Value LeftRun, HVar v moduleName n Value RightRun)
+               Nothing -> acc)
+            |> (HVarTL0 v moduleName, HVarTR0 v moduleName)
+            |> (HVarVL0 v moduleName, HVarVR0 v moduleName)
+          rAlwaysEqs = HS.foldl' mkAEs mempty (aeVars wSt `HS.union` aeVars rSt)
+      trace (printf "w:%d, r:%d, %s" wId rId (show rAlwaysEqs))
+      return $
+        Horn { hornHead   = KVar rId subs
+             , hornBody   = HAnd
+                            $   KVar rId mempty
+                            |:> KVar wId mempty
+                            |>  HAnd (mkEqual <$> rAlwaysEqs)
+                            |>  transitionRelation wStmt
+             , hornType   = Interference
+             , hornStmtId = wId
+             , hornData   = ()
+             }
+    (AB _, MI _) -> undefined
+    (MI _, AB _) -> undefined
+    (MI _, MI _) -> undefined
   where
-    rStmt = icStmt rSt
-    wStmt = icStmt wSt
+    rABMI = icABMI rSt
+    wABMI = icABMI wSt
     rVars = allVars rSt
 
+
+-- -----------------------------------------------------------------------------
+moduleSummary :: Module Int -> Horn ()
+-- -----------------------------------------------------------------------------
+moduleSummary m@Module{..} =
+  Horn { hornHead   = KVar moduleData subs
+       , hornBody   = body
+       , hornType   = SummaryInv
+       , hornStmtId = moduleData
+       , hornData   = ()
+       }
+  where
+    subs = (\v -> (v, v)) <$> moduleVariables m
+    body = HAnd $ toKVar <$> subKVarIds
+    subKVarIds =
+      (stmtData . abStmt <$> alwaysBlocks) <>
+      (moduleInstanceData <$> moduleInstances)
+    toKVar n = KVar n mempty
+
+moduleVariables :: Module a -> L HornExpr
+moduleVariables Module{..} =
+  foldl' addVars mempty (variableName . portVariable <$> ports)
+  where
+    m = moduleName
+    addVars l v =
+      l |> HVarVL0 v m |> HVarVR0 v m |> HVarTL0 v m |> HVarTR0 v m
 
 -- -----------------------------------------------------------------------------
 -- Helper functions
@@ -411,8 +443,8 @@ alwaysEqualEqualities stmt = do
            Just n  -> exprs' |> HBinary HEquals (HVar v m n Value LeftRun) (HVar v m n Value RightRun)
            Nothing -> exprs'
 
+type ABMI = AB_or_MI Int
 type S = Stmt Int
-type Ss = L S
 type Horns = L (Horn ())
 
 type VCGenOutput = Horns
@@ -431,18 +463,18 @@ type FD r  = (G r,   Members '[Reader NextVars] r)      -- FD  = global effects 
 type FDM r = (FD r,  Members '[Reader (Module Int)] r)  -- FDM = FD + current module
 type FDS r = (FDM r, Members '[Reader StmtSt] r)        -- FDS = FDM + current statement state
 
-withStmt :: FDM r => S -> Sem (Reader StmtSt ': r) a -> Sem r a
-withStmt s act = do
-  stmtSt <- computeStmtStM s
+withAB :: FDM r => AlwaysBlock Int -> Sem (Reader StmtSt ': r) a -> Sem r a
+withAB ab act = do
+  stmtSt <- computeStmtStM (AB ab)
   act & runReader stmtSt
 
-computeStmtStM :: FDM r => S -> Sem r StmtSt
+computeStmtStM :: FDM r => ABMI -> Sem r StmtSt
 computeStmtStM s = do
   m@Module{..} <- ask
   as  <- getAnnotations moduleName
   return $ computeStmtSt as m s
 
-computeStmtSt :: Annotations -> Module Int -> S -> StmtSt
+computeStmtSt :: Annotations -> Module Int -> ABMI -> StmtSt
 computeStmtSt as Module{..} stmt =
   StmtSt
   { _currentVariables     = vs
@@ -467,18 +499,16 @@ computeStmtSt as Module{..} stmt =
       mempty
       variables
 
-getUpdatedVariables :: G r => Stmt a -> Sem r Ids
+getUpdatedVariables :: ABMI -> Sem r Ids
 getUpdatedVariables = \case
-  Block {..}          -> mfoldM getUpdatedVariables blockStmts
-  Assignment {..}     -> return . HS.singleton $ varName assignmentLhs
-  IfStmt {..}         -> return $ mfold getVariables [ifStmtThen, ifStmtElse]
-  Skip {..}           -> return mempty
-  SummaryStmt {..}    -> do
-    Module{..} <- asks (HM.! summaryType)
-    mfoldM (\case
-      Output o -> return . getVariables $ summaryPorts HM.! variableName o
-      Input _  -> return mempty
-      ) ports
+  AB ab -> go $ abStmt ab
+  MI _  -> undefined
+  where
+    go = \case
+      Block {..}      -> mfoldM go blockStmts
+      Assignment {..} -> return . HS.singleton $ varName assignmentLhs
+      IfStmt {..}     -> mfoldM go [ifStmtThen, ifStmtElse]
+      Skip {..}       -> return mempty
 
 toSubs :: Id                     -- ^ module name
        -> Substitutions          -- ^ substitution map

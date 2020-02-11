@@ -17,8 +17,9 @@ module Iodine.Language.IR
   , Variable (..)
   , Event (..)
   , AlwaysBlock (..)
+  , AB_or_MI (..)
   , getVariables
-  , isSummaryStmt
+  , getData
   )
 where
 
@@ -96,10 +97,6 @@ data Stmt a =
              , stmtData        :: a
              }
   | Skip { stmtData :: a }
-  | SummaryStmt { summaryType  :: Id -- ^ module name
-                , summaryPorts :: HM.HashMap Id (Expr a) -- ^ module instance ports
-                , stmtData     :: a
-                }
   deriving (Generic, Functor, Foldable, Traversable)
 
 data Event a =
@@ -125,6 +122,10 @@ data Module a =
          }
   deriving (Generic, Functor, Foldable, Traversable)
 
+-- | An always block or a module instance
+data AB_or_MI a = AB (AlwaysBlock a)
+                | MI (ModuleInstance a)
+
 class GetVariables m where
   -- return the name of the variables in type m
   getVariables :: m a -> HS.HashSet Id
@@ -135,7 +136,6 @@ instance GetVariables Stmt where
     Assignment {..}     -> mfold getVariables [assignmentLhs, assignmentRhs]
     IfStmt {..}         -> getVariables ifStmtCondition <> mfold getVariables [ifStmtThen, ifStmtElse]
     Skip {..}           -> mempty
-    SummaryStmt{..}     -> HM.foldlWithKey' (\acc p e -> HS.insert p acc <> getVariables e) mempty summaryPorts
 
 instance GetVariables Expr where
   getVariables = \case
@@ -146,6 +146,31 @@ instance GetVariables Expr where
     Str {..}      -> mempty
     Select {..}   -> mfold getVariables $ selectVar SQ.<| selectIndices
 
+instance GetVariables ModuleInstance where
+  getVariables ModuleInstance{..} = HS.fromList $ HM.keys moduleInstancePorts
+
+instance GetVariables AB_or_MI where
+  getVariables (AB ab) = getVariables $ abStmt ab
+  getVariables (MI mi) = getVariables mi
+
+class GetData m where
+  getData :: m a -> a
+
+instance GetData Stmt where
+  getData = stmtData
+
+instance GetData Expr where
+  getData = exprData
+
+instance GetData ModuleInstance where
+  getData = moduleInstanceData
+
+instance GetData AlwaysBlock where
+  getData = getData . abStmt
+
+instance GetData AB_or_MI where
+  getData (AB ab) = getData ab
+  getData (MI mi) = getData mi
 
 -- -----------------------------------------------------------------------------
 -- Typeclass Instances
@@ -225,10 +250,6 @@ instance ShowIndex a => Doc (Stmt a) where
            , PP.rbrace
            ]
   doc (Skip _) = PP.text "skip" PP.<> PP.semi
-  doc (SummaryStmt t ps _) =
-    doc t PP.<> PP.parens (PP.hsep $ PP.punctuate sep args)
-    where
-      args = docArgs ps
 
 docArgs :: (Doc k, Doc v) => HM.HashMap k v -> [PP.Doc]
 docArgs = HM.foldlWithKey' (\acc v e-> (doc v PP.<+> PP.equals PP.<+> doc e) : acc) []
@@ -297,7 +318,3 @@ instance ShowIndex a => Show (AlwaysBlock a) where
 
 instance ShowIndex a => Show (Module a) where
   show = PP.render . doc
-
-isSummaryStmt :: Stmt a -> Bool
-isSummaryStmt SummaryStmt{..} = True
-isSummaryStmt _ = False

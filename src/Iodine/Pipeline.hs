@@ -32,8 +32,9 @@ import           Text.Printf
 {- |
 Implements the following pipeline:
 
-IR ----+
-       |
+IR ----+              ModuleSummary
+       |                    |
+       |                    v
 Annot ---> SanityCheck -> Merge -> Normalize -> VCGen -> Query
 -}
 pipeline

@@ -44,9 +44,7 @@ type TRSubs = IM.IntMap VarId
 
 -- | Global state
 data St =
-  St { _modId  :: Int    -- ^ counter for modules
-     , _abId   :: Int    -- ^ counter for always blocks
-     , _stmtId :: Int    -- ^ counter for statements
+  St { _stmtId :: Int    -- ^ counter for statements
      , _exprId :: Int
      , _funId  :: Int    -- ^ counter for functions
      , _trSubs :: TRSubs -- ^ This substitution map is used to determine the
@@ -86,7 +84,7 @@ normalize modules = traverse normalizeModule modules <* trace "SSA DONE!" & runN
 normalizeModule :: FD r => Module a -> Sem r (Module Int)
 normalizeModule Module {..} = runReader (ModuleName moduleName) $ do
   unless (SQ.null gateStmts) $
-    throw $ IE Normalize $ "gateStmts should be empty here"
+    throw $ IE Normalize "gateStmts should be empty here"
   Module moduleName ports variables
     <$> return mempty
     <*> traverse normalizeAB alwaysBlocks
@@ -167,11 +165,6 @@ normalizeStmt = \case
 
   Skip {..} ->
     Skip <$> freshId StmtId
-
-  SummaryStmt{..} ->
-    SummaryStmt summaryType
-    <$> traverse normalizeStmtExpr summaryPorts
-    <*> freshId StmtId
 
   where
     normalizeStmtExpr :: FDS r => Expr a -> Sem r (Expr Int)
@@ -300,7 +293,7 @@ type FDS r  = (FDM r, Members '[State StmtSt] r)
 newtype ModuleName = ModuleName { getModuleName :: Id }
 
 initialSt :: St
-initialSt = St 0 0 0 0 0 mempty
+initialSt = St 0 0 0 mempty
 
 initialStmtSt :: StmtSt
 initialStmtSt = StmtSt mempty mempty mempty
@@ -314,14 +307,15 @@ data IdType = ModId | ABId | StmtId | FunId | ExprId | EventId
 
 freshId :: FD r => IdType -> Sem r Int
 freshId = \case
-  ModId   -> incrCount modId
-  ABId    -> incrCount abId
+  -- modules, always blocks and statements share the same counter
+  ModId   -> incrCount stmtId
+  ABId    -> incrCount stmtId
   StmtId  -> incrCount stmtId
   FunId   -> incrCount funId
   ExprId  -> incrCount exprId
   EventId -> return 0
   where
-    incrCount :: FD r => (Lens St St Int Int) -> Sem r Int
+    incrCount :: FD r => Lens St St Int Int -> Sem r Int
     incrCount l = gets (^. l) <* modify (l +~ 1)
 
 freshVariable :: FDS r => Expr a -> Sem r (Expr Int)
