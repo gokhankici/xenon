@@ -147,7 +147,8 @@ instance GetVariables Expr where
     Select {..}   -> mfold getVariables $ selectVar SQ.<| selectIndices
 
 instance GetVariables ModuleInstance where
-  getVariables ModuleInstance{..} = HS.fromList $ HM.keys moduleInstancePorts
+  getVariables ModuleInstance{..} =
+    foldMap getVariables $ HM.elems moduleInstancePorts
 
 instance GetVariables AB_or_MI where
   getVariables (AB ab) = getVariables $ abStmt ab
@@ -171,6 +172,9 @@ instance GetData AlwaysBlock where
 instance GetData AB_or_MI where
   getData (AB ab) = getData ab
   getData (MI mi) = getData mi
+
+instance GetData Module where
+  getData = moduleData
 
 -- -----------------------------------------------------------------------------
 -- Typeclass Instances
@@ -317,4 +321,7 @@ instance ShowIndex a => Show (AlwaysBlock a) where
   show = PP.render . doc
 
 instance ShowIndex a => Show (Module a) where
+  show = PP.render . doc
+
+instance ShowIndex a => Show (ModuleInstance a) where
   show = PP.render . doc

@@ -35,7 +35,7 @@ import qualified Polysemy.Error as PE
 import           Polysemy.Reader
 import           Polysemy.State
 import           Polysemy.Trace
-import           Text.Printf
+-- import           Text.Printf
 
 
 -- | State relevant to statements
@@ -93,7 +93,7 @@ vcgenMod m@Module {..} = do
   combine regularChecks alwaysBlocks
     <||> interferenceChecks allStmts
     ||>  return (moduleSummary m)
-    <||> instanceCheck moduleInstances
+    <||> traverse instanceCheck moduleInstances
     & runReader m
     & runReader annots
 
@@ -113,8 +113,42 @@ regularChecks ab@AlwaysBlock{..} =
   <||> sinkCheck abStmt
   <||> assertEqCheck abStmt
 
-instanceCheck :: L (ModuleInstance Int) -> Sem r (L (Horn ()))
-instanceCheck = traverse undefined
+instanceCheck :: FDM r => ModuleInstance Int -> Sem r (Horn ())
+instanceCheck mi@ModuleInstance{..} = do
+  m@Module{..} <- asks @ModuleMap (HM.! moduleInstanceType)
+  let subs =
+        foldl'
+        (\acc -> \case
+            Input{..}  -> acc
+            Output{..} ->
+              let moduleVar = variableName portVariable
+                  instanceVar = toHornVar (moduleInstancePorts HM.! moduleVar)
+              in acc |>
+                 ( instanceVar Tag LeftRun
+                 , HVarTL0 moduleVar moduleInstanceType
+                 ) |>
+                 ( instanceVar Tag RightRun
+                 , HVarTR0 moduleVar moduleInstanceType
+                 ) |>
+                 ( instanceVar Value LeftRun
+                 , HVarVL0 moduleVar moduleInstanceType
+                 ) |>
+                 ( instanceVar Value RightRun
+                 , HVarVR0 moduleVar moduleInstanceType
+                 )
+        )
+        mempty
+        ports
+  return $
+    Horn { hornHead   = KVar miId subs
+         , hornBody   = KVar (getData m) mempty
+         , hornType   = InstanceCheck
+         , hornStmtId = miId
+         , hornData   = ()
+         }
+  where
+    miId = getData mi
+  
 
 -- -------------------------------------------------------------------------------------------------
 initialize :: FDS r => S -> Event Int -> Sem r (Horn ())
@@ -358,44 +392,77 @@ interferenceCheckWR :: FDM r
                     -> Sem r (Horn ())
 interferenceCheckWR wSt rSt = do
   Module {..} <- ask
-  case (rABMI, wABMI) of
-    (AB rAB, AB wAB) -> do
-      let rStmt = abStmt rAB
-          wStmt = abStmt wAB
-      wNext <- (IM.! getData wStmt) <$> asks getNextVars
-      let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
-          subs = toSubs moduleName rNext
-          rId = getData rStmt
-          wId = getData wStmt
-          mkAEs acc v =
-            (case HM.lookup v rNext of
-               Just n  -> acc
-                          |> (HVar v moduleName n Tag   LeftRun, HVar v moduleName n Tag   RightRun)
-                          |> (HVar v moduleName n Value LeftRun, HVar v moduleName n Value RightRun)
-               Nothing -> acc)
-            |> (HVarTL0 v moduleName, HVarTR0 v moduleName)
-            |> (HVarVL0 v moduleName, HVarVR0 v moduleName)
-          rAlwaysEqs = HS.foldl' mkAEs mempty (aeVars wSt `HS.union` aeVars rSt)
-      trace (printf "w:%d, r:%d, %s" wId rId (show rAlwaysEqs))
-      return $
-        Horn { hornHead   = KVar rId subs
-             , hornBody   = HAnd
-                            $   KVar rId mempty
-                            |:> KVar wId mempty
-                            |>  HAnd (mkEqual <$> rAlwaysEqs)
-                            |>  transitionRelation wStmt
-             , hornType   = Interference
-             , hornStmtId = wId
-             , hornData   = ()
-             }
-    (AB _, MI _) -> undefined
-    (MI _, AB _) -> undefined
-    (MI _, MI _) -> undefined
+  wNext <- (IM.! getData wABMI) <$> asks getNextVars
+  let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
+      mkAEs acc v =
+        (case HM.lookup v rNext of
+           Just n  -> acc
+                      |> (HVarTL v moduleName n, HVarTR v moduleName n)
+                      |> (HVarVL v moduleName n, HVarVR v moduleName n)
+           Nothing -> acc)
+        |> (HVarTL0 v moduleName, HVarTR0 v moduleName)
+        |> (HVarVL0 v moduleName, HVarVR0 v moduleName)
+      rAlwaysEqs = HS.foldl' mkAEs mempty (aeVars wSt `HS.union` aeVars rSt)
+      subs = toSubs moduleName rNext
+  return $
+    Horn { hornHead   = KVar rId subs
+         , hornBody   = HAnd
+                        $   KVar rId mempty
+                        |:> KVar wId mempty
+                        |>  HAnd (mkEqual <$> rAlwaysEqs)
+                        |>  wTR
+         , hornType   = Interference
+         , hornStmtId = wId
+         , hornData   = ()
+         }
   where
     rABMI = icABMI rSt
     wABMI = icABMI wSt
+    rId   = getData rABMI
+    wId   = getData wABMI
     rVars = allVars rSt
 
+    wTR = case wABMI of
+            AB ab -> transitionRelation $ abStmt ab
+            MI mi -> transitionRelationMI mi
+
+  -- case (wABMI, rABMI) of
+  --   (AB wAB, AB _) -> do
+  --     let wStmt = abStmt wAB
+  --         rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
+  --         subs = toSubs moduleName rNext
+  --         mkAEs acc v =
+  --           (case HM.lookup v rNext of
+  --              Just n  -> acc
+  --                         |> (HVarTL v moduleName n, HVarTR v moduleName n)
+  --                         |> (HVarVL v moduleName n, HVarVR v moduleName n)
+  --              Nothing -> acc)
+  --           |> (HVarTL0 v moduleName, HVarTR0 v moduleName)
+  --           |> (HVarVL0 v moduleName, HVarVR0 v moduleName)
+  --         rAlwaysEqs = HS.foldl' mkAEs mempty (aeVars wSt `HS.union` aeVars rSt)
+  --     trace (printf "w:%d, r:%d, %s" wId rId (show rAlwaysEqs))
+  --     return $
+  --       Horn { hornHead   = KVar rId subs
+  --            , hornBody   = HAnd
+  --                           $   KVar rId mempty
+  --                           |:> KVar wId mempty
+  --                           |>  HAnd (mkEqual <$> rAlwaysEqs)
+  --                           |>  wTR
+  --            , hornType   = Interference
+  --            , hornStmtId = wId
+  --            , hornData   = ()
+  --            }
+  --   (AB wAB, MI rMI) -> do
+  --     -- let wStmt = abStmt wAB
+  --     -- let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
+  --     trace $ "wAB: " ++ show wAB
+  --     trace $ "rMI: " ++ show rMI
+  --     undefined
+  --   (MI _, AB _) -> undefined
+  --   (MI wMI, MI rMI) -> do
+  --     trace $ "wMI: " ++ show wMI
+  --     trace $ "rMI: " ++ show rMI
+  --     undefined
 
 -- -----------------------------------------------------------------------------
 moduleSummary :: Module Int -> Horn ()
@@ -420,8 +487,8 @@ moduleVariables Module{..} =
   foldl' addVars mempty (variableName . portVariable <$> ports)
   where
     m = moduleName
-    addVars l v =
-      l |> HVarVL0 v m |> HVarVR0 v m |> HVarTL0 v m |> HVarTR0 v m
+    addVars l v = l <> allHornVars v m
+
 
 -- -----------------------------------------------------------------------------
 -- Helper functions
@@ -452,7 +519,7 @@ type VCGenOutput = Horns
 type Substitutions = HM.HashMap Id Int
 newtype NextVars = NextVars { getNextVars :: IM.IntMap Substitutions }
 
-type ModuleMap = HM.HashMap Id (Module ())
+type ModuleMap = HM.HashMap Id (Module Int)
 type G r = Members '[ Reader AnnotationFile
                     , PE.Error IodineException
                     , Trace
@@ -499,10 +566,11 @@ computeStmtSt as Module{..} stmt =
       mempty
       variables
 
-getUpdatedVariables :: ABMI -> Sem r Ids
+getUpdatedVariables :: G r => ABMI -> Sem r Ids
 getUpdatedVariables = \case
   AB ab -> go $ abStmt ab
-  MI _  -> undefined
+  MI ModuleInstance{..} ->
+   outputPorts <$> asks @ModuleMap (HM.! moduleInstanceType)
   where
     go = \case
       Block {..}      -> mfoldM go blockStmts
@@ -532,5 +600,11 @@ toSubsTags m = HM.foldlWithKey' go mempty
       |> (HVar v m 0 Tag LeftRun,  HVar v m n Tag LeftRun)
       |> (HVar v m 0 Tag RightRun, HVar v m n Tag RightRun)
 
--- throw :: G r => String -> Sem r a
--- throw = PE.throw . IE VCGen
+outputPorts :: Module a -> Ids
+outputPorts Module{..} =
+  foldl'
+  (\xs -> \case
+      Input{..}  -> xs
+      Output{..} -> variableName portVariable `HS.insert` xs)
+  mempty
+  ports

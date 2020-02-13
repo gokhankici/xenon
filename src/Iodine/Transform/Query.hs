@@ -46,17 +46,18 @@ import           Text.Printf
 
 type FInfo = FT.FInfo HornClauseId
 type Horns = L (Horn ())
+type ModuleMap = HM.HashMap Id (Module Int)
 
 type G r   = Members '[ Trace
                       , Reader AnnotationFile
                       , PE.Error IodineException
+                      , Reader ModuleMap
                       ] r
+
 type FD r  = ( G r
-             , Members '[ State St
-                        -- , Reader Horns
-                        -- , Reader (L (Module Int))
-                        ] r
+             , Member (State St) r
              )
+
 type FDC r = ( FD r
              , Member (State FT.IBindEnv) r
              )
@@ -161,7 +162,24 @@ generateWFConstraintMI :: FD r
                        => Id    -- ^ module name
                        -> ModuleInstance Int
                        -> Sem r ()
-generateWFConstraintMI _ _ = notSupportedM
+generateWFConstraintMI currentModuleName mi@ModuleInstance{..} = do
+  m <- asks @ModuleMap (HM.! currentModuleName)
+  (ienv, _) <- runState mempty $ do
+    traverse_ convertExpr (moduleVariables m)
+    traverse_ convertExpr $ do
+      p <- HM.elems moduleInstancePorts
+      t <- [Tag, Value]
+      r <- [LeftRun, RightRun]
+      return $ toHornVar p t r
+
+  case FT.wfC ienv (mkInt e) md of
+    [wf] -> modify ((wellFormednessConstraints . at kvar) ?~ wf)
+    wfcs -> throw $ "did not get only 1 wfc: " ++ show wfcs
+  where
+    n  = getData mi
+    kvar = mkKVar n
+    e  = FT.PKVar kvar mempty
+    md = HornClauseId n InstanceCheck
 
 generateWFConstraintM :: FD r => Module Int -> Sem r ()
 generateWFConstraintM m@Module{..} = do

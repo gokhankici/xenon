@@ -8,10 +8,12 @@
 
 module Iodine.Transform.Horn where
 
+import           Iodine.Language.IR
 import           Iodine.Types
 
 import           Control.DeepSeq
 import           Data.Foldable
+import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics
 import qualified Language.Fixpoint.Types as FT
@@ -37,6 +39,7 @@ data HornType = Init
               | Interference
               | AssertEqCheck
               | WellFormed
+              | InstanceCheck
               | SummaryInv
               deriving (Eq, Show, Generic)
 
@@ -138,8 +141,11 @@ instance FT.Fixpoint HornType where
        toFix AssertEqCheck = PP.text "assert-eq"
        toFix WellFormed    = PP.text "wellformed"
        toFix SummaryInv    = PP.text "summary-inv"
+       toFix InstanceCheck = PP.text "instance-check"
 
 instance NFData HornType
+
+-- Variable patterns
 
 pattern HVar0 :: Id -> Id -> HornVarType -> HornVarRun -> HornExpr
 pattern HVar0 v m t r =
@@ -150,17 +156,34 @@ pattern HVar0 v m t r =
        , hVarRun    = r
        }
 
-pattern HVarVL0 :: Id -> Id -> HornExpr
-pattern HVarVL0 v m = HVar0 v m Value LeftRun
-
-pattern HVarVR0 :: Id -> Id -> HornExpr
-pattern HVarVR0 v m = HVar0 v m Value RightRun
-
-pattern HVarTL0 :: Id -> Id -> HornExpr
-pattern HVarTL0 v m = HVar0 v m Tag LeftRun
-
-pattern HVarTR0 :: Id -> Id -> HornExpr
-pattern HVarTR0 v m = HVar0 v m Tag RightRun
-
 pattern HVarT0 :: Id -> Id -> HornVarRun -> HornExpr
 pattern HVarT0 v m r = HVar0 v m Tag r
+
+
+pattern HVarVL, HVarVR, HVarTL, HVarTR :: Id -> Id -> Int -> HornExpr
+pattern HVarVL v m n = HVar v m n Value LeftRun
+pattern HVarVR v m n = HVar v m n Value RightRun
+pattern HVarTL v m n = HVar v m n Tag   LeftRun
+pattern HVarTR v m n = HVar v m n Tag   RightRun
+
+
+pattern HVarVL0, HVarVR0, HVarTL0, HVarTR0 :: Id -> Id -> HornExpr
+pattern HVarVL0 v m = HVarVL v m 0
+pattern HVarVR0 v m = HVarVR v m 0
+pattern HVarTL0 v m = HVarTL v m 0
+pattern HVarTR0 v m = HVarTR v m 0
+
+allHornVars :: Id -> Id -> L HornExpr
+allHornVars v m =
+  SQ.empty SQ.|> HVarVL0 v m SQ.|> HVarVR0 v m SQ.|> HVarTL0 v m SQ.|> HVarTR0 v m
+
+
+toHornVar :: Expr Int -> HornVarType -> HornVarRun -> HornExpr
+toHornVar Variable{..} t r =
+  HVar { hVarName   = varName
+       , hVarModule = varModuleName
+       , hVarIndex  = exprData
+       , hVarType   = t
+       , hVarRun    = r
+       }
+toHornVar _ _ _ = undefined

@@ -48,18 +48,26 @@ pipeline af irReader = do
     sanityCheck & runReader ir
     traceResult "IR" ir
 
-    let moduleMap =
-          foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty ir
+    let moduleMap = mkModuleMap ir
     summaryMap <- createModuleSummaries moduleMap
 
-    runReader summaryMap $ runReader moduleMap $ do
-      mergedIR <- merge ir
-      traceResult "Merged IR" mergedIR
+    ssaOutput@(normalizedIR, _) <-
+      runReader summaryMap $
+      runReader moduleMap $
+      do mergedIR <- merge ir
+         traceResult "Merged IR" mergedIR
+         normalize mergedIR
 
-      ssaOutput@(normalizedIR, _) <- normalize mergedIR
-      traceResult "Normalized IR" normalizedIR
+    traceResult "Normalized IR" normalizedIR
 
-      vcgen ssaOutput >>= constructQuery normalizedIR
+    let moduleMap' = mkModuleMap normalizedIR
+    runReader summaryMap $
+      runReader moduleMap' $
+      vcgen ssaOutput >>=
+      constructQuery normalizedIR
+  where
+    mkModuleMap =
+      foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty
 
 traceResult :: (Member Trace r, Show a) => String -> L a -> Sem r ()
 traceResult t l = do
