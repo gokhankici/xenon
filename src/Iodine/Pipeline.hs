@@ -46,7 +46,7 @@ pipeline af irReader = do
   ir <- irReader
   runReader af $ do
     sanityCheck & runReader ir
-    traceResult "IR" ir
+    -- traceResult "IR" ir
 
     let moduleMap = mkModuleMap ir
     summaryMap <- createModuleSummaries moduleMap
@@ -55,7 +55,7 @@ pipeline af irReader = do
       runReader summaryMap $
       runReader moduleMap $
       do mergedIR <- merge ir
-         traceResult "Merged IR" mergedIR
+         -- traceResult "Merged IR" mergedIR
          normalize mergedIR
 
     traceResult "Normalized IR" normalizedIR

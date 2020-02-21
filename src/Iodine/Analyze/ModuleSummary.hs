@@ -32,6 +32,7 @@ import           Data.Traversable
 import           Polysemy
 import           Polysemy.Reader
 import           Polysemy.State
+import           Polysemy.Trace
 
 type ModuleMap   = HM.HashMap Id (Module ())
 type SummaryMap  = HM.HashMap Id ModuleSummary
@@ -45,13 +46,17 @@ data ModuleSummary =
                   -- not have a clock)
                   isCombinatorial :: Bool
                 }
+  deriving (Show)
 
 -- #############################################################################
 
 {- |
 Create a summary for each given module
 -}
-createModuleSummaries :: Member (Reader AnnotationFile) r => ModuleMap -> Sem r SummaryMap
+createModuleSummaries :: Members '[ Reader AnnotationFile
+                                  , Trace
+                                  ] r
+                      => ModuleMap -> Sem r SummaryMap
 createModuleSummaries moduleMap =
   for_ orderedModules (\m@Module{..} ->
       createModuleSummary m >>= (modify . HM.insert moduleName))
@@ -64,18 +69,22 @@ createModuleSummaries moduleMap =
 
 createModuleSummary :: Members '[ Reader AnnotationFile
                                 , State SummaryMap
+                                , Trace
                                 ] r
                     => Module ()
                     -> Sem r ModuleSummary
 createModuleSummary m@Module{..} = do
   (varDepGraph, varDepMap) <- dependencyGraphFromModule m
-  let lookupNode v = varDepMap HM.! v
+  let lookupNode v = mapLookup 1 v varDepMap
+  clk <- view clock <$> getModuleAnnotations moduleName
+  let hasClock = clk /= Nothing
+      isClk v = clk == Just v
   let portDependencies =
         foldl'
         (\deps o ->
            let is = HS.fromList $ toList $
                     SQ.filter
-                    (isReachable varDepGraph (lookupNode o) . lookupNode)
+                    (\i -> not (isClk i) && (isReachable varDepGraph (lookupNode o) . lookupNode) i)
                     inputs
            in  HM.insert o is deps)
         mempty
@@ -83,11 +92,10 @@ createModuleSummary m@Module{..} = do
 
   -- we can summarize the module instance if itself does not have a clock and
   -- all of its submodules can be summarized
-  hasClock <- (/= Nothing) . view clock <$> getModuleAnnotations moduleName
   submodulesCanBeSummarized <-
     fmap and $
     forM moduleInstances $ \ModuleInstance{..} ->
-    isCombinatorial <$> gets (HM.! moduleInstanceType)
+    isCombinatorial <$> gets (mapLookup 2 moduleInstanceType)
   let isCombinatorial = not hasClock && submodulesCanBeSummarized
 
   return ModuleSummary {..}
@@ -111,8 +119,8 @@ dependencyGraphFromModule Module{..} =
   then return (g, nodeMap)
   else do
     extraEdges <- foldlM' SQ.empty moduleInstances $ \es ModuleInstance{..} -> do
-      ModuleSummary{..} <- gets (HM.! moduleInstanceType)
-      let assignedVars p = toList . getVariables $ moduleInstancePorts HM.! p
+      ModuleSummary{..} <- gets (mapLookup 3 moduleInstanceType)
+      let assignedVars p = toList . getVariables $ mapLookup 4 p moduleInstancePorts
       return $
         HM.foldlWithKey'
         (\es2 o is ->
@@ -127,7 +135,7 @@ dependencyGraphFromModule Module{..} =
         portDependencies
     return (foldr' G.insEdge g extraEdges, nodeMap)
   where
-    lookupNode v = nodeMap HM.! v
+    lookupNode v = mapLookup 5 v nodeMap
     (g, nodeMap) = dependencyGraphFromMany (gateStmts <> fmap abStmt alwaysBlocks)
 
 
@@ -157,3 +165,13 @@ dependencyGraphFromModule Module{..} =
 --     if isCombinatorial
 --     then Just $ AlwaysBlock Star $ SummaryStmt moduleInstanceType moduleInstancePorts ()
 --     else Nothing
+
+mapLookup :: Show a => Int -> Id -> HM.HashMap Id a -> a
+mapLookup n k m =
+  case HM.lookup k m of
+    Nothing ->
+      error $ unlines [ "ModuleSummary.mapLookup: " ++ show n
+                      , "map: " ++ show m
+                      , "key:" ++ show k
+                      ]
+    Just a  -> a

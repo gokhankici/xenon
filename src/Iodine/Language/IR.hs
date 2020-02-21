@@ -20,6 +20,9 @@ module Iodine.Language.IR
   , AB_or_MI (..)
   , getVariables
   , getData
+  , isInput
+  , moduleInputs
+  , moduleOutputs
   )
 where
 
@@ -274,7 +277,7 @@ instance ShowIndex a => Doc (AlwaysBlock a) where
 
 instance ShowIndex a => Doc (Module a) where
   doc Module{..} =
-    PP.vcat [ PP.text "module" PP.<+> doc moduleName PP.<> PP.parens args PP.<> PP.semi
+    PP.vcat [ PP.text "module" PP.<> docIndex moduleData PP.<+> doc moduleName PP.<> PP.parens args PP.<> PP.semi
             , PP.nest 2 contents
             , PP.text "endmodule"
             ]
@@ -317,6 +320,9 @@ instance ShowIndex a => Show (Event a) where
 instance ShowIndex a => Show (Stmt a) where
   show = PP.render . doc
 
+instance ShowIndex a => Show (Expr a) where
+  show = PP.render . doc
+
 instance ShowIndex a => Show (AlwaysBlock a) where
   show = PP.render . doc
 
@@ -325,3 +331,17 @@ instance ShowIndex a => Show (Module a) where
 
 instance ShowIndex a => Show (ModuleInstance a) where
   show = PP.render . doc
+
+isInput :: Port -> Bool
+isInput (Input _)  = True
+isInput (Output _) = False
+
+moduleInputs, moduleOutputs :: Module a -> L Id
+(moduleInputs, moduleOutputs) = (helper True, helper False)
+  where
+    helper check = \Module{..} ->
+      foldl' (addInput check) mempty ports
+    addInput check acc p =
+      if isInput p == check
+      then acc SQ.|> variableName (portVariable p)
+      else acc

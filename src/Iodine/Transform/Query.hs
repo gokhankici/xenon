@@ -18,7 +18,6 @@ where
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
-import           Iodine.Transform.VCGen ( getVariables, moduleVariables )
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -163,7 +162,9 @@ generateWFConstraintMI :: FD r
                        -> ModuleInstance Int
                        -> Sem r ()
 generateWFConstraintMI currentModuleName mi@ModuleInstance{..} = do
-  m <- asks @ModuleMap (HM.! currentModuleName)
+  m <- asks @ModuleMap (\m -> case HM.lookup currentModuleName m of
+                                Nothing -> undefined
+                                Just x  -> x)
   (ienv, _) <- runState mempty $ do
     traverse_ convertExpr (moduleVariables m)
     traverse_ convertExpr $ do
@@ -193,7 +194,7 @@ generateWFConstraintM m@Module{..} = do
     n  = moduleData
     kvar = mkKVar n
     e  = FT.PKVar kvar mempty
-    md = HornClauseId n SummaryInv
+    md = HornClauseId n ModuleSummary
 
 -- -----------------------------------------------------------------------------
 -- HornExpr -> FT.Expr

@@ -9,6 +9,7 @@
 module Iodine.Transform.Horn where
 
 import           Iodine.Language.IR
+import qualified Iodine.Language.IR as IIR
 import           Iodine.Types
 
 import           Control.DeepSeq
@@ -40,7 +41,7 @@ data HornType = Init
               | AssertEqCheck
               | WellFormed
               | InstanceCheck
-              | SummaryInv
+              | ModuleSummary
               deriving (Eq, Show, Generic)
 
 data HornVarType = Tag | Value
@@ -89,6 +90,11 @@ isBoolean HOr{..}   = True
 isBoolean HNot{..}  = True
 isBoolean _         = False
 
+moduleVariables :: Module a -> L HornExpr
+moduleVariables m =
+  foldl' addVars mempty (variableName . portVariable <$> ports m)
+  where
+    addVars l v = l <> allHornVars v (IIR.moduleName m)
 
 instance Show HornBinaryOp where
   show HEquals    = "="
@@ -140,8 +146,8 @@ instance FT.Fixpoint HornType where
        toFix Interference  = PP.text "interference"
        toFix AssertEqCheck = PP.text "assert-eq"
        toFix WellFormed    = PP.text "wellformed"
-       toFix SummaryInv    = PP.text "summary-inv"
        toFix InstanceCheck = PP.text "instance-check"
+       toFix ModuleSummary = PP.text "module-summary"
 
 instance NFData HornType
 

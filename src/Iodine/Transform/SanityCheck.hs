@@ -179,8 +179,8 @@ checkVariables =
               (mempty, mempty)
               ports
             areVars vs = vs `subset` vars
-            isInput v = v `HS.member` inputs
-            isOutput v = v `HS.member` outputs
+            isInputVar v = v `HS.member` inputs
+            isOutputVar v = v `HS.member` outputs
 
         when (HS.null srcs) $
           throw "No source variable is given!"
@@ -225,10 +225,10 @@ checkVariables =
                 _ ->
                   throw $ "always block has bad event: " ++ show abEvent
 
-        when (any isOutput (af ^. alwaysEquals)) $
+        when (any isOutputVar (af ^. alwaysEquals)) $
           throw "an output port cannot be always_eq"
 
-        when (any isInput (af ^. assertEquals)) $
+        when (any isInputVar (af ^. assertEquals)) $
           throw "an input port cannot be assert_eq"
 
         let nonInputAEs = (af ^. alwaysEquals) `HS.difference` inputs
