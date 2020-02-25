@@ -1,23 +1,23 @@
-module test(clk, in, out);
+module test(clk, in1, out1);
    input clk;
-   input in;
-   output reg out;
-   wire        tmp;
+   input in1;
+   output reg out1;
+   wire        tmp1;
 
-   test_sub_1 INS1(clk, in, tmp);
+   test_sub_1 INS1(clk, in1, tmp1);
    
    always @(posedge clk)
-     out <= tmp + 1;
+     out1 <= tmp1 + 1;
 
 endmodule // test
 
-module test_sub_1(clk, in, out);
+module test_sub_1(clk, in2, out2);
    input clk;
-   input in;
-   output reg out;
+   input in2;
+   output reg out2;
 
    always @(posedge clk)
-     out <= in + 1;
+     out2 <= in2 + 1;
 
 endmodule // test_sub_1
 

@@ -101,8 +101,61 @@ constructQuery modules horns = evalState initialState $ do
   for_ modules $ \m@Module{..} ->
     (getQualifiers moduleName >>= traverse_ generateQualifiers) & runReader m
   ask >>= generateAutoQualifiers
+  for_ modules addSummaryQualifiers
   toFInfo
 
+
+addSummaryQualifiers :: FD r => Module Int -> Sem r ()
+addSummaryQualifiers m@Module{..} = do
+  mClk <- getClock moduleName
+  let noClk a    = Just a /= mClk
+  let inputs     = SQ.filter noClk (moduleInputs m)
+  let nonInput a = Just a /= mClk && not (elem a inputs)
+  let vars       = SQ.filter nonInput (variableName <$> variables)
+  let foos = do ls <- toList $ powerset inputs
+                r  <- toList vars
+                return (ls, r)
+  for_ (zip foos [0..]) $ \((ls, r), n) ->
+    addQualifier $ mkSummaryQualifier n moduleName ls r
+
+mkSummaryQualifier :: Int -> Id -> L Id -> Id -> FT.Qualifier
+mkSummaryQualifier n moduleName ls r =
+  FT.mkQual
+  (FT.symbol $ "summaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n)
+  ( [ FT.QP vSymbol FT.PatNone FT.FInt
+    , FT.QP (symbol "rl") (FT.PatExact (symbol $ mkVar r LeftRun)) typ
+    , FT.QP (symbol "rr") (FT.PatExact (symbol $ mkVar r RightRun)) typ
+    ] ++
+    concat [ [ FT.QP (FT.symbol $ "l" ++ show n2)     (FT.PatExact (symbol $ mkVar l LeftRun)) typ
+             , FT.QP (FT.symbol $ "l" ++ show (n2+1)) (FT.PatExact (symbol $ mkVar l RightRun)) typ
+             ]
+           | (l, n2) <- zip (toList ls) [0,2..]
+           ]
+  )
+  ( FT.PAnd [ FT.eVar ("l" ++ show n2) `FT.PIff` FT.eVar ("l" ++ show (n2+1))
+            | (_, n2) <- zip (toList ls) [0,2..]
+            ] 
+    `FT.PImp`
+    (FT.eVar @String "rl" `FT.PIff` FT.eVar @String "rr")
+  )
+  (FT.dummyPos "")
+  where
+    mkVar v rn = 
+      getFixpointName $
+      HVar { hVarName   = v
+           , hVarModule = moduleName
+           , hVarIndex  = 0
+           , hVarType   = Tag
+           , hVarRun    = rn
+           }
+    typ = FT.boolSort
+
+-- non empty powerset of the given sequence
+powerset :: L a -> L (L a)
+powerset SQ.Empty            = SQ.Empty
+powerset (a SQ.:<| SQ.Empty) = SQ.singleton $ SQ.singleton a
+powerset (a SQ.:<| as)       = let ps = powerset as
+                               in ps <> ((a SQ.:<|) <$> ps)
 
 -- -----------------------------------------------------------------------------
 -- generate constraints

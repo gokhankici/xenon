@@ -133,6 +133,7 @@ checkIR (IodineArgs{..}, af)
   | otherwise = do
       finfo <- computeFInfo
       result <- F.solve config finfo
+      -- putStrLn $ show result
       let safe = FT.isSafe result
       unless noFPOutput $
         (readFile fqoutFile >>= putStrLn) `E.catch` (\(_ :: E.IOException) -> return ())

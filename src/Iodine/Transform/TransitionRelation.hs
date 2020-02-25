@@ -6,7 +6,6 @@
 
 module Iodine.Transform.TransitionRelation
   ( transitionRelation
-  , transitionRelationMI
   )
 where
 
@@ -31,10 +30,6 @@ transitionRelation s =
   HAnd $
   transitionRelation' mempty LeftRun s |:>
   transitionRelation' mempty RightRun s
-
-transitionRelationMI :: ModuleInstance Int -> HornExpr
-transitionRelationMI ModuleInstance{..} =
-  undefined
 
 type PathCond = L (Expr Int)
 

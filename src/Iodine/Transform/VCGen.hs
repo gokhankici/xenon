@@ -411,7 +411,7 @@ interferenceCheckWR :: FDM r
                     -> Sem r (Horn ())
 interferenceCheckWR wSt rSt = do
   Module {..} <- ask
-  wNext <- (IM.! getData wABMI) <$> asks getNextVars
+  wNext <- (fromMaybe mempty) . (IM.lookup $ getData wABMI) <$> asks getNextVars
   let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
       mkAEs acc v =
         (case HM.lookup v rNext of
@@ -443,45 +443,7 @@ interferenceCheckWR wSt rSt = do
 
     wTR = case wABMI of
             AB ab -> transitionRelation $ abStmt ab
-            MI mi -> transitionRelationMI mi
-
-  -- case (wABMI, rABMI) of
-  --   (AB wAB, AB _) -> do
-  --     let wStmt = abStmt wAB
-  --         rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
-  --         subs = toSubs moduleName rNext
-  --         mkAEs acc v =
-  --           (case HM.lookup v rNext of
-  --              Just n  -> acc
-  --                         |> (HVarTL v moduleName n, HVarTR v moduleName n)
-  --                         |> (HVarVL v moduleName n, HVarVR v moduleName n)
-  --              Nothing -> acc)
-  --           |> (HVarTL0 v moduleName, HVarTR0 v moduleName)
-  --           |> (HVarVL0 v moduleName, HVarVR0 v moduleName)
-  --         rAlwaysEqs = HS.foldl' mkAEs mempty (aeVars wSt `HS.union` aeVars rSt)
-  --     trace (printf "w:%d, r:%d, %s" wId rId (show rAlwaysEqs))
-  --     return $
-  --       Horn { hornHead   = KVar rId subs
-  --            , hornBody   = HAnd
-  --                           $   KVar rId mempty
-  --                           |:> KVar wId mempty
-  --                           |>  HAnd (mkEqual <$> rAlwaysEqs)
-  --                           |>  wTR
-  --            , hornType   = Interference
-  --            , hornStmtId = wId
-  --            , hornData   = ()
-  --            }
-  --   (AB wAB, MI rMI) -> do
-  --     -- let wStmt = abStmt wAB
-  --     -- let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
-  --     trace $ "wAB: " ++ show wAB
-  --     trace $ "rMI: " ++ show rMI
-  --     undefined
-  --   (MI _, AB _) -> undefined
-  --   (MI wMI, MI rMI) -> do
-  --     trace $ "wMI: " ++ show wMI
-  --     trace $ "rMI: " ++ show rMI
-  --     undefined
+            MI _  -> HBool True
 
 
 -- -----------------------------------------------------------------------------
@@ -490,17 +452,18 @@ summaryConstraints :: FD r => Module Int -> Sem r (L (Horn ()))
 summaryConstraints m = do
   trace $ "summaryConstraints of " ++ show mn
   mInstances <- getModuleInstances m
+  mClk <- getClock mn
   case mInstances of
     Nothing        -> return mempty
-    Just instances -> return . SQ.singleton $ summaryInitFromInstances m instances
+    Just instances -> return . SQ.singleton $ summaryInitFromInstances mClk m instances
   where
     mn = moduleName m
 
 -- | Values and tags of the expressions used in all the instances of the module
 -- are used to initialize the input ports. Output ports' values and tags are
 -- initially equal.
-summaryInitFromInstances :: Module Int -> L (ModuleInstance Int) -> Horn ()
-summaryInitFromInstances m@Module{..} instances =
+summaryInitFromInstances :: Maybe Id -> Module Int -> L (ModuleInstance Int) -> Horn ()
+summaryInitFromInstances mClk m@Module{..} instances =
   Horn { hornHead   = KVar mId (inputSubs <> outputSubs)
        , hornBody   = body
        , hornType   = ModuleSummary
@@ -513,7 +476,7 @@ summaryInitFromInstances m@Module{..} instances =
       mkEmptyKVar <$>
       (getData <$> alwaysBlocks) <> (getData <$> moduleInstances)
     body3 =
-      foldl' (\acc i -> acc <> instanceInputInitialValue instances i moduleName) mempty inputs
+      foldl' (\acc i -> acc <> instanceInputInitialValue instances i moduleName) mempty (inputs <> outputs)
     body = HAnd $ body1 <> body2 <> body3
     inputSubs = makeSubs inputs moduleName 1
     outputSubs =
@@ -522,7 +485,7 @@ summaryInitFromInstances m@Module{..} instances =
                         (HVarTL0 o moduleName, HVarTR0 o moduleName))
       mempty outputs
     mId     = getData m
-    inputs  = moduleInputs m
+    inputs  = (\a -> Just a /= mClk) `SQ.filter` moduleInputs m
     outputs = moduleOutputs m
 
 instanceKVars :: L (ModuleInstance Int) -> L HornExpr
@@ -541,18 +504,29 @@ makeSubs variables moduleName n =
 instanceInputInitialValue :: L (ModuleInstance Int) -> Id -> Id -> L HornExpr
 instanceInputInitialValue instances varName moduleName =
   SQ.fromList $ do
-  (t, hop) <- [(Tag, HIff), (Value, HEquals)]
+  t <- [Tag, Value]
   r <- [LeftRun, RightRun]
   let toExpr e = toHornVar e t r
-  return $
-    HBinary hop
-    (HVar { hVarName   = varName
-          , hVarModule = moduleName
-          , hVarIndex  = 1
-          , hVarType   = t
-          , hVarRun    = r
-          })
-    (HOr $ toExpr . getInstanceVar varName <$> instances)
+  case t of
+    Tag ->
+      return $
+      HBinary HIff
+      (HVar { hVarName   = varName
+            , hVarModule = moduleName
+            , hVarIndex  = 1
+            , hVarType   = t
+            , hVarRun    = r
+            })
+      (HOr $ toExpr . getInstanceVar varName <$> instances)
+    Value ->
+      return $
+      let hv = HVar { hVarName   = varName
+                   , hVarModule = moduleName
+                   , hVarIndex  = 1
+                   , hVarType   = t
+                   , hVarRun    = r
+                   }
+      in HOr (HBinary HEquals hv . toExpr . getInstanceVar varName <$> instances)
   where
     getInstanceVar v ModuleInstance{..} = moduleInstancePorts HM.! v
 
@@ -635,10 +609,11 @@ computeStmtStM :: FDM r => ABMI -> Sem r StmtSt
 computeStmtStM s = do
   m@Module{..} <- ask
   as  <- getAnnotations moduleName
-  return $ computeStmtSt as m s
+  clk <- getClock moduleName
+  return $ computeStmtSt clk as m s
 
-computeStmtSt :: Annotations -> Module Int -> ABMI -> StmtSt
-computeStmtSt as Module{..} stmt =
+computeStmtSt :: Maybe Id -> Annotations -> Module Int -> ABMI -> StmtSt
+computeStmtSt mClk as Module{..} stmt =
   StmtSt
   { _currentVariables     = vs
   , _currentSources       = filterAs sources
@@ -649,7 +624,7 @@ computeStmtSt as Module{..} stmt =
   }
   where
     filterAs l = HS.intersection (as ^. l) vs
-    vs = getVariables stmt
+    vs = getVariables stmt `HS.difference` maybeToSet mClk
     extraInitEquals =
       foldl'
       (\vars -> \case
@@ -661,6 +636,10 @@ computeStmtSt as Module{..} stmt =
             vars)
       mempty
       variables
+
+maybeToSet :: Maybe Id -> HS.HashSet Id
+maybeToSet Nothing  = mempty
+maybeToSet (Just a) = HS.singleton a
 
 getUpdatedVariables :: G r => ABMI -> Sem r Ids
 getUpdatedVariables = \case
