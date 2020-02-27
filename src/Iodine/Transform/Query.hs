@@ -590,6 +590,8 @@ toFInfo =
         return mempty
     <*> -- user defined data declarations
         return mempty
+    <*> -- existential binds
+        return mempty
 
 -- | get the bind name used for the variable in the query
 getFixpointName :: HornExpr -> Id
