@@ -17,7 +17,7 @@ module Iodine.Language.IR
   , Variable (..)
   , Event (..)
   , AlwaysBlock (..)
-  , AB_or_MI (..)
+  , Thread (..)
   , getVariables
   , getData
   , isInput
@@ -126,8 +126,8 @@ data Module a =
   deriving (Generic, Functor, Foldable, Traversable)
 
 -- | An always block or a module instance
-data AB_or_MI a = AB (AlwaysBlock a)
-                | MI (ModuleInstance a)
+data Thread a = AB (AlwaysBlock a)
+              | MI (ModuleInstance a)
 
 class GetVariables m where
   -- return the name of the variables in type m
@@ -153,9 +153,16 @@ instance GetVariables ModuleInstance where
   getVariables ModuleInstance{..} =
     foldMap getVariables $ HM.elems moduleInstancePorts
 
-instance GetVariables AB_or_MI where
-  getVariables (AB ab) = getVariables $ abStmt ab
+instance GetVariables AlwaysBlock where
+  getVariables AlwaysBlock{..} = getVariables abStmt
+
+instance GetVariables Thread where
+  getVariables (AB ab) = getVariables ab
   getVariables (MI mi) = getVariables mi
+
+instance GetVariables Module where
+  getVariables Module{..} =
+    foldl' (flip HS.insert) mempty (variableName . portVariable <$> ports)
 
 class GetData m where
   getData :: m a -> a
@@ -172,7 +179,7 @@ instance GetData ModuleInstance where
 instance GetData AlwaysBlock where
   getData = getData . abStmt
 
-instance GetData AB_or_MI where
+instance GetData Thread where
   getData (AB ab) = getData ab
   getData (MI mi) = getData mi
 

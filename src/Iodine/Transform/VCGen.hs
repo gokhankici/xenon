@@ -358,7 +358,7 @@ instanceCheck mi@ModuleInstance{..} = do
 
 
 -- -------------------------------------------------------------------------------------------------
-interferenceChecks :: FDM r => L ABMI -> Sem r Horns
+interferenceChecks :: FDM r => L TI -> Sem r Horns
 -- -------------------------------------------------------------------------------------------------
 interferenceChecks abmis =
   traverse_ interferenceCheck abmis
@@ -366,7 +366,7 @@ interferenceChecks abmis =
   & runState @Horns mempty
   & fmap fst
 
-data ICSt = ICSt { icABMI      :: ABMI
+data ICSt = ICSt { icTI      :: TI
                  , writtenVars :: Ids
                  , allVars     :: Ids
                  , aeVars      :: Ids -- ^ always_eq vars
@@ -374,13 +374,13 @@ data ICSt = ICSt { icABMI      :: ABMI
 type ICSts = IM.IntMap ICSt
 
 interferenceCheck :: (FDM r, Members '[State ICSts, State Horns] r)
-                  => ABMI -> Sem r ()
+                  => TI -> Sem r ()
 interferenceCheck abmi = do
   -- traverse the statements we have looked at so far
   stmtSt <- computeStmtStM abmi
   currentWrittenVars <- getUpdatedVariables abmi
   let currentSt =
-        ICSt { icABMI      = abmi
+        ICSt { icTI      = abmi
              , writtenVars = currentWrittenVars
              , allVars     = currentAllVars
              , aeVars      = stmtSt ^. currentAlwaysEquals
@@ -411,7 +411,7 @@ interferenceCheckWR :: FDM r
                     -> Sem r (Horn ())
 interferenceCheckWR wSt rSt = do
   Module {..} <- ask
-  wNext <- (fromMaybe mempty) . (IM.lookup $ getData wABMI) <$> asks getNextVars
+  wNext <- (fromMaybe mempty) . (IM.lookup $ getData wTI) <$> asks getNextVars
   let rNext = HM.filterWithKey (\var _ -> HS.member var rVars) wNext
       mkAEs acc v =
         (case HM.lookup v rNext of
@@ -435,13 +435,13 @@ interferenceCheckWR wSt rSt = do
          , hornData   = ()
          }
   where
-    rABMI = icABMI rSt
-    wABMI = icABMI wSt
-    rId   = getData rABMI
-    wId   = getData wABMI
+    rTI = icTI rSt
+    wTI = icTI wSt
+    rId   = getData rTI
+    wId   = getData wTI
     rVars = allVars rSt
 
-    wTR = case wABMI of
+    wTR = case wTI of
             AB ab -> transitionRelation $ abStmt ab
             MI _  -> HBool True
 
@@ -577,7 +577,7 @@ alwaysEqualEqualities stmt = do
            Just n  -> exprs' |> HBinary HEquals (HVar v m n Value LeftRun) (HVar v m n Value RightRun)
            Nothing -> exprs'
 
-type ABMI = AB_or_MI Int
+type TI = Thread Int
 type S = Stmt Int
 type Horns = L (Horn ())
 
@@ -605,14 +605,14 @@ withAB ab act = do
   stmtSt <- computeStmtStM (AB ab)
   act & runReader stmtSt
 
-computeStmtStM :: FDM r => ABMI -> Sem r StmtSt
+computeStmtStM :: FDM r => TI -> Sem r StmtSt
 computeStmtStM s = do
   m@Module{..} <- ask
   as  <- getAnnotations moduleName
   clk <- getClock moduleName
   return $ computeStmtSt clk as m s
 
-computeStmtSt :: Maybe Id -> Annotations -> Module Int -> ABMI -> StmtSt
+computeStmtSt :: Maybe Id -> Annotations -> Module Int -> TI -> StmtSt
 computeStmtSt mClk as Module{..} stmt =
   StmtSt
   { _currentVariables     = vs
@@ -641,7 +641,7 @@ maybeToSet :: Maybe Id -> HS.HashSet Id
 maybeToSet Nothing  = mempty
 maybeToSet (Just a) = HS.singleton a
 
-getUpdatedVariables :: G r => ABMI -> Sem r Ids
+getUpdatedVariables :: G r => TI -> Sem r Ids
 getUpdatedVariables = \case
   AB ab -> go $ abStmt ab
   MI ModuleInstance{..} ->
