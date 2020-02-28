@@ -28,8 +28,11 @@ import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.IntMap as IM
+import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
+import           Data.Traversable
+import qualified Data.Vector as V
 import qualified Language.Fixpoint.Horn.Info as FHI
 import qualified Language.Fixpoint.Horn.Types as FHT
 import qualified Language.Fixpoint.Types as FT
@@ -39,7 +42,6 @@ import           Polysemy.Reader
 import           Polysemy.State
 import           Polysemy.Trace
 import           Text.Printf
--- import qualified Data.Vector as V
 
 -- import           Control.DeepSeq
 -- import           GHC.Generics hiding ( moduleName, to )
@@ -71,7 +73,7 @@ data St = St { _constraints :: L (FHT.Cstr ())
              , _constants   :: HM.HashMap FT.Symbol FT.Sort
              , _kvars       :: L (FHT.Var ())
 
-             , _invVarMap        :: IM.IntMap (HM.HashMap Id Int)
+             , _invVarMap        :: IM.IntMap (HM.HashMap (Id, Id) Int)
              , _qualifierCounter :: Int
              }
 
@@ -115,7 +117,7 @@ setInvVarMap :: FD r => Module Int -> Sem r ()
 setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
   let params = toList $ getKVarParams n -- parameters of the kvar
   modify $ kvars %~ (|> mkVar n params)
-  modify $ invVarMap %~ IM.insert n (list2map params)
+  modify $ invVarMap %~ IM.insert n (list2map $ (,moduleName) <$> params)
 
   where
     -- instead of using all the variables that occur in this thread, only keep
@@ -163,7 +165,7 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
     is = FT.intSort
     bs = FT.boolSort
 
-    list2map :: [Id] -> HM.HashMap Id Int
+    list2map :: [(Id, Id)] -> HM.HashMap (Id, Id) Int
     list2map ss = HM.fromList (zip ss [0..])
 
 
@@ -227,8 +229,54 @@ hornVariables Horn{..} = mappend <$> go hornBody <*> go hornHead
 
 
 getKVarArgs :: FD r => HornExpr -> Sem r [HornExpr]
-getKVarArgs KVar{..} = undefined
-getKVarArgs _        = PE.throw $ IE Query "getKVarArgs must be called with a kvar"
+getKVarArgs KVar{..} = do
+  varMap <- gets ((IM.! hKVarId) . (^. invVarMap))
+  let emptyArgs = V.replicate (length varMap * 4) undefined
+      -- initialize all the kvar arguments to 0 index
+      updates1  =
+        HM.foldlWithKey'
+        (\acc (v, m) i ->
+           ( multiplyIndex i (Value, LeftRun)
+           , HVarVL0 v m
+           ) :
+           ( multiplyIndex i (Value, RightRun)
+           , HVarVR0 v m
+           ) :
+           ( multiplyIndex i (Tag, LeftRun)
+           , HVarTL0 v m
+           ) :
+           ( multiplyIndex i (Tag, RightRun)
+           , HVarTL0 v m
+           ) :
+          acc) [] varMap
+      args1 = emptyArgs V.// updates1
+  -- overwrite the arguments with the kvar subs
+  updates2 <-
+    catMaybes . toList
+    <$> for hKVarSubs (\(lhs,rhs) -> fmap (,rhs) <$> lookupInvIndex hKVarId lhs)
+  return . toList $ args1 V.// updates2
+
+getKVarArgs _ = PE.throw $ IE Query "getKVarArgs must be called with a kvar"
+
+
+multiplyIndex :: Int -> (HornVarType, HornVarRun) -> Int
+multiplyIndex n = \case
+  (Value, LeftRun)  -> 4 * n
+  (Value, RightRun) -> 4 * n + 1
+  (Tag,   LeftRun)  -> 4 * n + 2
+  (Tag,   RightRun) -> 4 * n + 3
+
+
+lookupInvIndex :: FD r => Int -> HornExpr -> Sem r (Maybe Int)
+lookupInvIndex kvarId HVar{..} =
+  fmap (`multiplyIndex` (hVarType, hVarRun))
+  . HM.lookup (hVarName, hVarModule)
+  <$> gets ((IM.! kvarId) . (^. invVarMap))
+  where
+lookupInvIndex m e =
+  PE.throw . IE Query $
+  printf "lookupInvIndex called with %s and %s" (show m) (show e)
+
 
 -- -----------------------------------------------------------------------------
 -- HornExpr -> FHT.Pred   and   HornExpr -> FT.Expr
@@ -607,17 +655,3 @@ vSymbol = symbol "v"
 
 symbol :: Id -> FT.Symbol
 symbol = FT.symbol
-
-
-_lookupInvIndex :: FD r => Module Int -> HornExpr -> Sem r (Maybe Int)
-_lookupInvIndex m HVar{..} =
-  fmap toId . HM.lookup hVarName <$> gets ((IM.! getData m) . (^. invVarMap))
-  where
-    toId n = case (hVarType, hVarRun) of
-               (Value, LeftRun)  -> 4 * n
-               (Value, RightRun) -> 4 * n + 1
-               (Tag,   LeftRun)  -> 4 * n + 2
-               (Tag,   RightRun) -> 4 * n + 3
-_lookupInvIndex m e =
-  PE.throw . IE Query $
-  printf "lookupInvIndex called with %s and %s" (show m) (show e)
