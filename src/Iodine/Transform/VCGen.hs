@@ -118,33 +118,22 @@ initialize stmt event = do
   zeroTags <- foldl' (mkZeroTags moduleName) mempty <$> asks (^. currentVariables)
   -- init_eq and always_eq are initially set to the same values
   initEqs <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
-  let subs = foldl' (valEquals moduleName) zeroTags initEqs
-  case event of
+  let allEqs = foldl' (valEquals moduleName) zeroTags initEqs
+      body = HAnd (mkEqual <$> allEqs)
+  (body', subs) <- case event of
     Star -> do
-      nextVars <- (IM.! stmtId) <$> asks getNextVars
-      let starSubs = toSubs moduleName nextVars
-      -- VLT* = False &&
-      -- VRT* = False &&
-      -- VL_x = VR_x for init_eq(x) and always_eq(x) &&
-      -- next ==>
-      -- kvar[nextVars]
-      return $
-        Horn { hornHead   = KVar stmtId starSubs
-             , hornBody   = HAnd $ (mkEqual <$> subs) |> transitionRelation stmt
-             , hornType   = Init
-             , hornStmtId = stmtId
-             , hornData   = ()
-             }
-    _ ->
-      -- true ==>
-      -- kvar[VLT* = False][VRT* = False][VL_x = VR_x for init_eq(x) or always_eq(x)]
-      return $
-      Horn { hornHead   = KVar stmtId subs
-           , hornBody   = HBool True
-           , hornType   = Init
-           , hornStmtId = stmtId
-           , hornData   = ()
-           }
+      nextSubs <- (toSubs moduleName) . (IM.! stmtId) <$> asks getNextVars
+      return ( HAnd $ body |:> transitionRelation stmt
+             , nextSubs
+             )
+    _    -> return (body, mempty)
+  return $
+    Horn { hornHead   = KVar stmtId subs
+         , hornBody   = body'
+         , hornType   = Init
+         , hornStmtId = stmtId
+         , hornData   = ()
+         }
  where
    stmtId = stmtData stmt
    mkZeroTags m subs v =

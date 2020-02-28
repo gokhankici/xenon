@@ -13,7 +13,8 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
-import           Iodine.Transform.Query
+-- import           Iodine.Transform.Query
+import           Iodine.Transform.HornQuery
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
 import           Iodine.Types
@@ -64,7 +65,7 @@ pipeline af irReader = do
     runReader summaryMap $
       runReader moduleMap' $
       vcgen ssaOutput >>=
-      constructQuery normalizedIR
+      constructQuery
   where
     mkModuleMap =
       foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty

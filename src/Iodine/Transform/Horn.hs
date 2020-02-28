@@ -193,3 +193,7 @@ toHornVar Variable{..} t r =
        , hVarRun    = r
        }
 toHornVar _ _ _ = undefined
+
+isHornVariable :: HornExpr -> Bool
+isHornVariable HVar{} = True
+isHornVariable _      = False

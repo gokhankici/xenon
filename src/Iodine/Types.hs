@@ -34,3 +34,7 @@ instance Show IodineException where
   show (IE src msg) = show src ++ ": " ++ msg
 
 instance Exception IodineException
+
+class GetVariables m where
+  -- return the name of the variables in type m
+  getVariables :: m a -> HS.HashSet Id

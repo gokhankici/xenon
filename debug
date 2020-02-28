@@ -2,10 +2,12 @@
 
 cd "${0:A:h}"
 
-PROFILE="--profile"
+# PROFILE="--profile"
 
-TEST_DIR="test/verilog/pos"
-TEST_NAME="tr-submodule-01"
+TEST="test/verilog/pos/tr-test-1.v"
+TEST_DIR="${TEST:h}"
+TEST_NAME="${TEST:t:r}"
+
 TEST_FILE="${TEST_DIR}/${TEST_NAME}.v"
 TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
 

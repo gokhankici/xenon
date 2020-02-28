@@ -127,3 +127,12 @@ getSinks m = (^. sinks) <$> getAnnotations m
 
 getClock :: Member (Reader AnnotationFile) r => Id -> Sem r (Maybe Id)
 getClock m = asks (view clock . toModuleAnnotations m)
+
+annotationVariables :: Annotations -> Ids
+annotationVariables a =
+  (a ^. sources) <>
+  (a ^. sinks) <>
+  (a ^. initialEquals) <>
+  (a ^. alwaysEquals) <>
+  (a ^. assertEquals) <>
+  (a ^. tagEquals)

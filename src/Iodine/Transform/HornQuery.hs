@@ -13,6 +13,7 @@
 
 module Iodine.Transform.HornQuery
   ( constructQuery
+  , FInfo
   )
 where
 
@@ -22,6 +23,7 @@ import           Iodine.Transform.Horn
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -33,6 +35,7 @@ import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Data.Traversable
 import qualified Data.Vector as V
+import           GHC.Generics hiding ( moduleName, to )
 import qualified Language.Fixpoint.Horn.Info as FHI
 import qualified Language.Fixpoint.Horn.Types as FHT
 import qualified Language.Fixpoint.Types as FT
@@ -41,11 +44,8 @@ import qualified Polysemy.Error as PE
 import           Polysemy.Reader
 import           Polysemy.State
 import           Polysemy.Trace
+import qualified Text.PrettyPrint.HughesPJ as PP
 import           Text.Printf
-
--- import           Control.DeepSeq
--- import           GHC.Generics hiding ( moduleName, to )
--- import qualified Text.PrettyPrint.HughesPJ as PP
 
 
 -- -----------------------------------------------------------------------------
@@ -63,15 +63,23 @@ type G r = Members '[ Trace
 type FD r  = (G r, Member (State St) r)
 type FDM r = (FD r, Member (Reader (Module Int)) r)
 
+type FInfo = FT.FInfo FData
+
+data FData =
+  ClauseData { hcStmtId :: Int
+             , hcType :: HornType
+             }
+  | NoData
+  deriving (Show, Generic)
 
 -- -----------------------------------------------------------------------------
 -- solver state
 -- -----------------------------------------------------------------------------
 
-data St = St { _constraints :: L (FHT.Cstr ())
+data St = St { _constraints :: L (FHT.Cstr FData)
              , _qualifiers  :: L FT.Qualifier
              , _constants   :: HM.HashMap FT.Symbol FT.Sort
-             , _kvars       :: L (FHT.Var ())
+             , _kvars       :: L (FHT.Var FData)
 
              , _invVarMap        :: IM.IntMap (HM.HashMap (Id, Id) Int)
              , _qualifierCounter :: Int
@@ -82,7 +90,7 @@ makeLenses ''St
 initialSt :: St
 initialSt = St mempty defaultQualifiers mempty mempty mempty 0
 
-st2FInfo :: St -> FT.FInfo ()
+st2FInfo :: St -> FT.FInfo FData
 st2FInfo st = FHI.hornFInfo query
   where
     vs = toList $ st ^. kvars
@@ -97,11 +105,13 @@ st2FInfo st = FHI.hornFInfo query
 
 -- | Given the verification conditions, generate the query to be sent to the
 -- fixpoint solver
-constructQuery :: G r => Horns -> Sem r (FT.FInfo ())
+constructQuery :: G r => Horns -> Sem r (FT.FInfo FData)
 constructQuery horns = fmap st2FInfo . execState initialSt $ do
   asks @ModuleMap HM.elems >>= traverse_ handleModule
   ask >>= generateAutoQualifiers
-  for_ horns handleHorn
+  trace "<<< begin constraints:"
+  for_ horns addHornConstraint
+  trace "end constraints >>>"
 
 
 handleModule :: FD r => Module Int -> Sem r ()
@@ -115,7 +125,12 @@ handleModule m = do
 --   2. Update the kvar variable map for the variables of the threads.
 setInvVarMap :: FD r => Module Int -> Sem r ()
 setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
-  let params = toList $ getKVarParams n -- parameters of the kvar
+  -- keep the variables appear in annotations
+  extraVars <-
+    (HS.intersection (varMap IM.! n))
+    . annotationVariables
+    <$> getAnnotations moduleName
+  let params = toList $ getKVarParams n `HS.union` extraVars -- parameters of the kvar
   modify $ kvars %~ (|> mkVar n params)
   modify $ invVarMap %~ IM.insert n (list2map $ (,moduleName) <$> params)
 
@@ -125,13 +140,14 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
     getKVarParams :: Int -> Ids
     getKVarParams n =
       let nParams = varMap IM.! n
-      in IM.foldlWithKey'
-         (\acc n2 n2Params ->
-            if   n == n2
-            then acc
-            else acc `HS.union` (nParams `HS.intersection` n2Params))
-         mempty
-         varMap
+          vs = IM.foldlWithKey'
+               (\acc n2 n2Params ->
+                  if   n == n2
+                  then acc
+                  else acc `HS.union` (nParams `HS.intersection` n2Params))
+               mempty
+               varMap
+      in vs
 
     -- all variables of the threads
     varMap :: IM.IntMap Ids
@@ -145,8 +161,8 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
     threads = toList $ (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
 
     -- make a kvar
-    mkVar :: Int -> [Id] -> FHT.Var ()
-    mkVar kvarId vars = FHT.HVar (kvarSymbol kvarId) (mkKVarSorts vars) ()
+    mkVar :: Int -> [Id] -> FHT.Var FData
+    mkVar kvarId vars = FHT.HVar (kvarSymbol kvarId) (mkKVarSorts vars) NoData
 
     -- sorts of a kvar with variables
     mkKVarSorts :: [Id] -> [(FT.Symbol, FT.Sort)]
@@ -173,62 +189,64 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
 -- Horn -> Cstr
 -- -----------------------------------------------------------------------------
 
-handleHorn :: FD r => Horn () -> Sem r (FHT.Cstr ())
-handleHorn h@Horn{..} = do
-  headPred <- convertExprP hornHead
+addHornConstraint :: FD r => Horn () -> Sem r ()
+addHornConstraint h@Horn{..} = do
+  trace "Horn:"
+  trace $ show h
   bodyPred <- convertExprP hornBody
+  trace $ "Fixpoint body: " ++  show bodyPred
+  headPred <- convertExprP hornHead
+  trace $ "Fixpoint head: " ++  show headPred
   bindSet <- hornVariables h
-  return $ mkForAll (toList bindSet) bodyPred (FHT.Head headPred ())
+  unless (HS.null bindSet) $ do
+    let md = ClauseData hornStmtId hornType
+        c  = mkForAll (toList bindSet) bodyPred (FHT.Head headPred md)
+    modify $ constraints %~ (|> c)
 
-mkForAll :: [(Id, Id, Int)] -> FHT.Pred -> FHT.Cstr () -> FHT.Cstr ()
-mkForAll ((v,m,n):rest) pBody cHead =
-  FHT.All b1 $ FHT.All b2 $ FHT.All b3 $ FHT.All b4' $ c
-
+mkForAll :: [(FT.Symbol, FT.Sort)] -> FHT.Pred -> FHT.Cstr FData -> FHT.Cstr FData
+mkForAll ((s, t):rest) pBody cHead = FHT.All b' c
   where
     c = case rest of
           [] -> cHead
           _  -> mkForAll rest pBody cHead
 
-    b4' = case rest of
-            [] -> b4 { FHT.bPred = pBody }
-            _  -> b4
+    b' = case rest of
+           [] -> b { FHT.bPred = pBody }
+           _  -> b
 
-    b1 = mkBind Value LeftRun
-    b2 = mkBind Value RightRun
-    b3 = mkBind Tag   LeftRun
-    b4 = mkBind Tag   RightRun
-
-    mkBind t r =
-      FHT.Bind
-      (getFixpointSymbol False $ HVar v m n t r)
-      (toS t)
-      (FHT.Reft $ FT.prop True)
-
-    toS = \case
-      Value -> FT.intSort
-      Tag   -> FT.boolSort
+    b = FHT.Bind s t  (FHT.Reft $ FT.prop True)
 
 mkForAll [] _ _ = error "mkForAll called with empty variable list"
 
 
-hornVariables :: FD r => Horn () -> Sem r (HS.HashSet (Id, Id, Int))
+hornVariables :: FD r => Horn () -> Sem r (HS.HashSet (FT.Symbol, FT.Sort))
 hornVariables Horn{..} = mappend <$> go hornBody <*> go hornHead
   where
-    go :: FD r => HornExpr -> Sem r (HS.HashSet (Id, Id, Int))
+    goVar isParam v@HVar{..} =
+      let t = case hVarType of
+                Value -> FT.intSort
+                Tag   -> FT.boolSort
+      in return $ HS.singleton (getFixpointSymbol isParam v, t)
+    goVar _ _ =
+      error "unreachable"
+
+    go :: FD r => HornExpr -> Sem r (HS.HashSet (FT.Symbol, FT.Sort))
     go = \case
       HConstant _  -> return mempty
       HBool _      -> return mempty
       HInt _       -> return mempty
-      HVar{..}     -> return $ HS.singleton (hVarName, hVarModule, hVarIndex)
+      v@HVar{}     -> goVar False v
       HAnd es      -> mfoldM go es
       HOr es       -> mfoldM go es
       HBinary{..}  -> mappend <$> go hBinaryLhs <*> go hBinaryRhs
       HApp{..}     -> mfoldM go hAppArgs
       HNot e       -> go e
-      k@KVar{}     -> getKVarArgs k >>= mfoldM go
+      k@KVar{}     -> getKVarArgs k
+                      >>= mfoldM (\(lhs, rhs) -> mappend <$> goVar True lhs <*> go rhs)
 
 
-getKVarArgs :: FD r => HornExpr -> Sem r [HornExpr]
+-- | Given a kvar, returns the list of (parameter, argument) pairs in the right order
+getKVarArgs :: FD r => HornExpr -> Sem r [(HornExpr, HornExpr)]
 getKVarArgs KVar{..} = do
   varMap <- gets ((IM.! hKVarId) . (^. invVarMap))
   let emptyArgs = V.replicate (length varMap * 4) undefined
@@ -254,9 +272,10 @@ getKVarArgs KVar{..} = do
   updates2 <-
     catMaybes . toList
     <$> for hKVarSubs (\(lhs,rhs) -> fmap (,rhs) <$> lookupInvIndex hKVarId lhs)
-  return . toList $ args1 V.// updates2
+  let args2 = args1 V.// updates2
+  return . toList $ V.zip args1 args2
 
-getKVarArgs _ = PE.throw $ IE Query "getKVarArgs must be called with a kvar"
+getKVarArgs _ = throw "getKVarArgs must be called with a kvar"
 
 
 multiplyIndex :: Int -> (HornVarType, HornVarRun) -> Int
@@ -274,8 +293,7 @@ lookupInvIndex kvarId HVar{..} =
   <$> gets ((IM.! kvarId) . (^. invVarMap))
   where
 lookupInvIndex m e =
-  PE.throw . IE Query $
-  printf "lookupInvIndex called with %s and %s" (show m) (show e)
+  throw $ printf "lookupInvIndex called with %s and %s" (show m) (show e)
 
 
 -- -----------------------------------------------------------------------------
@@ -290,10 +308,14 @@ convertExprP (HAnd es) =
     SQ.Empty -> FHT.Reft <$> convertExpr (HBool True)
     _        -> FHT.PAnd . toList <$> traverse convertExprP es
 
-convertExprP KVar{..} =
-  FHT.Var (kvarSymbol hKVarId)
-  . (fmap $ getFixpointSymbol False)
-  <$> getKVarArgs KVar{..}
+convertExprP KVar{..} = do
+  args <- fmap snd <$> getKVarArgs KVar{..}
+  unless (all isHornVariable args) $ do
+    trace $ show args
+    throw "kvar arguments must be symbols!"
+  return $ case args of
+    [] -> FHT.Reft $ FT.prop True
+    _  -> FHT.Var (kvarSymbol hKVarId) $ getFixpointSymbol False <$> args
 
 convertExprP e = FHT.Reft <$> convertExpr e
 
@@ -355,7 +377,7 @@ convertExpr HApp {..} = do
     HornBool -> FT.boolSort
 
 convertExpr KVar {..} =
-  PE.throw $ IE Query "convertExpr KVar must be unreachable"
+  throw "convertExpr KVar must be unreachable"
 
 
 -- -----------------------------------------------------------------------------
@@ -545,13 +567,18 @@ addSummaryQualifiers m@Module{..} = do
   mClk <- getClock moduleName
   let noClk a    = Just a /= mClk
   let inputs     = SQ.filter noClk (moduleInputs m)
-  let nonInput a = Just a /= mClk && not (elem a inputs)
-  let vars       = SQ.filter nonInput (variableName <$> variables)
-  let foos = do ls <- toList $ powerset inputs
-                r  <- toList vars
-                return (ls, r)
-  for_ (zip foos [0..]) $ \((ls, r), n) ->
-    addQualifier $ mkSummaryQualifier n moduleName ls r
+  unless (SQ.null inputs) $ do
+    let nonInput a = Just a /= mClk && not (elem a inputs)
+    let vars       = SQ.filter nonInput (variableName <$> variables)
+    trace $ show m
+    trace $ show mClk
+    trace $ show inputs
+    trace $ show vars
+    let foos = do ls <- toList $ powerset inputs
+                  r  <- toList vars
+                  return (ls, r)
+    for_ (zip foos [0..]) $ \((ls, r), n) ->
+      addQualifier $ mkSummaryQualifier n moduleName ls r
 
 
 mkSummaryQualifier :: Int -> Id -> L Id -> Id -> FT.Qualifier
@@ -598,6 +625,16 @@ powerset (a SQ.:<| as)       = let ps = powerset as
 -- -- -----------------------------------------------------------------------------
 -- -- helper functions
 -- -- -----------------------------------------------------------------------------
+
+instance FT.Loc FData where
+  srcSpan _ = FT.dummySpan
+
+instance FT.Fixpoint FData where
+  toFix (ClauseData n t) = PP.parens (FT.toFix t) PP.<+> PP.text "stmt id:" PP.<+> PP.int n
+  toFix NoData           = mempty
+
+instance NFData FData
+
 
 -- | get the bind name used for the variable in the query if isParam
 getFixpointName :: Bool       -- ^ If true, the hVarIndex will be ignored
@@ -655,3 +692,6 @@ vSymbol = symbol "v"
 
 symbol :: Id -> FT.Symbol
 symbol = FT.symbol
+
+throw :: G r => String -> Sem r a
+throw = PE.throw . IE Query

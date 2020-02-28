@@ -11,7 +11,8 @@ import           Iodine.IodineArgs
 import           Iodine.Language.Annotation
 import           Iodine.Language.IRParser
 import           Iodine.Pipeline
-import           Iodine.Transform.Query (FInfo)
+-- import           Iodine.Transform.Query (FInfo)
+import           Iodine.Transform.HornQuery (FInfo)
 import           Iodine.Types
 
 import qualified Language.Fixpoint.Solver as F

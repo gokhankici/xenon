@@ -129,10 +129,6 @@ data Module a =
 data Thread a = AB (AlwaysBlock a)
               | MI (ModuleInstance a)
 
-class GetVariables m where
-  -- return the name of the variables in type m
-  getVariables :: m a -> HS.HashSet Id
-
 instance GetVariables Stmt where
   getVariables = \case
     Block {..}          -> mfold getVariables blockStmts
