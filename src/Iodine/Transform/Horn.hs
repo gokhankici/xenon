@@ -77,6 +77,24 @@ data HornExpr =
          , hKVarSubs :: L (HornExpr, HornExpr)
          }
 
+-- | update the variable index with the given function
+updateIndices :: (Int -> Int) -> HornExpr -> HornExpr
+updateIndices f = \case
+  HVar{..}    -> HVar{ hVarIndex = f hVarIndex, .. }
+  HAnd es     -> HAnd $ go <$> es
+  HOr es      -> HOr $ go <$> es
+  HBinary{..} -> HBinary{ hBinaryLhs = go hBinaryLhs
+                        , hBinaryRhs = go hBinaryRhs
+                        , ..
+                        }
+  HApp{..}    -> HApp{ hAppArgs = go <$> hAppArgs, .. }
+  HNot e      -> HNot $ go e
+  KVar{..}    -> KVar{ hKVarSubs = (\(l, r) -> (l, go r)) <$> hKVarSubs, .. }
+  HConstant c -> HConstant c
+  HInt n      -> HInt n
+  HBool b     -> HBool b
+  where go = updateIndices f
+
 mkEqual :: (HornExpr, HornExpr) -> HornExpr
 mkEqual (e1, e2) = HBinary op e1 e2
   where op = if isBoolean e1 || isBoolean e2 then HIff else HEquals

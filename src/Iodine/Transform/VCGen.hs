@@ -113,23 +113,24 @@ regularChecks ab@AlwaysBlock{..} =
 initialize :: FDS r => S -> Event Int -> Sem r (Horn ())
 -- -------------------------------------------------------------------------------------------------
 initialize stmt event = do
-  Module {..} <- ask
+  m@Module {..} <- ask
+  killNonTopModules m
   -- untag everything
   zeroTags <- foldl' (mkZeroTags moduleName) mempty <$> asks (^. currentVariables)
   -- init_eq and always_eq are initially set to the same values
   initEqs <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
-  let allEqs = foldl' (valEquals moduleName) zeroTags initEqs
-      body = HAnd (mkEqual <$> allEqs)
-  (body', subs) <- case event of
+  let initialCond = HAnd . fmap mkEqual $
+                    foldl' (valEquals moduleName) zeroTags initEqs
+  (initialCond', subs) <- case event of
     Star -> do
       nextSubs <- (toSubs moduleName) . (IM.! stmtId) <$> asks getNextVars
-      return ( HAnd $ body |:> transitionRelation stmt
+      return ( HAnd $ initialCond |:> transitionRelation stmt
              , nextSubs
              )
-    _    -> return (body, mempty)
+    _    -> return (initialCond, mempty)
   return $
     Horn { hornHead   = KVar stmtId subs
-         , hornBody   = body'
+         , hornBody   = initialCond'
          , hornType   = Init
          , hornStmtId = stmtId
          , hornData   = ()
@@ -147,110 +148,128 @@ tagReset :: FDS r => S -> Event Int -> Sem r (Horn ())
 -- -------------------------------------------------------------------------------------------------
 tagReset stmt event = do
   m@Module {..} <- ask
+  killNonTopModules m
   srcs <- getCurrentSources
   vars <- asks (^. currentVariables)
-  let non_srcs = HS.difference vars srcs
-  -- sources are tagged
-  (srcExpr, srcTagSubs) <- do
-    isTop <- isTopModule m
-    if isTop
-      then return $ (HBool True, foldl' (tags moduleName True) mempty srcs)
-      else regularModuleInstanceInputHelper
-  -- non sources are untagged
-  let allTagSubs = foldl' (tags moduleName False) srcTagSubs non_srcs
-  case event of
+  let nonSrcs         = HS.difference vars srcs
+      addModuleName v = (v, moduleName)
+      tagsToSet       = addModuleName <$> toList srcs
+      tagsToClear     = addModuleName <$> toList nonSrcs
+      (eSet,   setSubs)   = updateTagsKeepValues True  tagsToSet
+      (eClear, clearSubs) = updateTagsKeepValues False tagsToClear
+      body = HAnd (eSet <> eClear)
+  (body', subs) <- case event of
     Star -> do
       aes <- alwaysEqualEqualities stmt
-      nextVars  <- (IM.! stmtId) <$> asks getNextVars
-      let onlyTagSubs = toSubsTags moduleName nextVars
-      let initialTagValues = HAnd $ mkEqual <$> allTagSubs
-      return $
-        Horn { hornHead   = KVar stmtId onlyTagSubs
-             , hornBody   = HAnd $
-                            (mkEmptyKVar stmtId <| aes) |>
-                            initialTagValues |>
-                            srcExpr |>
-                            transitionRelation stmt
-             , hornType   = TagReset
-             , hornStmtId = stmtId
-             , hornData   = ()
-             }
-    _ ->
-      return $
-      Horn { hornHead   = KVar stmtId allTagSubs
-           , hornBody   = mkEmptyKVar stmtId
-           , hornType   = TagReset
-           , hornStmtId = stmtId
-           , hornData   = ()
-           }
- where
-  stmtId = stmtData stmt
-  tags m value subs v =
-    subs |> (HVarTL0 v m, HBool value) |> (HVarTR0 v m, HBool value)
+      nextVars  <- (HM.map (+ 1)) . (IM.! stmtId) <$> asks getNextVars
+      let tr = indexFix $ transitionRelation stmt
+      return ( HAnd $
+               mkEmptyKVar stmtId -- inv holds on 0 indices
+               |:> body           -- increment all indices, keep values but update tags
+               |> (HAnd $ indexFix <$> aes) -- always_eq on 1 indices and last hold
+               |> tr                        -- transition starting from 1 indices
+             , toSubsTags moduleName nextVars
+             )
+    _    ->
+      return (body, setSubs <> clearSubs)
+  return $
+    Horn { hornHead   = KVar stmtId subs
+         , hornBody   = body'
+         , hornType   = TagReset
+         , hornStmtId = stmtId
+         , hornData   = ()
+         }
+  where
+    updateTagsKeepValues b vs =
+      foldl'
+      (\(es, ss) (v, m) ->
+         let es' = es
+                   |> mkEqual (HVarTL v m 1, HBool b)
+                   |> mkEqual (HVarTR v m 1, HBool b)
+                   |> mkEqual (HVarVL v m 1, HVarVL0 v m)
+                   |> mkEqual (HVarVR v m 1, HVarVR0 v m)
+             ss' = ss
+                   |> (HVarTL0 v m, HVarTL v m 1)
+                   |> (HVarTR0 v m, HVarTR v m 1)
+         in (es', ss'))
+      (mempty, mempty) vs
+
+    indexFix = updateIndices (+ 1)
+    stmtId = stmtData stmt
 {- HLINT ignore tagReset -}
 
-regularModuleInstanceInputHelper :: FDS r => Sem r (HornExpr, L (HornExpr, HornExpr))
-regularModuleInstanceInputHelper = do
-  m@Module{..} <- ask
-  srcs <- getCurrentSources
-  mInstances <- getModuleInstances m
-  case mInstances of
-    Nothing -> do
-      trace $ show moduleName
-      PE.throw (IE VCGen "could not find module instances")
-    Just instances ->
-      return $
-      let iiiv s = HAnd (instanceInputInitialValue instances s moduleName)
-          exprs  = foldl' (\es s -> es |> iiiv s) mempty srcs
-          subs   = makeSubs srcs moduleName 1
-      in (HAnd exprs, subs)
 
 -- -------------------------------------------------------------------------------------------------
 srcTagReset :: FDS r => S -> Event Int -> Sem r (Horn ())
 -- -------------------------------------------------------------------------------------------------
 srcTagReset stmt event = do
-  Module {..} <- ask
-  -- sources are untagged
+  m@Module {..} <- ask
+  killNonTopModules m
   srcs <- getCurrentSources
-  let srcTagSubs = foldl' (mkZeroTags moduleName) mempty srcs
-  case event of
+  vars <- asks (^. currentVariables)
+  let addModuleName v = (v, moduleName)
+      tagsToClear     = addModuleName <$> toList srcs
+      (eClear, clearSubs) = updateTagsKeepValues False tagsToClear
+      body = HAnd eClear
+  (body', subs) <- case event of
     Star -> do
+      let nonSrcs = HS.difference vars srcs
       aes <- alwaysEqualEqualities stmt
-      nextVars  <- (IM.! stmtId) <$> asks getNextVars
-      let onlyTagSubs = toSubsTags moduleName nextVars
-      let initialTagValues = HAnd $ mkEqual <$> srcTagSubs
-      return $
-        Horn { hornHead   = KVar stmtId onlyTagSubs
-             , hornBody   = HAnd $
-                            (mkEmptyKVar stmtId <| aes) |>
-                            initialTagValues |>
-                            transitionRelation stmt
-             , hornType   = SourceReset
-             , hornStmtId = stmtId
-             , hornData   = ()
-             }
-    _ ->
-      return $
-      Horn { hornHead   = KVar stmtId srcTagSubs
-           , hornBody   = mkEmptyKVar stmtId
-           , hornType   = SourceReset
-           , hornStmtId = stmtId
-           , hornData   = ()
-           }
+      nextVars  <- (HM.map (+ 1)) . (IM.! stmtId) <$> asks getNextVars
+      let tr = indexFix $ transitionRelation stmt
+      return ( HAnd $
+               mkEmptyKVar stmtId -- inv holds on 0 indices
+               |:> body  -- increment indices of srcs, clear the tags of the sources but keep the values
+               -- increment indices of non srcs, keep everything
+               |> (HAnd $ keepEverything $ addModuleName <$> toList nonSrcs)
+               |> (HAnd $ indexFix <$> aes) -- always_eq on 1 indices and last hold
+               |> tr -- transition starting from 1 indices
+             , toSubsTags moduleName nextVars
+             )
+    _    ->
+      return (body, clearSubs)
+  return $
+    Horn { hornHead   = KVar stmtId subs
+         , hornBody   = body'
+         , hornType   = TagReset
+         , hornStmtId = stmtId
+         , hornData   = ()
+         }
+  where
+    keepEverything vs =
+      foldl'
+      (\es (v, m) ->
+         es
+         |> mkEqual (HVarVL v m 1, HVarVL0 v m)
+         |> mkEqual (HVarVR v m 1, HVarVR0 v m)
+         |> mkEqual (HVarTL v m 1, HVarTL0 v m)
+         |> mkEqual (HVarTR v m 1, HVarTR0 v m))
+      mempty vs
 
- where
-  stmtId = stmtData stmt
-  mkZeroTags m subs v =
-    subs
-      |> (HVar v m 0 Tag LeftRun , HBool False)
-      |> (HVar v m 0 Tag RightRun, HBool False)
+    updateTagsKeepValues b vs =
+      foldl'
+      (\(es, ss) (v, m) ->
+         let es' = es
+                   |> mkEqual (HVarTL v m 1, HBool b)
+                   |> mkEqual (HVarTR v m 1, HBool b)
+                   |> mkEqual (HVarVL v m 1, HVarVL0 v m)
+                   |> mkEqual (HVarVR v m 1, HVarVR0 v m)
+             ss' = ss
+                   |> (HVarTL0 v m, HVarTL v m 1)
+                   |> (HVarTR0 v m, HVarTR v m 1)
+         in (es', ss'))
+      (mempty, mempty) vs
+
+    indexFix = updateIndices (+ 1)
+    stmtId = stmtData stmt
 
 
 -- -------------------------------------------------------------------------------------------------
 next :: FDS r => S -> Sem r (Horn ())
 -- -------------------------------------------------------------------------------------------------
 next stmt = do
-  Module {..} <- ask
+  m@Module {..} <- ask
+  killNonTopModules m
   nextVars <- (IM.! stmtId) <$> asks getNextVars
   aes <- alwaysEqualEqualities stmt
   trace $ show ("equalities" :: String, aes)
@@ -271,7 +290,8 @@ next stmt = do
 sinkCheck :: FDS r => S -> Sem r Horns
 -- -------------------------------------------------------------------------------------------------
 sinkCheck stmt = do
-  Module {..} <- ask
+  m@Module {..} <- ask
+  killNonTopModules m
   snks <- asks (^. currentSinks)
   return $ foldl' (\hs v -> hs |> go moduleName v) mempty snks
  where
@@ -291,7 +311,8 @@ sinkCheck stmt = do
 assertEqCheck :: FDS r => S -> Sem r Horns
 -- -------------------------------------------------------------------------------------------------
 assertEqCheck stmt = do
-  Module {..} <- ask
+  m@Module {..} <- ask
+  killNonTopModules m
   aes         <- asks (^. currentAssertEquals)
   return $ foldl' (\hs v -> hs |> go moduleName v) mempty aes
  where
@@ -311,6 +332,7 @@ assertEqCheck stmt = do
 instanceCheck :: FDM r => ModuleInstance Int -> Sem r (Horn ())
 -- -------------------------------------------------------------------------------------------------
 instanceCheck mi@ModuleInstance{..} = do
+  PE.throw $ IE VCGen $ "module instances not supported yet"
   m@Module{..} <- asks @ModuleMap (HM.! moduleInstanceType)
   let subs =
         foldl'
@@ -436,88 +458,103 @@ interferenceCheckWR wSt rSt = do
 
 
 -- -----------------------------------------------------------------------------
-summaryConstraints :: FD r => Module Int -> Sem r (L (Horn ()))
+summaryConstraints :: Module Int -> Sem r (L (Horn ()))
 -- -----------------------------------------------------------------------------
-summaryConstraints m = do
-  trace $ "summaryConstraints of " ++ show mn
-  mInstances <- getModuleInstances m
-  mClk <- getClock mn
-  case mInstances of
-    Nothing        -> return mempty
-    Just instances -> return . SQ.singleton $ summaryInitFromInstances mClk m instances
-  where
-    mn = moduleName m
-
--- | Values and tags of the expressions used in all the instances of the module
--- are used to initialize the input ports. Output ports' values and tags are
--- initially equal.
-summaryInitFromInstances :: Maybe Id -> Module Int -> L (ModuleInstance Int) -> Horn ()
-summaryInitFromInstances mClk m@Module{..} instances =
-  Horn { hornHead   = KVar mId (inputSubs <> outputSubs)
-       , hornBody   = body
+summaryConstraints Module{..} =
+  return . SQ.singleton $
+  Horn { hornHead   = mkEmptyKVar moduleData
+       , hornBody   = HAnd threadKVars
        , hornType   = ModuleSummary
-       , hornStmtId = mId
+       , hornStmtId = moduleData
        , hornData   = ()
        }
   where
-    body1 = instanceKVars instances
-    body2 =
-      mkEmptyKVar <$>
-      (getData <$> alwaysBlocks) <> (getData <$> moduleInstances)
-    body3 =
-      foldl' (\acc i -> acc <> instanceInputInitialValue instances i moduleName) mempty (inputs <> outputs)
-    body = HAnd $ body1 <> body2 <> body3
-    inputSubs = makeSubs inputs moduleName 1
-    outputSubs =
-      foldl' (\acc o -> acc |>
-                        (HVarVL0 o moduleName, HVarVR0 o moduleName) |>
-                        (HVarTL0 o moduleName, HVarTR0 o moduleName))
-      mempty outputs
-    mId     = getData m
-    inputs  = (\a -> Just a /= mClk) `SQ.filter` moduleInputs m
-    outputs = moduleOutputs m
+    threadKVars =
+      (mkEmptyKVar . getData <$> alwaysBlocks)
+      <> (mkEmptyKVar . getData <$> moduleInstances)
 
-instanceKVars :: L (ModuleInstance Int) -> L HornExpr
-instanceKVars = fmap (mkEmptyKVar . getData)
 
--- | for each v in vs, add the v_0 <- v_n substitution for both tags and runs.
-makeSubs :: Foldable f => f Id -> Id -> Int -> L (HornExpr, HornExpr)
-makeSubs variables moduleName n =
-  foldl' (\acc v -> acc |>
-                    (HVarVL0 v moduleName, HVarVL v moduleName n) |>
-                    (HVarVR0 v moduleName, HVarVR v moduleName n) |>
-                    (HVarTL0 v moduleName, HVarTL v moduleName n) |>
-                    (HVarTR0 v moduleName, HVarTR v moduleName n))
-  mempty variables
+-- summaryConstraints m = do
+--   PE.throw $ IE VCGen $ "wip: summaryconstraints"
+--   trace $ "summaryConstraints of " ++ show mn
+--   mInstances <- getModuleInstances m
+--   mClk <- getClock mn
+--   case mInstances of
+--     Nothing        -> return mempty
+--     Just instances -> return . SQ.singleton $ summaryInitFromInstances mClk m instances
+--   where
+--     mn = moduleName m
 
-instanceInputInitialValue :: L (ModuleInstance Int) -> Id -> Id -> L HornExpr
-instanceInputInitialValue instances varName moduleName =
-  SQ.fromList $ do
-  t <- [Tag, Value]
-  r <- [LeftRun, RightRun]
-  let toExpr e = toHornVar e t r
-  case t of
-    Tag ->
-      return $
-      HBinary HIff
-      (HVar { hVarName   = varName
-            , hVarModule = moduleName
-            , hVarIndex  = 1
-            , hVarType   = t
-            , hVarRun    = r
-            })
-      (HOr $ toExpr . getInstanceVar varName <$> instances)
-    Value ->
-      return $
-      let hv = HVar { hVarName   = varName
-                   , hVarModule = moduleName
-                   , hVarIndex  = 1
-                   , hVarType   = t
-                   , hVarRun    = r
-                   }
-      in HOr (HBinary HEquals hv . toExpr . getInstanceVar varName <$> instances)
-  where
-    getInstanceVar v ModuleInstance{..} = moduleInstancePorts HM.! v
+-- -- | Values and tags of the expressions used in all the instances of the module
+-- -- are used to initialize the input ports. Output ports' values and tags are
+-- -- initially equal.
+-- summaryInitFromInstances :: Maybe Id -> Module Int -> L (ModuleInstance Int) -> Horn ()
+-- summaryInitFromInstances mClk m@Module{..} instances =
+--   Horn { hornHead   = KVar mId (inputSubs <> outputSubs)
+--        , hornBody   = body
+--        , hornType   = ModuleSummary
+--        , hornStmtId = mId
+--        , hornData   = ()
+--        }
+--   where
+--     body1 = instanceKVars instances
+--     body2 =
+--       mkEmptyKVar <$>
+--       (getData <$> alwaysBlocks) <> (getData <$> moduleInstances)
+--     body3 =
+--       foldl' (\acc i -> acc <> instanceInputInitialValue instances i moduleName) mempty (inputs <> outputs)
+--     body = HAnd $ body1 <> body2 <> body3
+--     inputSubs = makeSubs inputs moduleName 1
+--     outputSubs =
+--       foldl' (\acc o -> acc |>
+--                         (HVarVL0 o moduleName, HVarVR0 o moduleName) |>
+--                         (HVarTL0 o moduleName, HVarTR0 o moduleName))
+--       mempty outputs
+--     mId     = getData m
+--     inputs  = (\a -> Just a /= mClk) `SQ.filter` moduleInputs m
+--     outputs = moduleOutputs m
+
+-- instanceKVars :: L (ModuleInstance Int) -> L HornExpr
+-- instanceKVars = fmap (mkEmptyKVar . getData)
+
+-- -- | for each v in vs, add the v_0 <- v_n substitution for both tags and runs.
+-- makeSubs :: Foldable f => f Id -> Id -> Int -> L (HornExpr, HornExpr)
+-- makeSubs variables moduleName n =
+--   foldl' (\acc v -> acc |>
+--                     (HVarVL0 v moduleName, HVarVL v moduleName n) |>
+--                     (HVarVR0 v moduleName, HVarVR v moduleName n) |>
+--                     (HVarTL0 v moduleName, HVarTL v moduleName n) |>
+--                     (HVarTR0 v moduleName, HVarTR v moduleName n))
+--   mempty variables
+
+-- instanceInputInitialValue :: L (ModuleInstance Int) -> Id -> Id -> L HornExpr
+-- instanceInputInitialValue instances varName moduleName =
+--   SQ.fromList $ do
+--   t <- [Tag, Value]
+--   r <- [LeftRun, RightRun]
+--   let toExpr e = toHornVar e t r
+--   case t of
+--     Tag ->
+--       return $
+--       HBinary HIff
+--       (HVar { hVarName   = varName
+--             , hVarModule = moduleName
+--             , hVarIndex  = 1
+--             , hVarType   = t
+--             , hVarRun    = r
+--             })
+--       (HOr $ toExpr . getInstanceVar varName <$> instances)
+--     Value ->
+--       return $
+--       let hv = HVar { hVarName   = varName
+--                    , hVarModule = moduleName
+--                    , hVarIndex  = 1
+--                    , hVarType   = t
+--                    , hVarRun    = r
+--                    }
+--       in HOr (HBinary HEquals hv . toExpr . getInstanceVar varName <$> instances)
+--   where
+--     getInstanceVar v ModuleInstance{..} = moduleInstancePorts HM.! v
 
 -- summaryNext :: Module Int -> Horn ()
 -- summaryNext m@Module{..} =
@@ -694,11 +731,11 @@ isTopModule Module{..} = do
   topModuleName <- asks @AnnotationFile (^. afTopModule)
   return $ moduleName == topModuleName
 
-getModuleInstances :: FD r => Module Int -> Sem r (Maybe (L (ModuleInstance Int)))
-getModuleInstances m@Module{..} = do
-  (\c is -> if c then Nothing else Just is)
-    <$> isTopModule m
-    <*> asks @ModuleInstanceMap (HM.! moduleName)
+-- getModuleInstances :: FD r => Module Int -> Sem r (Maybe (L (ModuleInstance Int)))
+-- getModuleInstances m@Module{..} = do
+--   (\c is -> if c then Nothing else Just is)
+--     <$> isTopModule m
+--     <*> asks @ModuleInstanceMap (HM.! moduleName)
 
 getCurrentSources :: FDS r => Sem r Ids
 getCurrentSources = do
@@ -708,3 +745,9 @@ getCurrentSources = do
     else do vars <- asks (^. currentVariables)
             inputs <- moduleInputs <$> ask
             return $ HS.filter (`elem` inputs) vars
+
+killNonTopModules :: G r => Module Int -> Sem r ()
+killNonTopModules m = do
+  check <- isTopModule m
+  unless check $ do
+    PE.throw $ IE VCGen $ "wip: submodule instances"
