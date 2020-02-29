@@ -11,14 +11,15 @@ module Iodine.Pipeline (pipeline) where
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
+import           Iodine.Transform.HornQuery
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
--- import           Iodine.Transform.Query
-import           Iodine.Transform.HornQuery
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
 import           Iodine.Types
+-- import           Iodine.Transform.Query
 
+import           Data.ByteString.Builder
 import           Data.Foldable
 import           Data.Function
 import qualified Data.HashMap.Strict as HM
@@ -39,7 +40,7 @@ IR ----+              ModuleSummary
 Annot ---> SanityCheck -> Merge -> Normalize -> VCGen -> Query
 -}
 pipeline
-  :: Members '[Error IodineException, Trace, Output String] r
+  :: Members '[Error IodineException, Trace, Output String, Output Builder] r
   => AnnotationFile             -- ^ annotation file
   -> Sem r (L (Module ()))      -- ^ ir parser
   -> Sem r FInfo                -- ^ fixpoint query to run

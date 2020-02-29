@@ -26,6 +26,7 @@ import           Iodine.Utils
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
+import           Data.ByteString.Builder
 import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
@@ -41,6 +42,7 @@ import qualified Language.Fixpoint.Horn.Types as FHT
 import qualified Language.Fixpoint.Types as FT
 import           Polysemy
 import qualified Polysemy.Error as PE
+import           Polysemy.Output
 import           Polysemy.Reader
 import           Polysemy.State
 import           Polysemy.Trace
@@ -59,6 +61,7 @@ type G r = Members '[ Trace
                     , Reader AnnotationFile
                     , PE.Error IodineException
                     , Reader ModuleMap
+                    , Output Builder
                     ] r
 type FD r  = (G r, Member (State St) r)
 type FDM r = (FD r, Member (Reader (Module Int)) r)
@@ -112,6 +115,24 @@ constructQuery horns = fmap st2FInfo . execState initialSt $ do
   trace "<<< begin constraints:"
   for_ horns addHornConstraint
   trace "end constraints >>>"
+  writeSmtFile
+
+
+-- | output the smt2 file
+writeSmtFile :: FD r => Sem r ()
+writeSmtFile = do
+  -- gets (^. qualifiers) >>= traverse_ (output . nl . PP.render . FT.toFix)
+  output $ nl "(qualif Q1 ((v Int) (x bool) (y bool)) ((x <=> y)))"
+  output $ nl "(qualif Q2 ((v Int) (x Int) (y Int)) ((x = y)))"
+  output (nl2 "")
+  gets (^. kvars) >>= traverse_ (output . nl . PP.render . FT.toFix . FKVar)
+  output (nl2 "")
+  output $ nl "(constraint (and"
+  gets (^. constraints) >>= traverse_ (output . nl2 . show)
+  output $ nl "))"
+  where
+    nl s  = stringUtf8 s <> stringUtf8 "\n"
+    nl2 s = nl s <> stringUtf8 "\n"
 
 
 handleModule :: FD r => Module Int -> Sem r ()
@@ -131,8 +152,12 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
     . annotationVariables
     <$> getAnnotations moduleName
   let params = toList $ getKVarParams n `HS.union` extraVars -- parameters of the kvar
-  modify $ kvars %~ (|> mkVar n params)
-  modify $ invVarMap %~ IM.insert n (list2map $ (,moduleName) <$> params)
+  unless (null params) $ do
+    let k = mkVar n params
+    trace $ printf "inv%d: %s" n (show params)
+    trace $ show k
+    modify $ kvars %~ (|> k)
+    modify $ invVarMap %~ IM.insert n (list2map $ (,moduleName) <$> params)
 
   where
     -- instead of using all the variables that occur in this thread, only keep
@@ -147,18 +172,27 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
                   else acc `HS.union` (nParams `HS.intersection` n2Params))
                mempty
                varMap
-      in vs
+      in if isNonCombinatorial n then nParams else vs
+
+    isNonCombinatorial :: Int -> Bool
+    isNonCombinatorial n =
+      case threads IM.!? n of
+        Nothing -> True
+        Just t -> case t of
+                    AB AlwaysBlock{..} -> abEvent /= Star
+                    MI _               -> True
 
     -- all variables of the threads
     varMap :: IM.IntMap Ids
     varMap =
       IM.fromList $
       (getData m, getVariables m) :
-      ((\t -> (getData t, getVariables t)) <$> threads)
+      ((\t -> (getData t, getVariables t)) <$> IM.elems threads)
 
     -- threads of this module
-    threads :: [Thread Int]
-    threads = toList $ (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
+    threads :: IM.IntMap (Thread Int)
+    threads = IM.fromList . fmap (\t -> (getData t, t)) . toList $
+              (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
 
     -- make a kvar
     mkVar :: Int -> [Id] -> FHT.Var FData
@@ -201,7 +235,23 @@ addHornConstraint h@Horn{..} = do
   unless (HS.null bindSet) $ do
     let md = ClauseData hornStmtId hornType
         c  = mkForAll (toList bindSet) bodyPred (FHT.Head headPred md)
-    modify $ constraints %~ (|> c)
+        -- Init
+        -- TagReset
+        -- SourceReset
+        -- Next
+        -- TagEqual
+        -- Interference
+        -- AssertEqCheck
+        -- WellFormed
+        -- InstanceCheck
+        -- ModuleSummary
+        checkType = \case
+          Init -> True
+          AssertEqCheck -> True
+          TagEqual -> True
+          TagReset -> True
+          _ -> False
+    when (checkType hornType) $ modify $ constraints %~ (|> c)
 
 mkForAll :: [(FT.Symbol, FT.Sort)] -> FHT.Pred -> FHT.Cstr FData -> FHT.Cstr FData
 mkForAll ((s, t):rest) pBody cHead = FHT.All b' c
@@ -241,39 +291,44 @@ hornVariables Horn{..} = mappend <$> go hornBody <*> go hornHead
       HBinary{..}  -> mappend <$> go hBinaryLhs <*> go hBinaryRhs
       HApp{..}     -> mfoldM go hAppArgs
       HNot e       -> go e
-      k@KVar{}     -> getKVarArgs k
-                      >>= mfoldM (\(lhs, rhs) -> mappend <$> goVar True lhs <*> go rhs)
+      k@KVar{}     ->
+        getKVarArgs k >>= \case
+        Nothing -> return mempty
+        Just l  -> mfoldM (\(lhs, rhs) -> mappend <$> goVar True lhs <*> go rhs) l
 
 
 -- | Given a kvar, returns the list of (parameter, argument) pairs in the right order
-getKVarArgs :: FD r => HornExpr -> Sem r [(HornExpr, HornExpr)]
+getKVarArgs :: FD r => HornExpr -> Sem r (Maybe [(HornExpr, HornExpr)])
 getKVarArgs KVar{..} = do
-  varMap <- gets ((IM.! hKVarId) . (^. invVarMap))
-  let emptyArgs = V.replicate (length varMap * 4) undefined
-      -- initialize all the kvar arguments to 0 index
-      updates1  =
-        HM.foldlWithKey'
-        (\acc (v, m) i ->
-           ( multiplyIndex i (Value, LeftRun)
-           , HVarVL0 v m
-           ) :
-           ( multiplyIndex i (Value, RightRun)
-           , HVarVR0 v m
-           ) :
-           ( multiplyIndex i (Tag, LeftRun)
-           , HVarTL0 v m
-           ) :
-           ( multiplyIndex i (Tag, RightRun)
-           , HVarTL0 v m
-           ) :
-          acc) [] varMap
-      args1 = emptyArgs V.// updates1
-  -- overwrite the arguments with the kvar subs
-  updates2 <-
-    catMaybes . toList
-    <$> for hKVarSubs (\(lhs,rhs) -> fmap (,rhs) <$> lookupInvIndex hKVarId lhs)
-  let args2 = args1 V.// updates2
-  return . toList $ V.zip args1 args2
+  mVarMap <- gets ((IM.!? hKVarId) . (^. invVarMap))
+  case mVarMap of
+    Nothing -> return Nothing
+    Just varMap -> do
+      let emptyArgs = V.replicate (length varMap * 4) undefined
+          -- initialize all the kvar arguments to 0 index
+          updates1  =
+            HM.foldlWithKey'
+            (\acc (v, m) i ->
+               ( multiplyIndex i (Value, LeftRun)
+               , HVarVL0 v m
+               ) :
+               ( multiplyIndex i (Value, RightRun)
+               , HVarVR0 v m
+               ) :
+               ( multiplyIndex i (Tag, LeftRun)
+               , HVarTL0 v m
+               ) :
+               ( multiplyIndex i (Tag, RightRun)
+               , HVarTR0 v m
+               ) :
+              acc) [] varMap
+          args1 = emptyArgs V.// updates1
+      -- overwrite the arguments with the kvar subs
+      updates2 <-
+        catMaybes . toList
+        <$> for hKVarSubs (\(lhs,rhs) -> fmap (,rhs) <$> lookupInvIndex hKVarId lhs)
+      let args2 = args1 V.// updates2
+      return . Just . toList $ V.zip args1 args2
 
 getKVarArgs _ = throw "getKVarArgs must be called with a kvar"
 
@@ -287,11 +342,12 @@ multiplyIndex n = \case
 
 
 lookupInvIndex :: FD r => Int -> HornExpr -> Sem r (Maybe Int)
-lookupInvIndex kvarId HVar{..} =
-  fmap (`multiplyIndex` (hVarType, hVarRun))
-  . HM.lookup (hVarName, hVarModule)
-  <$> gets ((IM.! kvarId) . (^. invVarMap))
-  where
+lookupInvIndex kvarId HVar{..} = do
+  mVarMap <- gets ((IM.!? kvarId) . (^. invVarMap))
+  return $ do
+    varMap <- mVarMap
+    n <- HM.lookup (hVarName, hVarModule) varMap
+    return $ n `multiplyIndex` (hVarType, hVarRun)
 lookupInvIndex m e =
   throw $ printf "lookupInvIndex called with %s and %s" (show m) (show e)
 
@@ -309,10 +365,12 @@ convertExprP (HAnd es) =
     _        -> FHT.PAnd . toList <$> traverse convertExprP es
 
 convertExprP KVar{..} = do
-  args <- fmap snd <$> getKVarArgs KVar{..}
-  unless (all isHornVariable args) $ do
+  args <-
+    fmap (fmap snd) <$> getKVarArgs KVar{..} >>=
+    maybe (throw "convertExprP must be called with a valid kvar") return
+  unless (not (null args) && all isHornVariable args) $ do
     trace $ show args
-    throw "kvar arguments must be symbols!"
+    throw "kvar arguments must be symbols and non-empty!"
   return $ case args of
     [] -> FHT.Reft $ FT.prop True
     _  -> FHT.Var (kvarSymbol hKVarId) $ getFixpointSymbol False <$> args
@@ -635,6 +693,16 @@ instance FT.Fixpoint FData where
 
 instance NFData FData
 
+newtype FKVar a = FKVar { fKVar :: FHT.Var a }
+
+instance FT.Fixpoint a => FT.Fixpoint (FKVar a) where
+  toFix fv =
+    let v  = fKVar fv
+        n  = PP.char '$' <> FT.toFix (FHT.hvName v)
+        as = (\(s, t) -> PP.parens $ FT.toFix s PP.<+> FT.toFix t) <$> FHT.hvArgs v
+        d  = PP.parens $ PP.hsep as
+    in PP.parens $ PP.text "var" PP.<+> n PP.<+> d
+
 
 -- | get the bind name used for the variable in the query if isParam
 getFixpointName :: Bool       -- ^ If true, the hVarIndex will be ignored
@@ -682,7 +750,7 @@ twoPairs (a SQ.:<| as) = ((a, ) <$> as) <> twoPairs as
 
 -- -- | make a KVar for the given invariant id
 kvarSymbol :: Int -> FT.Symbol
-kvarSymbol n = FT.symbol $ "$k" <> show n
+kvarSymbol n = FT.symbol $ "k" <> show n
 
 
 -- | variable used in refinements

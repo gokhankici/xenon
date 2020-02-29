@@ -157,16 +157,16 @@ tagReset stmt event = do
       tagsToClear     = addModuleName <$> toList nonSrcs
       (eSet,   setSubs)   = updateTagsKeepValues True  tagsToSet
       (eClear, clearSubs) = updateTagsKeepValues False tagsToClear
-      body = HAnd (eSet <> eClear)
+      body = HAnd $ mkEmptyKVar stmtId <| eSet <> eClear
   (body', subs) <- case event of
     Star -> do
       aes <- alwaysEqualEqualities stmt
       nextVars  <- (HM.map (+ 1)) . (IM.! stmtId) <$> asks getNextVars
       let tr = indexFix $ transitionRelation stmt
       return ( HAnd $
-               mkEmptyKVar stmtId -- inv holds on 0 indices
-               |:> body           -- increment all indices, keep values but update tags
-               |> (HAnd $ indexFix <$> aes) -- always_eq on 1 indices and last hold
+               -- inv holds on 0 indices
+               body           -- increment all indices, keep values but update tags
+               |:> (HAnd $ indexFix <$> aes) -- always_eq on 1 indices and last hold
                |> tr                        -- transition starting from 1 indices
              , toSubsTags moduleName nextVars
              )
@@ -210,7 +210,7 @@ srcTagReset stmt event = do
   let addModuleName v = (v, moduleName)
       tagsToClear     = addModuleName <$> toList srcs
       (eClear, clearSubs) = updateTagsKeepValues False tagsToClear
-      body = HAnd eClear
+      body = HAnd $ mkEmptyKVar stmtId <| eClear -- inv holds on 0 indices
   (body', subs) <- case event of
     Star -> do
       let nonSrcs = HS.difference vars srcs
@@ -218,10 +218,9 @@ srcTagReset stmt event = do
       nextVars  <- (HM.map (+ 1)) . (IM.! stmtId) <$> asks getNextVars
       let tr = indexFix $ transitionRelation stmt
       return ( HAnd $
-               mkEmptyKVar stmtId -- inv holds on 0 indices
-               |:> body  -- increment indices of srcs, clear the tags of the sources but keep the values
+               body  -- increment indices of srcs, clear the tags of the sources but keep the values
                -- increment indices of non srcs, keep everything
-               |> (HAnd $ keepEverything $ addModuleName <$> toList nonSrcs)
+               |:> (HAnd $ keepEverything $ addModuleName <$> toList nonSrcs)
                |> (HAnd $ indexFix <$> aes) -- always_eq on 1 indices and last hold
                |> tr -- transition starting from 1 indices
              , toSubsTags moduleName nextVars
@@ -458,21 +457,29 @@ interferenceCheckWR wSt rSt = do
 
 
 -- -----------------------------------------------------------------------------
-summaryConstraints :: Module Int -> Sem r (L (Horn ()))
+summaryConstraints :: G r => Module Int -> Sem r (L (Horn ()))
 -- -----------------------------------------------------------------------------
-summaryConstraints Module{..} =
-  return . SQ.singleton $
-  Horn { hornHead   = mkEmptyKVar moduleData
-       , hornBody   = HAnd threadKVars
-       , hornType   = ModuleSummary
-       , hornStmtId = moduleData
-       , hornData   = ()
-       }
+summaryConstraints m@Module{..} = do
+  ps <- getModulePorts m
+  return $ case ps of
+    SQ.Empty -> mempty
+    _ -> SQ.singleton $
+         Horn { hornHead   = mkEmptyKVar moduleData
+              , hornBody   = HAnd threadKVars
+              , hornType   = ModuleSummary
+              , hornStmtId = moduleData
+              , hornData   = ()
+              }
   where
     threadKVars =
       (mkEmptyKVar . getData <$> alwaysBlocks)
       <> (mkEmptyKVar . getData <$> moduleInstances)
 
+getModulePorts :: G r => Module Int -> Sem r (L Id)
+getModulePorts Module{..} = do
+  let portNames = variableName . portVariable <$> ports
+  mClk <- getClock moduleName
+  return $ (\v -> Just v /= mClk) `SQ.filter` portNames
 
 -- summaryConstraints m = do
 --   PE.throw $ IE VCGen $ "wip: summaryconstraints"

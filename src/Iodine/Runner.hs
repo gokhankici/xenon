@@ -11,20 +11,20 @@ import           Iodine.IodineArgs
 import           Iodine.Language.Annotation
 import           Iodine.Language.IRParser
 import           Iodine.Pipeline
--- import           Iodine.Transform.Query (FInfo)
 import           Iodine.Transform.HornQuery (FInfo)
 import           Iodine.Types
-
-import qualified Language.Fixpoint.Solver as F
-import qualified Language.Fixpoint.Types as FT
-import qualified Language.Fixpoint.Types.Config as FC
+-- import           Iodine.Transform.Query (FInfo)
 
 import qualified Control.Exception as E
 import           Control.Lens (view)
 import           Control.Monad
 import qualified Data.ByteString.Lazy as B
+import           Data.ByteString.Builder
 import           Data.Function
 import qualified Data.Text as T
+import qualified Language.Fixpoint.Solver as F
+import qualified Language.Fixpoint.Types as FT
+import qualified Language.Fixpoint.Types.Config as FC
 import           Polysemy hiding (run)
 import           Polysemy.Error
 import           Polysemy.Output
@@ -143,13 +143,17 @@ checkIR (IodineArgs{..}, af)
     computeFInfo :: IO FInfo
     computeFInfo = do
       irFileContents <- readFile fileName
-      mFInfo <- pipeline af
+      (bsBuilder, mFInfo) <- pipeline af
         (parse (fileName, irFileContents)) -- ir reader
         & handleTrace
         & errorToIOFinal
         & runOutputSem (embed . hPutStrLn stderr)
+        & runOutputMonoid (id @Builder)
         & embedToFinal
         & runFinal
+      unless noSave $ do
+        putStrLn $ "saving smt file to " ++ smtFile
+        B.writeFile smtFile (toLazyByteString bsBuilder)
       case mFInfo of
         Right finfo -> return finfo
         Left e      -> errorHandle e
@@ -165,6 +169,8 @@ checkIR (IodineArgs{..}, af)
                           , FC.minimize  = False
                           }
 
+    smtFile = fileName <.> "horn" <.> "smt2"
+
     fqoutFile :: FilePath
     fqoutFile =
       let (dir, base) = splitFileName fileName
@@ -177,4 +183,3 @@ checkIR (IodineArgs{..}, af)
 
 errorHandle :: IodineException -> IO a
 errorHandle e = E.throwIO e
-
