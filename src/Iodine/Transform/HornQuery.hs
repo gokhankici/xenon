@@ -108,9 +108,9 @@ st2FInfo st = FHI.hornFInfo query
 
 -- | Given the verification conditions, generate the query to be sent to the
 -- fixpoint solver
-constructQuery :: G r => Horns -> Sem r (FT.FInfo FData)
-constructQuery horns = fmap st2FInfo . execState initialSt $ do
-  asks @ModuleMap HM.elems >>= traverse_ handleModule
+constructQuery :: G r => L (Module Int) -> Horns -> Sem r (FT.FInfo FData)
+constructQuery modules horns = fmap st2FInfo . execState initialSt $ do
+  for_ modules handleModule
   ask >>= generateAutoQualifiers
   trace "<<< begin constraints:"
   for_ horns addHornConstraint

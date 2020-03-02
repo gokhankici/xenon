@@ -63,7 +63,7 @@ parseVariable =
 parseExpr :: Parser (Expr ())
 parseExpr =
   parseTerm "const" (Constant <$> constVar <*> parseData) <|>
-  parseTerm "var" (Variable <$> identifier <*> (comma *> identifier) <*> parseData) <|>
+  parseVarExpr <|>
   parseTerm "uf" (UF <$> identifier <*> (comma *> list parseExpr) <*> parseData) <|>
   parseTerm "ite_expr" (IfExpr
                         <$> parseExpr
@@ -78,6 +78,10 @@ parseExpr =
   where
     constVar :: Parser Id
     constVar = T.pack <$> MP.many MPC.alphaNumChar
+
+parseVarExpr :: Parser (Expr ())
+parseVarExpr =
+  parseTerm "var" (Variable <$> identifier <*> (comma *> identifier) <*> parseData)
 
 parseStmt :: Parser (Stmt ())
 parseStmt =
@@ -104,7 +108,7 @@ parseModuleInstance =
   ModuleInstance
   <$> identifier
   <*> (comma *> identifier)
-  <*> (comma *> parseMap identifier parseExpr)
+  <*> (comma *> parseMap identifier parseVarExpr)
   <*> parseData
 
 

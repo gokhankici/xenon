@@ -12,6 +12,9 @@
         ],
         "initial_eq": [
           "slow"
+        ],
+        "assert_eq": [
+          "slow"
         ]
       },
       "clock": "clk"

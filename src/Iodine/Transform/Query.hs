@@ -97,11 +97,11 @@ constructQuery :: G r => L (Module Int) -> Horns -> Sem r FInfo
 constructQuery modules horns = evalState initialState $ do
   setConstants
   traverse_ generateConstraint horns
-  traverse_ generateWFConstraints modules
-  for_ modules $ \m@Module{..} ->
+  for_ modules $ \m@Module{..} -> do
+    generateWFConstraints m
     (getQualifiers moduleName >>= traverse_ generateQualifiers) & runReader m
+    addSummaryQualifiers m
   ask >>= generateAutoQualifiers
-  for_ modules addSummaryQualifiers
   toFInfo
 
 

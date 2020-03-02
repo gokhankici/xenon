@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module Iodine.Language.Annotation where
 
@@ -54,9 +55,22 @@ makeLenses ''AnnotationFile
 
 parseAnnotations :: B.ByteString -> AnnotationFile
 parseAnnotations bs =
-  case eitherDecode bs of
+  case eitherDecode bs >>= validateAnnotationFile of
     Right af -> af
     Left msg -> error $ "Parsing annotation file failed:\n" ++ msg
+
+-- | 1. top module has source and sink annotations
+validateAnnotationFile :: AnnotationFile -> Either String AnnotationFile
+validateAnnotationFile af =
+  let topModuleName = af ^. afTopModule
+      mAnnots       = (^. moduleAnnotations) <$> HM.lookup topModuleName (af ^. afAnnotations)
+  in case mAnnots of
+       Nothing     -> Left "Top module does not exist"
+       Just annots ->
+         if | HS.null (annots ^. sources) -> Left "Top module no source!"
+            | HS.null (annots ^. sinks)   -> Left "Top module no sink!"
+            | otherwise -> Right af
+
 
 instance FromJSON Annotations where
   parseJSON = withObject "Annotations" $ \o -> do
@@ -67,8 +81,8 @@ instance FromJSON Annotations where
       parserThrowError [] ("invalid keys " ++ show keyDiff)
     annot <-
       Annotations
-      <$> o .:  "source"
-      <*> o .:  "sink"
+      <$> o .:? "source"     .!= mempty
+      <*> o .:? "sink"       .!= mempty
       <*> o .:? "initial_eq" .!= mempty
       <*> o .:? "always_eq"  .!= mempty
       <*> o .:? "assert_eq"  .!= mempty
