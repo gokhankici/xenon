@@ -18,8 +18,8 @@ module Iodine.Language.IR
   , Event (..)
   , AlwaysBlock (..)
   , Thread (..)
-  , getVariables
-  , getData
+  , GetVariables (..)
+  , GetData (..)
   , isInput
   , moduleInputs
   , moduleOutputs

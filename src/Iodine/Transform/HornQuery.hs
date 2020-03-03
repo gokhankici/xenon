@@ -663,11 +663,12 @@ mkSummaryQualifier n moduleName ls r =
   where
     mkVar v rn =
       getFixpointName True $
-      HVar { hVarName   = v
-           , hVarModule = moduleName
-           , hVarIndex  = 0
-           , hVarType   = Tag
-           , hVarRun    = rn
+      HVar { hVarName     = v
+           , hVarModule   = moduleName
+           , hVarIndex    = 0
+           , hVarType     = Tag
+           , hVarRun      = rn
+           , hThreadIndex = 0
            }
     typ = FT.boolSort
 

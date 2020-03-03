@@ -21,6 +21,7 @@ import           Iodine.Utils
 
 import           Control.Lens
 import           Control.Monad
+import           Data.Bifunctor
 import           Data.Foldable
 import           Data.Maybe
 import qualified Data.HashMap.Strict as HM
@@ -98,7 +99,7 @@ vcgenMod m@Module {..} = do
     allThreads          = (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
     allEvents           = void <$> toList (abEvent <$> alwaysBlocks)
     singleBlockForEvent = length allEvents == length (nub allEvents)
-    threadMap           = foldl' (\tm t -> IM.insert (getData t) t tm) mempty allThreads
+    threadMap           = foldl' (\tm t -> IM.insert (getThreadId t) t tm) mempty allThreads
 
 
 threadChecks :: FDM r => TI -> Sem r Horns
@@ -126,22 +127,24 @@ initializeTop thread@(AB _) = do
   zeroTags   <- foldl' (mkZeroTags moduleName) mempty <$> asks (^. currentVariables)
   -- init_eq and always_eq are initially set to the same values
   initEqs    <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
-  let initialCond = HAnd $
-                    fmap mkEqual (foldl' (valEquals moduleName) zeroTags initEqs)
-                    |> transitionRelationT thread
+  let initialCond = HAnd $ fmap mkEqual (foldl' (valEquals moduleName) zeroTags initEqs)
   subs <-
     if isStar thread
     then toSubs moduleName <$> getNextVars thread
     else foldMap (\v -> mkAllSubs v moduleName 0 0) <$> asks (^. currentVariables)
+  let extraConds = if   isStar thread
+                   then transitionRelationT thread
+                   else HBool True
   return $
-    Horn { hornHead   = makeKVar thread subs
-         , hornBody   = initialCond
+    Horn { hornHead   = makeKVar thread $
+                        second sti <$> subs
+         , hornBody   = sti $ HAnd $ initialCond |:> extraConds
          , hornType   = Init
-         , hornStmtId = threadId
+         , hornStmtId = getThreadId thread
          , hornData   = ()
          }
  where
-   threadId = getData thread
+   sti = setThreadIndex thread
    mkZeroTags m subs v =
      subs |> (HVarTL0 v m, HBool False) |> (HVarTR0 v m, HBool False)
    valEquals m subs v =
@@ -152,10 +155,10 @@ initializeTop thread@(MI ModuleInstance{..}) = do
   mn           <- asks moduleName
   targetModule <- asks (HM.! moduleInstanceType)
   initEqVars   <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
-  let targetModuleKVar = makeEmptyKVar targetModule
-  let initEqs = mkEqual <$> foldl' (valEquals mn) mempty initEqVars
-      initialCond = HAnd $ targetModuleKVar <| initEqs
-      subs        = HM.foldlWithKey'
+  let initEqs     = fixThreadId . mkEqual <$> foldl' (valEquals mn) mempty initEqVars
+      initialCond = HAnd $ makeEmptyKVar targetModule <| initEqs
+      subs        = second (setThreadIndex targetModule) <$>
+                    HM.foldlWithKey'
                     (\acc p e -> acc <> mkSubs e p (moduleName targetModule))
                     mempty
                     moduleInstancePorts
@@ -163,11 +166,11 @@ initializeTop thread@(MI ModuleInstance{..}) = do
     Horn { hornHead   = makeKVar thread subs
          , hornBody   = initialCond
          , hornType   = Init
-         , hornStmtId = threadId
+         , hornStmtId = getThreadId thread
          , hornData   = ()
          }
   where
-    threadId = getData thread
+    fixThreadId = setThreadIndex thread
     valEquals m subs v =
      subs |> (HVarVL0 v m, HVarVR0 v m)
     mkSubs kvarLhs kvarRhsName kvarRhsModule =
@@ -180,18 +183,16 @@ initializeTop thread@(MI ModuleInstance{..}) = do
 initializeSub thread = do
   currentModule <- ask @(Module Int)
   srcs <- getCurrentSources
-  let subs = foldMap (\v -> mkAllSubs v (moduleName currentModule) 0 1) srcs
+  let subs =
+        second (setThreadIndex currentModule) <$>
+        foldMap (\v -> mkAllSubs v (moduleName currentModule) 0 1) srcs
   return $
     Horn { hornHead   = makeKVar thread subs
          , hornBody   = makeKVar currentModule subs
          , hornType   = Init
-         , hornStmtId = threadId
+         , hornStmtId = getThreadId thread
          , hornData   = ()
          }
-  where
-    threadId = getData thread
-
-
 
 
 -- -------------------------------------------------------------------------------------------------
@@ -212,11 +213,11 @@ tagSet thread = withTopModule $ do
     then do
       aes      <- alwaysEqualEqualities thread
       nextVars <- HM.map (+ 1) <$> getNextVars thread
-      let tr = indexFix $ transitionRelationT thread
+      let tr = varIndexFix $ transitionRelationT thread
       return ( HAnd $
                -- inv holds on 0 indices
                body        -- increment all indices, keep values but update tags
-               |:> HAnd (indexFix <$> aes) -- always_eq on 1 indices and last hold
+               |:> HAnd (varIndexFix <$> aes) -- always_eq on 1 indices and last hold
                |> tr                       -- transition starting from 1 indices
              , toSubsTags moduleName nextVars
              )
@@ -229,7 +230,7 @@ tagSet thread = withTopModule $ do
          , hornData   = ()
          }
   where
-    indexFix = updateIndices (+ 1)
+    varIndexFix = updateVarIndex (+ 1)
     threadId = getData thread
 
 tagSetHelper :: FDS r => Sem r (Module Int, Ids, Ids)
@@ -251,11 +252,11 @@ srcTagReset thread = withTopModule $ do
       let nonSrcs = HS.difference vars srcs
       aes       <- alwaysEqualEqualities thread
       nextVars  <- HM.map (+ 1) <$> getNextVars thread
-      let tr    = indexFix $ transitionRelationT thread
+      let tr    = varIndexFix $ transitionRelationT thread
           body' = body  -- increment indices of srcs, clear the tags of the sources but keep the values
                   -- increment indices of non srcs, keep everything
                   |:> HAnd (keepEverything 1 $ addModuleName <$> toList nonSrcs)
-                  |> HAnd (indexFix <$> aes) -- always_eq on 1 indices and last hold
+                  |> HAnd (varIndexFix <$> aes) -- always_eq on 1 indices and last hold
                   |> tr -- transition starting from 1 indices
       return (HAnd body', toSubsTags moduleName nextVars)
     else return (body, clearSubs)
@@ -267,7 +268,7 @@ srcTagReset thread = withTopModule $ do
          , hornData   = ()
          }
   where
-    indexFix = updateIndices (+ 1)
+    varIndexFix = updateVarIndex (+ 1)
     threadId = getData thread
 
 
@@ -310,8 +311,8 @@ sinkCheck thread = do
   threadId = getData thread
   go threadKVar m v =
     Horn { hornHead   = HBinary HIff
-                        (HVar v m 0 Tag LeftRun)
-                        (HVar v m 0 Tag RightRun)
+                        (HVar v m 0 Tag LeftRun 0)
+                        (HVar v m 0 Tag RightRun 0)
          , hornBody   = threadKVar
          , hornType   = TagEqual
          , hornStmtId = threadId
@@ -331,8 +332,8 @@ assertEqCheck thread = do
   threadId = getData thread
   go threadKVar m v =
     Horn { hornHead   = HBinary HEquals
-                        (HVar v m 0 Value LeftRun)
-                        (HVar v m 0 Value RightRun)
+                        (HVar v m 0 Value LeftRun 0)
+                        (HVar v m 0 Value RightRun 0)
          , hornBody   = threadKVar
          , hornType   = AssertEqCheck
          , hornStmtId = threadId
@@ -522,8 +523,8 @@ alwaysEqualEqualities t = do
             in case HM.lookup v nvs of
               Just n  -> exprs' |>
                          HBinary HEquals
-                         (HVar v moduleName n Value LeftRun)
-                         (HVar v moduleName n Value RightRun)
+                         (HVar v moduleName n Value LeftRun 0)
+                         (HVar v moduleName n Value RightRun 0)
               Nothing -> exprs'
   foldl' go mempty <$> asks (^. currentAlwaysEquals)
 
@@ -613,8 +614,8 @@ toSubsTags m = HM.foldlWithKey' go mempty
 -- pairs for the equalities of vl, vr, tl, tr
 mkAllSubs, mkTagSubs, mkValueSubs :: Id -> Id -> Int -> Int -> L ExprPair
 mkAllSubs   v m n1 n2 = mkTagSubs v m n1 n2 <> mkValueSubs v m n1 n2
-mkTagSubs   v m n1 n2 = (\r -> (HVar v m n1 Tag r,   HVar v m n2 Tag r))   <$> (LeftRun |:> RightRun)
-mkValueSubs v m n1 n2 = (\r -> (HVar v m n1 Value r, HVar v m n2 Value r)) <$> (LeftRun |:> RightRun)
+mkTagSubs   v m n1 n2 = (\r -> (HVar v m n1 Tag r 0,   HVar v m n2 Tag r 0))   <$> (LeftRun |:> RightRun)
+mkValueSubs v m n1 n2 = (\r -> (HVar v m n1 Value r 0, HVar v m n2 Value r 0)) <$> (LeftRun |:> RightRun)
 
 
 -- | output port names of the given module
@@ -641,17 +642,23 @@ moduleInstancesMap = foldl' handleModule mempty
 
 
 class MakeKVar m where
+  getThreadId :: m Int -> Int
+
   makeEmptyKVar :: m Int -> HornExpr
+  makeEmptyKVar t = KVar (getThreadId t) mempty
+
   makeKVar :: m Int -> L ExprPair -> HornExpr
+  makeKVar t = KVar (getThreadId t) . fmap (first $ setThreadIndex t)
 
 instance MakeKVar Thread where
-  makeEmptyKVar t = KVar (getData t) mempty
-  makeKVar t subs = KVar (getData t) subs
+  getThreadId = getData
 
 instance MakeKVar Module where
-  makeEmptyKVar m = KVar (getData m) mempty
-  makeKVar m subs = KVar (getData m) subs
+  getThreadId = getData
 
+
+setThreadIndex :: MakeKVar m => m Int -> HornExpr -> HornExpr
+setThreadIndex t = updateThreadIndex (const $ getThreadId t)
 
 isTopModule :: FDM r => Sem r Bool
 isTopModule = do
@@ -698,11 +705,12 @@ throw = PE.throw . IE VCGen
 
 mkHornVar :: Expr Int -> HornVarType -> HornVarRun -> HornExpr
 mkHornVar e@Variable{..} t r =
-  HVar { hVarName   = varName
-       , hVarModule = varModuleName
-       , hVarIndex  = getData e
-       , hVarType   = t
-       , hVarRun    = r
+  HVar { hVarName     = varName
+       , hVarModule   = varModuleName
+       , hVarIndex    = getData e
+       , hVarType     = t
+       , hVarRun      = r
+       , hThreadIndex = 0
        }
 mkHornVar _ _ _ =
   error "mkHornVar must be called with an IR variable"

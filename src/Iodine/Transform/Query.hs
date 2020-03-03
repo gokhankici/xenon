@@ -354,11 +354,12 @@ mkSummaryQualifier n moduleName ls r =
   where
     mkVar v rn =
       getFixpointName True $
-      HVar { hVarName   = v
-           , hVarModule = moduleName
-           , hVarIndex  = 0
-           , hVarType   = Tag
-           , hVarRun    = rn
+      HVar { hVarName     = v
+           , hVarModule   = moduleName
+           , hVarIndex    = 0
+           , hVarType     = Tag
+           , hVarRun      = rn
+           , hThreadIndex = 0
            }
     typ = FT.boolSort
 
@@ -387,7 +388,7 @@ VLT_lvar => VLT_rvar1 || VLT_rvar2 || ...
 generateQualifiers (QImplies lhs rhss) = do
   m <- asks moduleName
   let q n = makeQualifierN ("CustomImp_" ++ show n) m LeftRun
-            lhs (FT.PImp) rhss
+            lhs FT.PImp rhss
   q <$> freshQualifierId >>= addQualifier
 
 
@@ -431,7 +432,7 @@ the following qualifiers are generated:
 generateQualifiers (QIff lhs rhss) = do
   m <- asks moduleName
   let q n = makeQualifierN ("CustomIff_" ++ show n) m LeftRun
-            lhs (FT.PIff) rhss
+            lhs FT.PIff rhss
   q <$> freshQualifierId >>= addQualifier
 
 
@@ -588,13 +589,17 @@ toFInfo =
 
 -- | get the bind name used for the variable in the query
 getFixpointName :: Bool -> HornExpr -> Id
-getFixpointName isParam HVar {..} = prefix <> varno <> name
- where
-  varno  = if isParam || hVarIndex == 0
-           then ""
-           else "N" <> T.pack (show hVarIndex) <> "_"
-  prefix = getVarPrefix hVarType hVarRun
-  name   = "M_" <> hVarModule <> "_V_" <> hVarName
+getFixpointName isParam HVar {..} =
+  prefix <> varno <> modulename <> "_" <> threadno <> "_" <> varname
+  where
+    prefix     = getVarPrefix hVarType hVarRun
+    varno      = if isParam || hVarIndex == 0
+                 then ""
+                 else "N" <> T.pack (show hVarIndex) <> "_"
+    modulename = "M_" <> hVarModule
+    threadno   = "T" <> T.pack (show hThreadIndex)
+    varname    = "V_" <> hVarName
+
 getFixpointName _ _ = error "must be called with a variable"
 
 getVarPrefix :: HornVarType -> HornVarRun -> Id

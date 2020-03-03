@@ -13,6 +13,7 @@ import qualified Iodine.Language.IR as IIR
 import           Iodine.Types
 
 import           Control.DeepSeq
+import           Data.Bifunctor
 import           Data.Foldable
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
@@ -56,11 +57,12 @@ data HornExpr =
   HConstant Id
   | HBool Bool
   | HInt  Int
-  | HVar { hVarName   :: Id
-         , hVarModule :: Id
-         , hVarIndex  :: Int
-         , hVarType   :: HornVarType
-         , hVarRun    :: HornVarRun
+  | HVar { hVarName     :: Id          -- ^ variable name
+         , hVarModule   :: Id          -- ^ module name
+         , hVarIndex    :: Int         -- ^ index used for temporary variables
+         , hVarType     :: HornVarType -- ^ value or tag
+         , hVarRun      :: HornVarRun  -- ^ left or right
+         , hThreadIndex :: Int         -- ^ thread index
          }
   | HAnd { hAppArgs :: L HornExpr }
   | HOr  { hAppArgs :: L HornExpr }
@@ -77,9 +79,10 @@ data HornExpr =
          , hKVarSubs :: L (HornExpr, HornExpr)
          }
 
+
 -- | update the variable index with the given function
-updateIndices :: (Int -> Int) -> HornExpr -> HornExpr
-updateIndices f = \case
+updateVarIndex :: (Int -> Int) -> HornExpr -> HornExpr
+updateVarIndex f = \case
   HVar{..}    -> HVar{ hVarIndex = f hVarIndex, .. }
   HAnd es     -> HAnd $ go <$> es
   HOr es      -> HOr $ go <$> es
@@ -89,11 +92,29 @@ updateIndices f = \case
                         }
   HApp{..}    -> HApp{ hAppArgs = go <$> hAppArgs, .. }
   HNot e      -> HNot $ go e
-  KVar{..}    -> KVar{ hKVarSubs = (\(l, r) -> (l, go r)) <$> hKVarSubs, .. }
+  KVar{..}    -> KVar{ hKVarSubs = second go <$> hKVarSubs, .. }
   HConstant c -> HConstant c
   HInt n      -> HInt n
   HBool b     -> HBool b
-  where go = updateIndices f
+  where go = updateVarIndex f
+
+-- | update the thread index with the given function
+updateThreadIndex :: (Int -> Int) -> HornExpr -> HornExpr
+updateThreadIndex f = \case
+  HVar{..}    -> HVar{ hThreadIndex = f hThreadIndex, .. }
+  HAnd es     -> HAnd $ go <$> es
+  HOr es      -> HOr $ go <$> es
+  HBinary{..} -> HBinary{ hBinaryLhs = go hBinaryLhs
+                        , hBinaryRhs = go hBinaryRhs
+                        , ..
+                        }
+  HApp{..}    -> HApp{ hAppArgs = go <$> hAppArgs, .. }
+  HNot e      -> HNot $ go e
+  KVar{..}    -> KVar{ hKVarSubs = bimap go go <$> hKVarSubs, .. }
+  HConstant c -> HConstant c
+  HInt n      -> HInt n
+  HBool b     -> HBool b
+  where go = updateThreadIndex f
 
 mkEqual :: (HornExpr, HornExpr) -> HornExpr
 mkEqual (e1, e2) = HBinary op e1 e2
@@ -173,11 +194,12 @@ instance NFData HornType
 
 pattern HVar0 :: Id -> Id -> HornVarType -> HornVarRun -> HornExpr
 pattern HVar0 v m t r =
-  HVar { hVarName   = v
-       , hVarModule = m
-       , hVarIndex  = 0
-       , hVarType   = t
-       , hVarRun    = r
+  HVar { hVarName     = v
+       , hVarModule   = m
+       , hVarIndex    = 0
+       , hVarType     = t
+       , hVarRun      = r
+       , hThreadIndex = 0
        }
 
 pattern HVarT0 :: Id -> Id -> HornVarRun -> HornExpr
@@ -185,10 +207,10 @@ pattern HVarT0 v m r = HVar0 v m Tag r
 
 
 pattern HVarVL, HVarVR, HVarTL, HVarTR :: Id -> Id -> Int -> HornExpr
-pattern HVarVL v m n = HVar v m n Value LeftRun
-pattern HVarVR v m n = HVar v m n Value RightRun
-pattern HVarTL v m n = HVar v m n Tag   LeftRun
-pattern HVarTR v m n = HVar v m n Tag   RightRun
+pattern HVarVL v m n = HVar v m n Value LeftRun  0
+pattern HVarVR v m n = HVar v m n Value RightRun 0
+pattern HVarTL v m n = HVar v m n Tag   LeftRun  0
+pattern HVarTR v m n = HVar v m n Tag   RightRun 0
 
 
 pattern HVarVL0, HVarVR0, HVarTL0, HVarTR0 :: Id -> Id -> HornExpr
@@ -204,11 +226,12 @@ allHornVars v m =
 
 toHornVar :: Expr Int -> HornVarType -> HornVarRun -> HornExpr
 toHornVar Variable{..} t r =
-  HVar { hVarName   = varName
-       , hVarModule = varModuleName
-       , hVarIndex  = exprData
-       , hVarType   = t
-       , hVarRun    = r
+  HVar { hVarName     = varName
+       , hVarModule   = varModuleName
+       , hVarIndex    = exprData
+       , hVarType     = t
+       , hVarRun      = r
+       , hThreadIndex = 0
        }
 toHornVar _ _ _ = undefined
 

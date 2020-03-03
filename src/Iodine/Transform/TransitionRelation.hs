@@ -67,11 +67,12 @@ transitionRelation' conds r stmt =
   val :: Expr Int -> HornExpr
   val = \case
     Constant {..} -> parseVerilogInt constantValue
-    Variable {..} -> HVar { hVarName   = varName
-                          , hVarModule = varModuleName
-                          , hVarIndex  = exprData
-                          , hVarType   = Value
-                          , hVarRun    = r
+    Variable {..} -> HVar { hVarName      = varName
+                          , hVarModule    = varModuleName
+                          , hVarIndex     = exprData
+                          , hVarType      = Value
+                          , hVarRun       = r
+                          , hThreadIndex  = 0
                           }
     UF {..}     -> ufVal ufName HornInt ufArgs
     IfExpr {..} -> ufVal name HornInt (ifExprCondition |:> ifExprThen |> ifExprElse)
@@ -92,11 +93,12 @@ transitionRelation' conds r stmt =
   tag :: Expr Int -> HornExpr
   tag = \case
     Constant {..} -> HBool False
-    Variable {..} -> HVar { hVarName   = varName
-                          , hVarModule = varModuleName
-                          , hVarIndex  = exprData
-                          , hVarType   = Tag
-                          , hVarRun    = r
+    Variable {..} -> HVar { hVarName      = varName
+                          , hVarModule    = varModuleName
+                          , hVarIndex     = exprData
+                          , hVarType      = Tag
+                          , hVarRun       = r
+                          , hThreadIndex  = 0
                           }
     UF {..}     -> ufTag ufArgs
     IfExpr {..} -> ufTag (ifExprCondition |:> ifExprThen |> ifExprElse)
