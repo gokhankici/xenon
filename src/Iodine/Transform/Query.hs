@@ -105,58 +105,6 @@ constructQuery modules horns = evalState initialState $ do
   toFInfo
 
 
-addSummaryQualifiers :: FD r => Module Int -> Sem r ()
-addSummaryQualifiers m@Module{..} = do
-  mClk <- getClock moduleName
-  let noClk a    = Just a /= mClk
-  let inputs     = SQ.filter noClk (moduleInputs m)
-  let nonInput a = Just a /= mClk && not (elem a inputs)
-  let vars       = SQ.filter nonInput (variableName <$> variables)
-  let foos = do ls <- toList $ powerset inputs
-                r  <- toList vars
-                return (ls, r)
-  for_ (zip foos [0..]) $ \((ls, r), n) ->
-    addQualifier $ mkSummaryQualifier n moduleName ls r
-
-mkSummaryQualifier :: Int -> Id -> L Id -> Id -> FT.Qualifier
-mkSummaryQualifier n moduleName ls r =
-  FT.mkQual
-  (FT.symbol $ "summaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n)
-  ( [ FT.QP vSymbol FT.PatNone FT.FInt
-    , FT.QP (symbol "rl") (FT.PatExact (symbol $ mkVar r LeftRun)) typ
-    , FT.QP (symbol "rr") (FT.PatExact (symbol $ mkVar r RightRun)) typ
-    ] ++
-    concat [ [ FT.QP (FT.symbol $ "l" ++ show n2)     (FT.PatExact (symbol $ mkVar l LeftRun)) typ
-             , FT.QP (FT.symbol $ "l" ++ show (n2+1)) (FT.PatExact (symbol $ mkVar l RightRun)) typ
-             ]
-           | (l, n2) <- zip (toList ls) [0,2..]
-           ]
-  )
-  ( FT.PAnd [ FT.eVar ("l" ++ show n2) `FT.PIff` FT.eVar ("l" ++ show (n2+1))
-            | (_, n2) <- zip (toList ls) [0,2..]
-            ] 
-    `FT.PImp`
-    (FT.eVar @String "rl" `FT.PIff` FT.eVar @String "rr")
-  )
-  (FT.dummyPos "")
-  where
-    mkVar v rn = 
-      getFixpointName $
-      HVar { hVarName   = v
-           , hVarModule = moduleName
-           , hVarIndex  = 0
-           , hVarType   = Tag
-           , hVarRun    = rn
-           }
-    typ = FT.boolSort
-
--- non empty powerset of the given sequence
-powerset :: L a -> L (L a)
-powerset SQ.Empty            = SQ.Empty
-powerset (a SQ.:<| SQ.Empty) = SQ.singleton $ SQ.singleton a
-powerset (a SQ.:<| as)       = let ps = powerset as
-                               in ps <> ((a SQ.:<|) <$> ps)
-
 -- -----------------------------------------------------------------------------
 -- generate constraints
 -- -----------------------------------------------------------------------------
@@ -181,7 +129,6 @@ generateWFConstraints m@Module{..} = do
   traverse_ (generateWFConstraint moduleName . abStmt) alwaysBlocks
   traverse_ (generateWFConstraintMI moduleName) moduleInstances
   generateWFConstraintM m
-
 
 
 -- | Create a well formedness constraint for the given statement
@@ -249,9 +196,20 @@ generateWFConstraintM m@Module{..} = do
     e  = FT.PKVar kvar mempty
     md = HornClauseId n ModuleSummary
 
+
 -- -----------------------------------------------------------------------------
 -- HornExpr -> FT.Expr
 -- -----------------------------------------------------------------------------
+
+-- | return the fixpoint name of the variable after updating the current bind
+-- environment
+convertHVar :: FDC r => Bool -> HornExpr -> Sem r FT.Expr
+convertHVar isParam var@HVar{..} = do
+  n <- getVariableId isParam var
+  modify (FT.insertsIBindEnv [n])
+  return $ FT.eVar (getFixpointName isParam var)
+convertHVar _ _ =
+  throw "convertHVar must be called with a Horn variable"
 
 convertExpr :: FDC r => HornExpr -> Sem r FT.Expr
 
@@ -274,22 +232,8 @@ convertExpr (HBool b) = do
   where name = if b then "tru" else "fals"
 
 convertExpr (HInt i) = return . FT.ECon . FT.I . toInteger $ i
---   be <- gets (^. invBindMap)
---   n  <- case HM.lookup name be of
---     Just n -> return n
---     Nothing ->
---       let sr = mkInt (FT.EEq (FT.eVar vSymbol) (FT.ECon $ FT.I $ toInteger i))
---       in  addBinding name sr
---   modify (FT.insertsIBindEnv [n])
---   return $ FT.eVar name
---   where name = "number_" <> T.pack (show i)
 
--- | return the fixpoint name of the variable after updating the current bind
--- environment
-convertExpr var@HVar {..} = do
-  n <- getVariableId var
-  modify (FT.insertsIBindEnv [n])
-  return $ FT.eVar (getFixpointName var)
+convertExpr var@HVar{} = convertHVar False var
 
 convertExpr (HAnd es) =
   case es of
@@ -327,28 +271,31 @@ convertExpr KVar {..} =
   FT.PKVar (mkKVar hKVarId) . FT.mkSubst . toList <$>
   traverse
   (\(lhs, rhs) -> do
-      lhs' <- convertExpr lhs
+      lhs' <- convertHVar True lhs
       sym  <-
         case lhs' of
           FT.EVar v -> return v
-          _ -> throw $
-               "expecting lhs of kvar substitution to be a symbol: " ++ show lhs
+          _ -> throw $ "expecting lhs of kvar substitution to be a symbol: " ++ show lhs
       rhs' <- convertExpr rhs
       return (sym, rhs')
   )
-  hKVarSubs
+  (SQ.filter (not . isZeroIndex . snd) hKVarSubs)
+  where
+    isZeroIndex :: HornExpr -> Bool
+    isZeroIndex HVar{..} = hVarIndex == 0
+    isZeroIndex _ = False
 
 
 -- | return the id of the variable. if the variable does not exist, add it to
 -- the environment first.
-getVariableId :: FD r => HornExpr -> Sem r FT.BindId
-getVariableId v = do
+getVariableId :: FD r => Bool -> HornExpr -> Sem r FT.BindId
+getVariableId isParam v = do
   mid <- HM.lookup name <$> gets (^. invBindMap)
   case mid of
     Just n  -> return n
     Nothing -> addBinding name sr
  where
-  name = getFixpointName v
+  name = getFixpointName isParam v
   sr   = case hVarType v of
     Value -> mkInt FT.PTrue
     Tag   -> mkBool FT.PTrue
@@ -369,6 +316,58 @@ toFSort HornBool = FT.boolSort
 -- -----------------------------------------------------------------------------
 -- generate qualifiers
 -- -----------------------------------------------------------------------------
+
+addSummaryQualifiers :: FD r => Module Int -> Sem r ()
+addSummaryQualifiers m@Module{..} = do
+  mClk <- getClock moduleName
+  let noClk a    = Just a /= mClk
+  let inputs     = SQ.filter noClk (moduleInputs m)
+  let nonInput a = Just a /= mClk && notElem a inputs
+  let vars       = SQ.filter nonInput (variableName <$> variables)
+  let foos = do ls <- toList $ powerset inputs
+                r  <- toList vars
+                return (ls, r)
+  for_ (zip foos [0..]) $ \((ls, r), n) ->
+    addQualifier $ mkSummaryQualifier n moduleName ls r
+
+mkSummaryQualifier :: Int -> Id -> L Id -> Id -> FT.Qualifier
+mkSummaryQualifier n moduleName ls r =
+  FT.mkQual
+  (FT.symbol $ "summaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n)
+  ( [ FT.QP vSymbol FT.PatNone FT.FInt
+    , FT.QP (symbol "rl") (FT.PatExact (symbol $ mkVar r LeftRun)) typ
+    , FT.QP (symbol "rr") (FT.PatExact (symbol $ mkVar r RightRun)) typ
+    ] ++
+    concat [ [ FT.QP (FT.symbol $ "l" ++ show n2)     (FT.PatExact (symbol $ mkVar l LeftRun)) typ
+             , FT.QP (FT.symbol $ "l" ++ show (n2+1)) (FT.PatExact (symbol $ mkVar l RightRun)) typ
+             ]
+           | (l, n2) <- zip (toList ls) [0,2..]
+           ]
+  )
+  ( FT.PAnd [ FT.eVar ("l" ++ show n2) `FT.PIff` FT.eVar ("l" ++ show (n2+1))
+            | (_, n2) <- zip (toList ls) [0,2..]
+            ]
+    `FT.PImp`
+    (FT.eVar @String "rl" `FT.PIff` FT.eVar @String "rr")
+  )
+  (FT.dummyPos "")
+  where
+    mkVar v rn =
+      getFixpointName True $
+      HVar { hVarName   = v
+           , hVarModule = moduleName
+           , hVarIndex  = 0
+           , hVarType   = Tag
+           , hVarRun    = rn
+           }
+    typ = FT.boolSort
+
+-- non empty powerset of the given sequence
+powerset :: L a -> L (L a)
+powerset SQ.Empty            = SQ.Empty
+powerset (a SQ.:<| SQ.Empty) = SQ.singleton $ SQ.singleton a
+powerset (a SQ.:<| as)       = let ps = powerset as
+                               in ps <> ((a SQ.:<|) <$> ps)
 
 -- | Creates the fixpoint qualifier based on the description given in the
 -- annotation file
@@ -410,7 +409,7 @@ generateQualifiers (QPairs vs) =
                addQualifier)
  where
   vars m       = (`HVarTL0` m) <$> vs
-  varPairs m   = twoPairs $ getFixpointName <$> vars m
+  varPairs m   = twoPairs $ getFixpointName True <$> vars m
   q (x1, x2) n =
     makeQualifier2 ("Custom2_" ++ show n) Tag
     (FT.PatExact (symbol x1))
@@ -485,7 +484,7 @@ generateAutoQualifiers af = forM_ sourcePairs $ \(s1, s2) ->
     mkQ s1 s2 n = makeQualifier2 ("SrcTagEq_" ++ show n) Tag
                   (FT.PatExact (symbol s1))
                   (FT.PatExact (symbol s2))
-    mkVar v     = getFixpointName $ HVarTL0 v topModuleName
+    mkVar v     = getFixpointName True $ HVarTL0 v topModuleName
 
 
 -- | create a qualifier where the given patterns are compared
@@ -544,13 +543,7 @@ makeQualifierN name m r lhs fOp rhss =
     rs           = mkVar <$> rhss
     numberedRhss = zip [1..] $ toList rs
     typ          = FT.boolSort
-
--- | return the name of the variable in Tag type with 0 index
-mkVarT0 :: Id                 -- ^ variable name
-        -> Id                 -- ^ module name
-        -> HornVarRun         -- ^ run type
-        -> Id
-mkVarT0 = curry3 $ getFixpointName . uncurry3 HVarT0
+    mkVarT0      = curry3 $ getFixpointName True . uncurry3 HVarT0
 
 -- -----------------------------------------------------------------------------
 -- helper functions
@@ -561,7 +554,7 @@ mkVarT0 = curry3 $ getFixpointName . uncurry3 HVarT0
 setConstants :: FD r => Sem r ()
 setConstants = forM_ constants $ uncurry addBinding
  where
-  b val = mkBool (FT.PIff (FT.eVar $ vSymbol) val)
+  b val = mkBool (FT.PIff (FT.eVar vSymbol) val)
   constants = [("tru", b FT.PTrue), ("fals", b FT.PFalse)]
 
 
@@ -594,21 +587,21 @@ toFInfo =
         return mempty
 
 -- | get the bind name used for the variable in the query
-getFixpointName :: HornExpr -> Id
-getFixpointName HVar {..} = varno <> prefix <> name
+getFixpointName :: Bool -> HornExpr -> Id
+getFixpointName isParam HVar {..} = prefix <> varno <> name
  where
-  varno  = if hVarIndex > 0
-           then "N" <> T.pack (show hVarIndex) <> "_"
-           else ""
+  varno  = if isParam || hVarIndex == 0
+           then ""
+           else "N" <> T.pack (show hVarIndex) <> "_"
   prefix = getVarPrefix hVarType hVarRun
   name   = "M_" <> hVarModule <> "_V_" <> hVarName
-getFixpointName _ = error "must be called with a variable"
+getFixpointName _ _ = error "must be called with a variable"
 
 getVarPrefix :: HornVarType -> HornVarRun -> Id
 getVarPrefix hVarType hVarRun =
   case (hVarType, hVarRun) of
-    (Tag  , LeftRun ) -> "VLT_"
-    (Tag  , RightRun) -> "VRT_"
+    (Tag  , LeftRun ) -> "TL_"
+    (Tag  , RightRun) -> "TR_"
     (Value, LeftRun ) -> "VL_"
     (Value, RightRun) -> "VR_"
 

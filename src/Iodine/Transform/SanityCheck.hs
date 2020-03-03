@@ -182,11 +182,6 @@ checkVariables =
             isInputVar v = v `HS.member` inputs
             isOutputVar v = v `HS.member` outputs
 
-        when (HS.null srcs) $
-          throw "No source variable is given!"
-        when (HS.null snks) $
-          throw "No sink variable is given!"
-
         -- all annotation variables actually exist
         forM_ [ srcs
               , snks
@@ -200,11 +195,13 @@ checkVariables =
         clk  <- getClock moduleName
         let isNotClock name = maybe True (name /=) clk
 
+        isTopModule <- (== moduleName) <$> asks (^. afTopModule)
+
         -- all inputs must be a source
         for_ ports $ \case
           Input v ->
             let name = variableName v
-            in when (isNotClock name && not (HS.member name srcs)) $
+            in when (isTopModule && isNotClock name && not (HS.member name srcs)) $
                throw $ printf "The input port %s is not declared as a taint source!" name
           Output _ -> return ()
 

@@ -1,36 +1,30 @@
 {
-  "clock": "clk",
-  "annotations": [
-    {
-      "type": "source",
-      "variables": [
-        "x"
-      ]
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "x"
+        ],
+        "sink": [
+          "y"
+        ],
+        "always_eq": [
+          "x"
+        ],
+        "initial_eq": [
+          "Stall"
+        ]
+      },
+      "clock": "clk"
     },
-    {
-      "type": "sink",
-      "variables": [
-        "y"
-      ]
-    },
-    {
-      "type": "always_eq",
-      "variables": [
-        "x"
-      ]
-    },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "Stall"
-      ]
-    },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "val"
-      ],
-      "module": "reg_file"
+    "reg_file": {
+      "annotations": {
+        "initial_eq": [
+          "val"
+        ]
+      },
+      "clock": "clk"
     }
-  ]
+  }
 }

@@ -20,8 +20,10 @@ module test(clk);
 
    wire Stall_wire;
 
+   assign reg_file_input = 0;
+
    // @annot{sanitize_mod(reg_file, val)}
-   reg_file REG_FILE(clk, 0, Stall_wire);
+   reg_file REG_FILE(clk, reg_file_input, Stall_wire);
 
    always @(*) begin
      Stall = Stall_wire;
