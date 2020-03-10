@@ -345,19 +345,27 @@ instance ShowIndex a => Show (Module a) where
 instance ShowIndex a => Show (ModuleInstance a) where
   show = PP.render . doc
 
+instance ShowIndex a => Show (Thread a) where
+  show (AB ab) = PP.render $ doc ab
+  show (MI mi) = PP.render $ doc mi
+
 isInput :: Port -> Bool
 isInput (Input _)  = True
 isInput (Output _) = False
 
-moduleInputs, moduleOutputs :: Module a -> L Id
+moduleInputs, moduleOutputs :: Module a -> Maybe Id -> Ids
 (moduleInputs, moduleOutputs) = (helper True, helper False)
   where
-    helper check Module{..} =
-      foldl' (addInput check) mempty ports
-    addInput check acc p =
-      if isInput p == check
-      then acc SQ.|> variableName (portVariable p)
-      else acc
+    helper check Module{..} mclk =
+      foldl' (addInput check mclk) mempty ports
+    addInput check mclk acc p =
+      let v = variableName (portVariable p)
+          notClk = case mclk of
+                     Nothing -> True
+                     Just clk -> v /= clk
+      in if isInput p == check && notClk
+         then acc <> liftToMonoid v
+         else acc
 
 -- | is the given thread an always block with the star event?
 isStar :: Eq a => Thread a -> Bool

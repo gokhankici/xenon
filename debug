@@ -4,10 +4,11 @@ cd "${0:A:h}"
 
 # PROFILE="--profile"
 
-# TEST="test/verilog/neg/neg-test-2.v"
 # TEST="examples/verilog/stall.v"
-TEST="test/verilog/pos/tr-submodule-01.v"
+# TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-1.v"
+TEST="test/verilog/neg/neg-test-2-v0.v"
+
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
 

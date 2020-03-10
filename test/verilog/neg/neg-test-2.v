@@ -3,12 +3,6 @@ module test(clk);
    reg   x;
    reg   y; 
 
-   // @annot{taint_source(x)}
-   // @annot{taint_sink(y)}
-
-   // @annot{sanitize_glob(x)}
-   // @annot{sanitize(Stall)}
-
    reg   Stall;
 
    always @(posedge clk) begin
@@ -22,7 +16,6 @@ module test(clk);
 
    assign reg_file_input = 0;
 
-   // @annot{sanitize_mod(reg_file, val)}
    reg_file REG_FILE(clk, reg_file_input, Stall_wire);
 
    always @(*) begin

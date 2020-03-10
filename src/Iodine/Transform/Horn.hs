@@ -57,12 +57,12 @@ data HornExpr =
   HConstant Id
   | HBool Bool
   | HInt  Int
-  | HVar { hVarName     :: Id          -- ^ variable name
-         , hVarModule   :: Id          -- ^ module name
-         , hVarIndex    :: Int         -- ^ index used for temporary variables
-         , hVarType     :: HornVarType -- ^ value or tag
-         , hVarRun      :: HornVarRun  -- ^ left or right
-         , hThreadIndex :: Int         -- ^ thread index
+  | HVar { hVarName   :: Id          -- ^ variable name
+         , hVarModule :: Id          -- ^ module name
+         , hVarIndex  :: Int         -- ^ index used for temporary variables
+         , hVarType   :: HornVarType -- ^ value or tag
+         , hVarRun    :: HornVarRun  -- ^ left or right
+         , hThreadId  :: Int         -- ^ thread index
          }
   | HAnd { hAppArgs :: L HornExpr }
   | HOr  { hAppArgs :: L HornExpr }
@@ -87,7 +87,7 @@ class MakeKVar m where
   makeEmptyKVar t = KVar (getThreadId t) mempty
 
   makeKVar :: m Int -> L (HornExpr, HornExpr) -> HornExpr
-  makeKVar t = KVar (getThreadId t) . fmap (first $ setThreadIndex t)
+  makeKVar t = KVar (getThreadId t) . fmap (first $ setThreadId t)
 
 instance MakeKVar Thread where
   getThreadId = getData
@@ -96,8 +96,8 @@ instance MakeKVar Module where
   getThreadId = getData
 
 
-setThreadIndex :: MakeKVar m => m Int -> HornExpr -> HornExpr
-setThreadIndex t = updateThreadIndex (const $ getThreadId t)
+setThreadId :: MakeKVar m => m Int -> HornExpr -> HornExpr
+setThreadId t = updateThreadId (const $ getThreadId t)
 
 
 -- | update the variable index with the given function
@@ -119,9 +119,9 @@ updateVarIndex f = \case
   where go = updateVarIndex f
 
 -- | update the thread index with the given function
-updateThreadIndex :: (Int -> Int) -> HornExpr -> HornExpr
-updateThreadIndex f = \case
-  HVar{..}    -> HVar{ hThreadIndex = f hThreadIndex, .. }
+updateThreadId :: (Int -> Int) -> HornExpr -> HornExpr
+updateThreadId f = \case
+  HVar{..}    -> HVar{ hThreadId = f hThreadId, .. }
   HAnd es     -> HAnd $ go <$> es
   HOr es      -> HOr $ go <$> es
   HBinary{..} -> HBinary{ hBinaryLhs = go hBinaryLhs
@@ -134,7 +134,7 @@ updateThreadIndex f = \case
   HConstant c -> HConstant c
   HInt n      -> HInt n
   HBool b     -> HBool b
-  where go = updateThreadIndex f
+  where go = updateThreadId f
 
 mkEqual :: (HornExpr, HornExpr) -> HornExpr
 mkEqual (e1, e2) = HBinary op e1 e2
@@ -178,7 +178,12 @@ instance Show HornExpr where
                          (Value, LeftRun)  -> "VL"
                          (Value, RightRun) -> "VR"
           in PP.hcat $ PP.punctuate (PP.char '.')
-             [PP.text prefix , text hVarModule , text hVarName , PP.int hVarIndex]
+             [ PP.text prefix
+             , text hVarModule
+             , PP.text "T" PP.<> PP.int hThreadId
+             , text hVarName
+             , PP.int hVarIndex
+             ]
         HAnd es -> PP.text "&&" PP.<+> goL es
         HOr es -> PP.text "||" PP.<+> goL es
         HBinary{..} -> PP.hsep [go hBinaryLhs, PP.text (show hBinaryOp), go hBinaryRhs]
@@ -214,12 +219,12 @@ instance NFData HornType
 
 pattern HVar0 :: Id -> Id -> HornVarType -> HornVarRun -> HornExpr
 pattern HVar0 v m t r =
-  HVar { hVarName     = v
-       , hVarModule   = m
-       , hVarIndex    = 0
-       , hVarType     = t
-       , hVarRun      = r
-       , hThreadIndex = 0
+  HVar { hVarName   = v
+       , hVarModule = m
+       , hVarIndex  = 0
+       , hVarType   = t
+       , hVarRun    = r
+       , hThreadId  = 0
        }
 
 pattern HVarT0 :: Id -> Id -> HornVarRun -> HornExpr
@@ -253,12 +258,12 @@ allTagRuns =
 
 toHornVar :: Expr Int -> HornVarType -> HornVarRun -> HornExpr
 toHornVar Variable{..} t r =
-  HVar { hVarName     = varName
-       , hVarModule   = varModuleName
-       , hVarIndex    = exprData
-       , hVarType     = t
-       , hVarRun      = r
-       , hThreadIndex = 0
+  HVar { hVarName   = varName
+       , hVarModule = varModuleName
+       , hVarIndex  = exprData
+       , hVarType   = t
+       , hVarRun    = r
+       , hThreadId  = 0
        }
 toHornVar _ _ _ = undefined
 
@@ -268,12 +273,12 @@ isHornVariable _      = False
 
 mkHornVar :: Expr Int -> HornVarType -> HornVarRun -> HornExpr
 mkHornVar e@Variable{..} t r =
-  HVar { hVarName     = varName
-       , hVarModule   = varModuleName
-       , hVarIndex    = getData e
-       , hVarType     = t
-       , hVarRun      = r
-       , hThreadIndex = 0
+  HVar { hVarName   = varName
+       , hVarModule = varModuleName
+       , hVarIndex  = getData e
+       , hVarType   = t
+       , hVarRun    = r
+       , hThreadId  = 0
        }
 mkHornVar _ _ _ =
   error "mkHornVar must be called with an IR variable"

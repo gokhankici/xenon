@@ -82,6 +82,7 @@ simple = mkCollection "simple" $ ts ++ [t']
       , "merge05"
       , "secverilog-01"
       , "nb-test-01"
+      , "tr-submodule-01"
       ]
 
 
@@ -133,6 +134,7 @@ negative = mkCollection "negative" $ go <$> names
     negDir = testDir </> "verilog" </> "neg"
     go name = TF name "test" $ negDir </> name <.> "v"
     names = [ "neg-test-1"
+            , "neg-test-2-v0"
             , "neg-test-2"
             , "neg-test-5"
             , "tp"

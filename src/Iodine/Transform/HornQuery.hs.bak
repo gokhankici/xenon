@@ -623,16 +623,15 @@ makeQualifierN name m r lhs fOp rhss =
 addSummaryQualifiers :: FD r => Module Int -> Sem r ()
 addSummaryQualifiers m@Module{..} = do
   mClk <- getClock moduleName
-  let noClk a    = Just a /= mClk
-  let inputs     = SQ.filter noClk (moduleInputs m)
-  unless (SQ.null inputs) $ do
+  let inputs = moduleInputs m `HS.difference` maybeToMonoid mClk
+  unless (HS.null inputs) $ do
     let nonInput a = Just a /= mClk && notElem a inputs
     let vars       = SQ.filter nonInput (variableName <$> variables)
     trace $ show m
     trace $ show mClk
     trace $ show inputs
     trace $ show vars
-    let foos = do ls <- toList $ powerset inputs
+    let foos = do ls <- toList $ powerset $ toSequence inputs
                   r  <- toList vars
                   return (ls, r)
     for_ (zip foos [0..]) $ \((ls, r), n) ->
@@ -663,12 +662,12 @@ mkSummaryQualifier n moduleName ls r =
   where
     mkVar v rn =
       getFixpointName True $
-      HVar { hVarName     = v
-           , hVarModule   = moduleName
-           , hVarIndex    = 0
-           , hVarType     = Tag
-           , hVarRun      = rn
-           , hThreadIndex = 0
+      HVar { hVarName   = v
+           , hVarModule = moduleName
+           , hVarIndex  = 0
+           , hVarType   = Tag
+           , hVarRun    = rn
+           , hThreadId  = 0
            }
     typ = FT.boolSort
 

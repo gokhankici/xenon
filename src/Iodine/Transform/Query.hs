@@ -38,7 +38,7 @@ import           Polysemy.Trace
 import           Polysemy.State
 import qualified Polysemy.Error as PE
 import qualified Text.PrettyPrint.HughesPJ as PP
-import           Text.Printf
+-- import           Text.Printf
 
 -- -----------------------------------------------------------------------------
 -- type definitions
@@ -139,7 +139,7 @@ generateWFConstraint :: (FD r, MakeKVar t)
                      -> Sem r ()
 generateWFConstraint threadModuleName thread = do
   varNames <- askHornVariables thread
-  let hornVars = setThreadIndex thread
+  let hornVars = setThreadId thread
                  <$> foldMap (`allHornVars` threadModuleName) varNames
   (ienv,_) <- traverse_ convertExpr hornVars & runState mempty
   case FT.wfC ienv (mkInt e) md of
@@ -200,11 +200,14 @@ convertExpr (HOr es) =
     _        -> FT.POr . toList <$> traverse convertExpr es
 
 convertExpr HBinary {..} =
-  case hBinaryOp of
-    HEquals    -> FT.EEq         <$> convertExpr hBinaryLhs <*> convertExpr hBinaryRhs
-    HNotEquals -> FT.PAtom FT.Ne <$> convertExpr hBinaryLhs <*> convertExpr hBinaryRhs
-    HImplies   -> FT.PImp        <$> convertExpr hBinaryLhs <*> convertExpr hBinaryRhs
-    HIff       -> FT.PIff        <$> convertExpr hBinaryLhs <*> convertExpr hBinaryRhs
+  toFP <$> convertExpr hBinaryLhs <*> convertExpr hBinaryRhs
+  where
+    toFP =
+        case hBinaryOp of
+          HEquals    -> FT.EEq
+          HNotEquals -> FT.PAtom FT.Ne
+          HImplies   -> FT.PImp
+          HIff       -> FT.PIff
 
 convertExpr HNot {..} = FT.PNot <$> convertExpr hNotArg
 
@@ -233,11 +236,7 @@ convertExpr KVar {..} =
       rhs' <- convertExpr rhs
       return (sym, rhs')
   )
-  (SQ.filter (not . isZeroIndex . snd) hKVarSubs)
-  where
-    isZeroIndex :: HornExpr -> Bool
-    isZeroIndex HVar{..} = hVarIndex == 0
-    isZeroIndex _ = False
+  hKVarSubs
 
 
 -- | return the id of the variable. if the variable does not exist, add it to
@@ -274,47 +273,39 @@ toFSort HornBool = FT.boolSort
 addSummaryQualifiers :: FD r => Module Int -> Sem r ()
 addSummaryQualifiers m@Module{..} = do
   mClk <- getClock moduleName
-  let noClk a    = Just a /= mClk
-  let inputs     = SQ.filter noClk (moduleInputs m)
-  let nonInput a = Just a /= mClk && notElem a inputs
-  let vars       = SQ.filter nonInput (variableName <$> variables)
-  let foos = do ls <- toList $ powerset inputs
-                r  <- toList vars
-                return (ls, r)
-  for_ (zip foos [0..]) $ \((ls, r), n) ->
-    addQualifier $ mkSummaryQualifier n moduleName ls r
+  let inputs     = moduleInputs m mClk
+  let inputLists = toList $ powerset $ toSequence inputs
+  for_ (zip inputLists [0..]) $ \(ls, n) ->
+    let qualifierName = "SummaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n
+    in addQualifier $ mkSummaryQualifier qualifierName ls
 
-mkSummaryQualifier :: Int -> Id -> L Id -> Id -> FT.Qualifier
-mkSummaryQualifier n moduleName ls r =
+-- | given a list of input ports i1, i2, ... creates a qualifier of the form:
+-- ((TL_i1 <=> TR_i1) && (TL_i2 <=> TR_i2) && ...) ==> TL_$1 <=> TR_$1)
+mkSummaryQualifier :: String -> L Id -> FT.Qualifier
+mkSummaryQualifier qualifierName inputs =
   FT.mkQual
-  (FT.symbol $ "SummaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n)
+  (FT.symbol qualifierName)
   ( [ FT.QP vSymbol FT.PatNone FT.FInt
-    , FT.QP (symbol "rl") (FT.PatExact (symbol $ mkVar r LeftRun)) typ
-    , FT.QP (symbol "rr") (FT.PatExact (symbol $ mkVar r RightRun)) typ
+    , FT.QP (symbol "rl") (FT.PatPrefix (mkRhsSymbol LeftRun) 1) typ
+    , FT.QP (symbol "rr") (FT.PatPrefix (mkRhsSymbol RightRun) 1) typ
     ] ++
-    concat [ [ FT.QP (FT.symbol $ "l" ++ show n2)     (FT.PatExact (symbol $ mkVar l LeftRun)) typ
-             , FT.QP (FT.symbol $ "l" ++ show (n2+1)) (FT.PatExact (symbol $ mkVar l RightRun)) typ
+    concat [ [ FT.QP (FT.symbol $ "i" ++ show n2)     (FT.PatPrefix (mkLhsSymbol i LeftRun) n2) typ
+             , FT.QP (FT.symbol $ "i" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbol i RightRun) n2) typ
              ]
-           | (l, n2) <- zip (toList ls) [0,2..]
+           | (i, n2) <- zip (toList inputs) [0,2..]
            ]
   )
-  ( FT.PAnd [ FT.eVar ("l" ++ show n2) `FT.PIff` FT.eVar ("l" ++ show (n2+1))
-            | (_, n2) <- zip (toList ls) [0,2..]
+  ( FT.PAnd [ FT.eVar ("i" ++ show n2) `FT.PIff` FT.eVar ("i" ++ show (n2+1))
+            | (_, n2) <- zip (toList inputs) [0,2..]
             ]
     `FT.PImp`
     (FT.eVar @String "rl" `FT.PIff` FT.eVar @String "rr")
   )
   (FT.dummyPos "")
   where
-    mkVar v rn =
-      getFixpointName True $
-      HVar { hVarName     = v
-           , hVarModule   = moduleName
-           , hVarIndex    = 0
-           , hVarType     = Tag
-           , hVarRun      = rn
-           , hThreadIndex = 0
-           }
+    mkRhsSymbol rn = symbol . getFixpointTypePrefix True $ mkVar "" rn
+    mkLhsSymbol v rn = symbol . getFixpointVarPrefix  True $ mkVar v rn
+    mkVar v = HVar0 v "" Tag -- module name is never used in the patterns
     typ = FT.boolSort
 
 -- non empty powerset of the given sequence
@@ -402,23 +393,23 @@ defaultQualifiers :: L FT.Qualifier
 defaultQualifiers =
     mkEq "ValueEq" Value True
     |:> mkEq "TagEq" Tag False
-    |> mkTagZero 0 LeftRun
-    |> mkTagZero 1 RightRun
+    -- |> mkTagZero 0 LeftRun
+    -- |> mkTagZero 1 RightRun
  where
   mkEq name t sameSuffix =
     makeQualifier2 name t
     (FT.PatPrefix (symbol $ getVarPrefix t LeftRun) 1)
     (FT.PatPrefix (symbol $ getVarPrefix t RightRun) (if sameSuffix then 1 else 2))
 
-  mkTagZero n r = FT.mkQual
-    (FT.symbol @String (printf "TagZero%d" (n :: Int)))
-    [ FT.QP vSymbol FT.PatNone FT.FInt
-    , FT.QP (symbol "x")
-            (FT.PatPrefix (symbol $ getVarPrefix Tag r) 1)
-            (FT.FTC FT.boolFTyCon)
-    ]
-    (FT.PIff (FT.eVar @Id "x") FT.PFalse)
-    (FT.dummyPos "")
+  -- mkTagZero n r = FT.mkQual
+  --   (FT.symbol @String (printf "TagZero%d" (n :: Int)))
+  --   [ FT.QP vSymbol FT.PatNone FT.FInt
+  --   , FT.QP (symbol "x")
+  --           (FT.PatPrefix (symbol $ getVarPrefix Tag r) 1)
+  --           (FT.FTC FT.boolFTyCon)
+  --   ]
+  --   (FT.PIff (FT.eVar @Id "x") FT.PFalse)
+  --   (FT.dummyPos "")
 
 
 {-|
@@ -542,19 +533,29 @@ toFInfo =
         return mempty
 
 -- | get the bind name used for the variable in the query
-getFixpointName :: Bool -> HornExpr -> Id
-getFixpointName isParam HVar {..} =
-  prefix <> varno <> modulename <> "_" <> threadno <> "_" <> varname
+-- varno <> type prefix <> varname <> modulename <> threadno
+getFixpointName, getFixpointVarPrefix, getFixpointTypePrefix :: Bool -> HornExpr -> Id
+getFixpointName isParam v@HVar{..} =
+  getFixpointVarPrefix isParam v <> modulename <> "_" <> threadno
   where
-    prefix     = getVarPrefix hVarType hVarRun
-    varno      = if isParam || hVarIndex == 0
-                 then ""
-                 else "N" <> T.pack (show hVarIndex) <> "_"
     modulename = "M_" <> hVarModule
-    threadno   = "T" <> T.pack (show hThreadIndex)
-    varname    = "V_" <> hVarName
-
+    threadno = "T" <> T.pack (show hThreadId)
 getFixpointName _ _ = error "must be called with a variable"
+
+getFixpointVarPrefix isParam v@HVar{..} =
+  getFixpointTypePrefix isParam v <> varname <> "_"
+  where
+    varname = "V_" <> hVarName
+getFixpointVarPrefix _ _ = error "must be called with a variable"
+
+getFixpointTypePrefix isParam HVar {..} =
+  varno <> prefix
+  where
+    varno = if isParam || hVarIndex == 0
+            then ""
+            else "N" <> T.pack (show hVarIndex) <> "_"
+    prefix = getVarPrefix hVarType hVarRun
+getFixpointTypePrefix _ _ = error "must be called with a variable"
 
 getVarPrefix :: HornVarType -> HornVarRun -> Id
 getVarPrefix hVarType hVarRun =

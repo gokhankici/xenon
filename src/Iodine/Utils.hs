@@ -90,3 +90,6 @@ maybeToMonoid Nothing  = mempty
 
 catMaybes' :: (Foldable t, LiftToMonoid t a) => t (Maybe a) -> t a
 catMaybes' = foldl' (\acc -> maybe acc (mappend acc . liftToMonoid)) mempty
+
+toSequence :: Foldable t => t a -> L a
+toSequence = foldl' (|>) mempty

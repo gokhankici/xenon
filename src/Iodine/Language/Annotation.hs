@@ -79,16 +79,13 @@ instance FromJSON Annotations where
         keyDiff   = HS.difference allKeys validKeys
     unless (HS.null keyDiff) $
       parserThrowError [] ("invalid keys " ++ show keyDiff)
-    annot <-
-      Annotations
+    Annotations
       <$> o .:? "source"     .!= mempty
       <*> o .:? "sink"       .!= mempty
       <*> o .:? "initial_eq" .!= mempty
       <*> o .:? "always_eq"  .!= mempty
       <*> o .:? "assert_eq"  .!= mempty
       <*> o .:? "tag_eq"     .!= mempty
-    return $
-      annot & tagEquals %~ mappend (annot ^. sources <> annot ^. sinks)
 
 
 instance FromJSON Qualifier where
@@ -103,8 +100,8 @@ instance FromJSON Qualifier where
 instance FromJSON ModuleAnnotations where
   parseJSON = withObject "ModuleAnnotation" $ \o ->
     ModuleAnnotations
-    <$> o .:  "annotations"
-    <*> o .:? "qualifiers" .!= mempty
+    <$> o .:? "annotations" .!= Annotations mempty mempty mempty mempty mempty mempty
+    <*> o .:? "qualifiers"  .!= mempty
     <*> o .:? "clock"
 
 instance FromJSON AnnotationFile where

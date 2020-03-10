@@ -2,17 +2,20 @@
   "top_module": "test",
   "modules": {
     "test": {
-      "clock": "clk",
       "annotations": {
         "source": [
-          "in1"
+          "x"
         ],
         "sink": [
-          "out1"
+          "y"
+        ],
+        "always_eq": [
+          "x"
         ]
-      }
+      },
+      "clock": "clk"
     },
-    "test_sub_1": {
+    "mB": {
       "clock": "clk"
     }
   }
