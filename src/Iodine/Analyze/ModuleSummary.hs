@@ -1,5 +1,4 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -27,12 +26,13 @@ import qualified Data.Graph.Inductive as G
 import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import           Data.Maybe
 import qualified Data.Sequence as SQ
 import           Data.Traversable
 import           Polysemy
 import           Polysemy.Reader
 import           Polysemy.State
-import           Polysemy.Trace
+import qualified Polysemy.Trace as PT
 
 type ModuleMap   = HM.HashMap Id (Module ())
 type SummaryMap  = HM.HashMap Id ModuleSummary
@@ -54,7 +54,7 @@ data ModuleSummary =
 Create a summary for each given module
 -}
 createModuleSummaries :: Members '[ Reader AnnotationFile
-                                  , Trace
+                                  , PT.Trace
                                   ] r
                       => ModuleMap -> Sem r SummaryMap
 createModuleSummaries moduleMap =
@@ -69,15 +69,16 @@ createModuleSummaries moduleMap =
 
 createModuleSummary :: Members '[ Reader AnnotationFile
                                 , State SummaryMap
-                                , Trace
+                                , PT.Trace
                                 ] r
                     => Module ()
                     -> Sem r ModuleSummary
 createModuleSummary m@Module{..} = do
   (varDepGraph, varDepMap) <- dependencyGraphFromModule m
+  trace "createModuleSummary-module" moduleName
   let lookupNode v = mapLookup 1 v varDepMap
   clk <- view clock <$> getModuleAnnotations moduleName
-  let hasClock = clk /= Nothing
+  let hasClock = isJust clk
       isClk v = clk == Just v
   let portDependencies =
         foldl'
@@ -98,7 +99,7 @@ createModuleSummary m@Module{..} = do
     isCombinatorial <$> gets (mapLookup 2 moduleInstanceType)
   let isCombinatorial = not hasClock && submodulesCanBeSummarized
 
-  return ModuleSummary {..}
+  return $ ModuleSummary portDependencies isCombinatorial
   where
     isReachable g toNode fromNode =
       let ns = GQ.reachable fromNode g
@@ -175,3 +176,6 @@ mapLookup n k m =
                       , "key:" ++ show k
                       ]
     Just a  -> a
+
+trace :: (Members '[PT.Trace] r, Show a) => String -> a -> Sem r ()
+trace msg a = PT.trace msg >> PT.trace (show a)

@@ -8,13 +8,14 @@ cd "${0:A:h}"
 # TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-1.v"
 # TEST="test/verilog/neg/neg-test-2-v0.v"
-TEST="benchmarks/472-mips-pipelined/mux3.v"
+TEST="benchmarks/472-mips-pipelined/472-mips-fragment-4.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
 
 TEST_FILE="${TEST_DIR}/${TEST_NAME}.v"
-TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
+# TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
+TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
 
 ./iodine --build ${PROFILE} && \
 	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --trace

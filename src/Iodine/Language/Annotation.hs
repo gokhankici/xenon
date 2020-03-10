@@ -67,8 +67,8 @@ validateAnnotationFile af =
   in case mAnnots of
        Nothing     -> Left "Top module does not exist"
        Just annots ->
-         if | HS.null (annots ^. sources) -> Left "Top module no source!"
-            | HS.null (annots ^. sinks)   -> Left "Top module no sink!"
+         if | HS.null (annots ^. sources) -> Left $ "Top module has no source! " ++ show annots
+            | HS.null (annots ^. sinks)   -> Left $ "Top module has no sink! " ++ show annots
             | otherwise -> Right af
 
 
@@ -108,7 +108,6 @@ instance FromJSON AnnotationFile where
   parseJSON = withObject "AnnotationFile" $ \o ->
     AnnotationFile
     <$> o .:  "modules"
-    -- <*> o .:? "qualifiers" .!= mempty
     <*> o .:  "top_module"
 
 

@@ -14,6 +14,10 @@ module alu_stub(ctl, a, b, result, zero);
 
    always @(*) begin
       result = ctl + a + b;
+
+      if (result == 32'd0)
+        zero = 1;
+      else
+        zero = 0;
    end
 endmodule
-

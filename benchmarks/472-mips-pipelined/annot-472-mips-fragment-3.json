@@ -1,70 +1,63 @@
 {
-  "clock": "clk",
-  "annotations": [
-    {
-      "type": "source",
-      "variables": [
-        "reset",
-        "IF_instr"
-      ]
+  "top_module": "mips_pipeline",
+  "modules": {
+    "mips_pipeline": {
+      "annotations": {
+        "source": [
+          "reset",
+          "IF_instr"
+        ],
+        "sink": [
+          "ID_instr"
+        ],
+        "always_eq": [
+          "IF_instr"
+        ],
+        "initial_eq": [
+          "EX_ALUOp",
+          "EX_MemRead",
+          "EX_extend",
+          "EX_rt",
+          "ID_instr",
+          "IF_instr",
+          "MEM_ALUOut",
+          "Stall",
+          "WB_ALUOut",
+          "a",
+          "b"
+        ]
+      },
+      "clock": "clk"
     },
-    {
-      "type": "sink",
-      "variables": [
-        "ID_instr"
-      ]
+    "control_pipeline": {
+      "annotations": {
+        "initial_eq": [
+          "ALUOp",
+          "ALUSrc",
+          "Branch",
+          "Jump",
+          "MemRead",
+          "MemWrite",
+          "MemtoReg",
+          "RegDst",
+          "RegWrite"
+        ]
+      }
     },
-    {
-      "type": "always_eq",
-      "variables": [
-        "IF_instr"
-      ]
+    "alu_ctl": {
+      "annotations": {
+        "initial_eq": [
+          "ALUOperation"
+        ]
+      }
     },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "EX_ALUOp",
-        "EX_MemRead",
-        "EX_extend",
-        "EX_rt",
-        "ID_instr",
-        "IF_instr",
-        "MEM_ALUOut",
-        "Stall",
-        "WB_ALUOut",
-        "a",
-        "b"
-      ]
-    },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "ALUOp",
-        "ALUSrc",
-        "Branch",
-        "Jump",
-        "MemRead",
-        "MemWrite",
-        "MemtoReg",
-        "RegDst",
-        "RegWrite"
-      ],
-      "module": "control_pipeline"
-    },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "ALUOperation"
-      ],
-      "module": "alu_ctl"
-    },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "result",
-        "zero"
-      ],
-      "module": "alu"
+    "alu": {
+      "annotations": {
+        "initial_eq": [
+          "result",
+          "zero"
+        ]
+      }
     }
-  ]
+  }
 }
