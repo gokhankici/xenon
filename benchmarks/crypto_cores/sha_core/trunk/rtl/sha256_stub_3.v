@@ -10,6 +10,8 @@ module sha256 (clk_i, rst_i, text_i_, text_o, cmd_i, cmd_w_i, cmd_o);
         input           cmd_w_i;// command input write enable
         output  [3:0]   cmd_o;  // command output(status)
 
+   assign text_o = 32'b0;
+
         /*
                 cmd
                 Busy Round W R

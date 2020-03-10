@@ -508,9 +508,9 @@ summaryConstraints m@Module{..} = do
                            Just (t SQ.:<| _) -> second (setThreadId t)
                                                 <$> mkAllSubs v moduleName 0 0
                            _ | v `HS.member` inputs -> mempty
-                           _ -> error $ unlines [ "unreachable:"
-                                                , show m
-                                                , show varThreadMap
+                           _ -> error $ unlines [ "module port not used in anywhere:"
+                                                , show moduleName
+                                                , show $ HM.map (fmap getThreadId) varThreadMap
                                                 , show moduleHornVars
                                                 , show v
                                                 ]
