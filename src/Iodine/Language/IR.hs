@@ -354,16 +354,14 @@ isInput :: Port -> Bool
 isInput (Input _)  = True
 isInput (Output _) = False
 
-moduleInputs, moduleOutputs :: Module a -> Maybe Id -> Ids
+moduleInputs, moduleOutputs :: Module a -> Ids -> Ids
 (moduleInputs, moduleOutputs) = (helper True, helper False)
   where
-    helper check Module{..} mclk =
-      foldl' (addInput check mclk) mempty ports
-    addInput check mclk acc p =
+    helper check Module{..} mclks =
+      foldl' (addInput check mclks) mempty ports
+    addInput check mclks acc p =
       let v = variableName (portVariable p)
-          notClk = case mclk of
-                     Nothing -> True
-                     Just clk -> v /= clk
+          notClk = v `notElem` mclks
       in if isInput p == check && notClk
          then acc <> liftToMonoid v
          else acc

@@ -15,8 +15,9 @@ import           Control.Monad
 import           Data.Aeson
 import           Data.Aeson.Types
 import qualified Data.ByteString.Lazy as B
-import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
+import qualified Data.Text as T
 import           Polysemy
 import           Polysemy.Reader
 
@@ -42,12 +43,12 @@ data Qualifier =
 data ModuleAnnotations =
   ModuleAnnotations { _moduleAnnotations :: Annotations
                     , _moduleQualifiers  :: L Qualifier
-                    , _clock             :: Maybe Id
+                    , _clocks            :: HS.HashSet Id
                     }
   deriving (Show)
 
 emptyModuleAnnotations :: ModuleAnnotations
-emptyModuleAnnotations = ModuleAnnotations emptyAnnotations mempty Nothing
+emptyModuleAnnotations = ModuleAnnotations emptyAnnotations mempty mempty
 
 data AnnotationFile =
   AnnotationFile { _afAnnotations :: HM.HashMap Id ModuleAnnotations -- ^ module -> annotations
@@ -108,13 +109,22 @@ instance FromJSON ModuleAnnotations where
     ModuleAnnotations
     <$> o .:? "annotations" .!= emptyAnnotations
     <*> o .:? "qualifiers"  .!= mempty
-    <*> o .:? "clock"
+    <*> parseClock o "clock"
 
 instance FromJSON AnnotationFile where
   parseJSON = withObject "AnnotationFile" $ \o ->
     AnnotationFile
     <$> o .:  "modules"
     <*> o .:  "top_module"
+
+parseClock :: Object -> T.Text -> Parser (HS.HashSet Id)
+parseClock o k =
+  case HM.lookup k o of
+    Nothing          -> return mempty
+    Just (String v)  -> return $ HS.singleton v
+    Just a@(Array _) -> parseJSON a
+    Just v           -> fail $ "Unexpected " ++ show v ++ ". Expected String or Array of Strings"
+
 
 
 toModuleAnnotations :: Id -> AnnotationFile -> ModuleAnnotations
@@ -140,8 +150,8 @@ getSources m = (^. sources) <$> getAnnotations m
 getSinks :: Member (Reader AnnotationFile) r => Id -> Sem r (HS.HashSet Id)
 getSinks m = (^. sinks) <$> getAnnotations m
 
-getClock :: Member (Reader AnnotationFile) r => Id -> Sem r (Maybe Id)
-getClock m = asks (view clock . toModuleAnnotations m)
+getClocks :: Member (Reader AnnotationFile) r => Id -> Sem r (HS.HashSet Id)
+getClocks m = asks (view clocks . toModuleAnnotations m)
 
 annotationVariables :: Annotations -> Ids
 annotationVariables a =

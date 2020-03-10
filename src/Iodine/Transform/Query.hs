@@ -272,8 +272,8 @@ toFSort HornBool = FT.boolSort
 
 addSummaryQualifiers :: FD r => Module Int -> Sem r ()
 addSummaryQualifiers m@Module{..} = do
-  mClk <- getClock moduleName
-  let inputs     = moduleInputs m mClk
+  mClks <- getClocks moduleName
+  let inputs     = moduleInputs m mClks
   let inputLists = toList $ powerset $ toSequence inputs
   for_ (zip inputLists [0..]) $ \(ls, n) ->
     let qualifierName = "SummaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n

@@ -26,7 +26,6 @@ import qualified Data.Graph.Inductive as G
 import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
-import           Data.Maybe
 import qualified Data.Sequence as SQ
 import           Data.Traversable
 import           Polysemy
@@ -77,9 +76,9 @@ createModuleSummary m@Module{..} = do
   (varDepGraph, varDepMap) <- dependencyGraphFromModule m
   trace "createModuleSummary-module" moduleName
   let lookupNode v = mapLookup 1 v varDepMap
-  clk <- view clock <$> getModuleAnnotations moduleName
-  let hasClock = isJust clk
-      isClk v = clk == Just v
+  clks <- getClocks moduleName
+  let hasClock = not $ HS.null clks
+      isClk v = v `elem` clks
   let portDependencies =
         foldl'
         (\deps o ->

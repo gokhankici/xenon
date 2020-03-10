@@ -25,7 +25,8 @@ NEW_ANNOT_FILE = ANNOT_FILE.parent / (ANNOT_FILE.stem + "_fixed.json")
 
 annots = json.load(args.annot_file)
 
-annot_diff = set(annots.keys()) - set(["clock", "annotations", "blocklist"])
+OTHER_TYPES = set(["blocklist", "history"])
+annot_diff = set(annots.keys()) - set(["clock", "annotations"]) - OTHER_TYPES
 if annot_diff:
     err(f"Unknown annotations: {annot_diff}")
 
@@ -83,8 +84,9 @@ for annot in annots["annotations"]:
 for module_name in has_clock:
     set_module_clock(module_name, clock)
 
-if "blocklist" in annots:
-    new_format["blocklist"] = annots["blocklist"]
+for t in OTHER_TYPES:
+    if t in annots:
+        new_format[t] = annots[t]
 
 ################################################################################
 # writing the new format #######################################################

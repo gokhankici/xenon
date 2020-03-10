@@ -128,7 +128,7 @@ checkSameAssignmentType =
             blockStr = let maxLength = 200
                            str = show ab
                        in if length str > maxLength
-                          then (take maxLength str) ++ " ..."
+                          then take maxLength str ++ " ..."
                           else str
         in case (abEvent, assignmentType) of
              (_, Continuous)         -> err2
@@ -192,8 +192,8 @@ checkVariables =
           unless (areVars vs) $
           throw $ printf "element(s) in %s is not a valid variable" (show vs)
 
-        clk  <- getClock moduleName
-        let isNotClock name = maybe True (name /=) clk
+        clks  <- getClocks moduleName
+        let isNotClock name = name `notElem` clks
 
         isTopModule <- (== moduleName) <$> asks (^. afTopModule)
 
@@ -217,7 +217,7 @@ checkVariables =
             _    ->
               case eventExpr abEvent of
                 Variable{..} ->
-                  unless (clk == Just varName && varModuleName == moduleName) $
+                  unless (varName `elem` clks && varModuleName == moduleName) $
                   throw $ "always block has bad event: " ++ show abEvent
                 _ ->
                   throw $ "always block has bad event: " ++ show abEvent

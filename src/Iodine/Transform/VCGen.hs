@@ -92,12 +92,12 @@ vcgenMod m@Module {..} = do
     "Gate statements should have been merged into always* blocks"
   assert singleBlockForEvent
     "There should be at most one always block for each event type"
-  mClk <- getClock moduleName
+  mClks <- getClocks moduleName
   isTop <- isTopModule' m
-  setHornVariables m $ getVariables m `HS.difference` maybeToMonoid mClk
+  setHornVariables m $ getVariables m `HS.difference` mClks
   for_ allThreads $ \t ->
     setHornVariables t $
-    getVariables t <> if isTop then mempty else moduleInputs m mClk
+    getVariables t <> if isTop then mempty else moduleInputs m mClks
   combine threadChecks allThreads
     <||> interferenceChecks allThreads
     <||> (maybeToMonoid <$> summaryConstraints m)
@@ -194,9 +194,9 @@ initializeTop thread@(MI ModuleInstance{..}) = do
 initializeSub thread = do
   currentModule <- ask
   let currentModuleName = moduleName currentModule
-  mClk <- getClock currentModuleName
+  mClks <- getClocks currentModuleName
   vars <- asks (^. currentVariables)
-  let srcs    = moduleInputs currentModule mClk
+  let srcs    = moduleInputs currentModule mClks
       nonSrcs = vars `HS.difference` srcs
 
   let srcSubs    = second (setThreadId currentModule)
@@ -440,8 +440,8 @@ interferenceCheckWR wSt rSt = do
                  MI mi -> do
                    let miType = moduleInstanceType mi
                    miModule <- asks @ModuleMap (HM.! miType)
-                   miClk <- getClock miType
-                   let os = moduleOutputs miModule miClk
+                   miClks <- getClocks miType
+                   let os = moduleOutputs miModule miClks
                        lookupPortExpr o =
                          varName $ moduleInstancePorts mi HM.! o
                    return $ foldl' (\m o -> HM.insert (lookupPortExpr o) 0 m) mempty os
@@ -487,8 +487,8 @@ interferenceCheckWR wSt rSt = do
 summaryConstraints :: FDM r => Module Int -> Sem r (Maybe H)
 -- -----------------------------------------------------------------------------
 summaryConstraints m@Module{..} = do
-  mClk <- getClock moduleName
-  let inputs = moduleInputs m mClk
+  mClks <- getClocks moduleName
+  let inputs = moduleInputs m mClks
   moduleHornVars <- getHornVariables m
   if HS.null moduleHornVars
     then return Nothing
@@ -670,7 +670,7 @@ getUpdatedVariables = \case
     os <-
       moduleOutputs
       <$> asks @ModuleMap (HM.! moduleInstanceType)
-      <*> getClock moduleInstanceType
+      <*> getClocks moduleInstanceType
     -- then, lookup the variables used for those ports
     let lukap = varName . (moduleInstancePorts HM.!)
     return $ foldl' (\acc -> mappend acc . liftToMonoid . lukap) mempty os
@@ -737,7 +737,7 @@ getCurrentSources = do
   if top
     then asks (^. currentSources)
     else do vars <- asks (^. currentVariables)
-            inputs <- moduleInputs <$> ask <*> getCurrentClock
+            inputs <- moduleInputs <$> ask <*> getCurrentClocks
             return $ HS.filter (`elem` inputs) vars
 
 updateTagsKeepValues :: Foldable t => Int -> Bool -> t (Id, Id) -> (L HornExpr, L ExprPair)
@@ -760,5 +760,5 @@ trace msg a = do
   PT.trace msg
   PT.trace $ show a
 
-getCurrentClock :: FDM r => Sem r (Maybe Id)
-getCurrentClock = asks moduleName >>= getClock
+getCurrentClocks :: FDM r => Sem r Ids
+getCurrentClocks = asks moduleName >>= getClocks
