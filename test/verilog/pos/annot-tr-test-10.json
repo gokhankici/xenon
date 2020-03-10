@@ -5,7 +5,8 @@
       "annotations": {
         "source": [
           "i1",
-          "i2"
+          "i2",
+          "cond"
         ],
         "sink": [
           "o"

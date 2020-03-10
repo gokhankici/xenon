@@ -13,9 +13,9 @@ import qualified Iodine.Language.IR as IIR
 import           Iodine.Types
 
 import           Control.DeepSeq
+import           Control.Lens ((|>))
 import           Data.Bifunctor
 import           Data.Foldable
-import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics
 import qualified Language.Fixpoint.Types as FT
@@ -34,8 +34,8 @@ data Horn a =
 data HornBinaryOp = HEquals | HNotEquals | HImplies | HIff
 
 data HornType = Init
-              | TagReset
-              | SourceReset
+              | TagSet
+              | SourceTagReset
               | Next
               | TagEqual
               | Interference
@@ -78,6 +78,26 @@ data HornExpr =
   | KVar { hKVarId   :: Int
          , hKVarSubs :: L (HornExpr, HornExpr)
          }
+
+
+class MakeKVar m where
+  getThreadId :: m Int -> Int
+
+  makeEmptyKVar :: m Int -> HornExpr
+  makeEmptyKVar t = KVar (getThreadId t) mempty
+
+  makeKVar :: m Int -> L (HornExpr, HornExpr) -> HornExpr
+  makeKVar t = KVar (getThreadId t) . fmap (first $ setThreadIndex t)
+
+instance MakeKVar Thread where
+  getThreadId = getData
+
+instance MakeKVar Module where
+  getThreadId = getData
+
+
+setThreadIndex :: MakeKVar m => m Int -> HornExpr -> HornExpr
+setThreadIndex t = updateThreadIndex (const $ getThreadId t)
 
 
 -- | update the variable index with the given function
@@ -177,16 +197,16 @@ instance Show HornExpr where
 
 
 instance FT.Fixpoint HornType where
-       toFix Init          = PP.text "init"
-       toFix TagReset      = PP.text "tag-reset"
-       toFix SourceReset   = PP.text "source-reset"
-       toFix Next          = PP.text "next"
-       toFix TagEqual      = PP.text "tag-equal"
-       toFix Interference  = PP.text "interference"
-       toFix AssertEqCheck = PP.text "assert-eq"
-       toFix WellFormed    = PP.text "wellformed"
-       toFix InstanceCheck = PP.text "instance-check"
-       toFix ModuleSummary = PP.text "module-summary"
+       toFix Init           = PP.text "init"
+       toFix TagSet         = PP.text "tag-set"
+       toFix SourceTagReset = PP.text "source-tag-reset"
+       toFix Next           = PP.text "next"
+       toFix TagEqual       = PP.text "tag-equal"
+       toFix Interference   = PP.text "interference"
+       toFix AssertEqCheck  = PP.text "assert-eq"
+       toFix WellFormed     = PP.text "wellformed"
+       toFix InstanceCheck  = PP.text "instance-check"
+       toFix ModuleSummary  = PP.text "module-summary"
 
 instance NFData HornType
 
@@ -220,8 +240,15 @@ pattern HVarTL0 v m = HVarTL v m 0
 pattern HVarTR0 v m = HVarTR v m 0
 
 allHornVars :: Id -> Id -> L HornExpr
-allHornVars v m =
-  SQ.empty SQ.|> HVarVL0 v m SQ.|> HVarVR0 v m SQ.|> HVarTL0 v m SQ.|> HVarTR0 v m
+allHornVars v m = uncurry (HVar0 v m) <$> allTagRuns
+
+allTagRuns :: L (HornVarType, HornVarRun)
+allTagRuns =
+  mempty |>
+  (Value, LeftRun) |>
+  (Value, RightRun) |>
+  (Tag,   LeftRun) |>
+  (Tag,   RightRun)
 
 
 toHornVar :: Expr Int -> HornVarType -> HornVarRun -> HornExpr
@@ -238,3 +265,15 @@ toHornVar _ _ _ = undefined
 isHornVariable :: HornExpr -> Bool
 isHornVariable HVar{} = True
 isHornVariable _      = False
+
+mkHornVar :: Expr Int -> HornVarType -> HornVarRun -> HornExpr
+mkHornVar e@Variable{..} t r =
+  HVar { hVarName     = varName
+       , hVarModule   = varModuleName
+       , hVarIndex    = getData e
+       , hVarType     = t
+       , hVarRun      = r
+       , hThreadIndex = 0
+       }
+mkHornVar _ _ _ =
+  error "mkHornVar must be called with an IR variable"

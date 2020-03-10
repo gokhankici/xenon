@@ -6,6 +6,7 @@
 
 module Iodine.Transform.TransitionRelation
   ( transitionRelation
+  , transitionRelationT
   )
 where
 
@@ -24,6 +25,10 @@ import           Polysemy.State
 import           Text.Read (readEither)
 
 type S = Stmt Int
+
+transitionRelationT :: Thread Int -> HornExpr
+transitionRelationT (AB ab) = transitionRelation $ abStmt ab
+transitionRelationT (MI _)  = HBool True
 
 transitionRelation :: S -> HornExpr
 transitionRelation s =

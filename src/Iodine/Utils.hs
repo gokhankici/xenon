@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Iodine.Utils where
 
@@ -10,7 +12,9 @@ import           Control.Applicative
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
+import           Data.Hashable
 import qualified Data.HashSet as HS
+import qualified Data.Sequence as SQ
 import           Polysemy
 import           Polysemy.Error
 
@@ -67,3 +71,22 @@ assert cond msg = unless cond $ throw (IE Assert msg)
 foldlM' :: (Foldable t, Monad m)
        => b -> t a -> (b -> a -> m b) -> m b
 foldlM' b as act = foldlM act b as
+
+class Monoid (m a) => LiftToMonoid m a where
+  liftToMonoid :: a -> m a
+
+instance LiftToMonoid SQ.Seq a where
+  liftToMonoid = SQ.singleton
+
+instance LiftToMonoid [] a where
+  liftToMonoid = (: [])
+
+instance (Hashable a, Eq a) => LiftToMonoid HS.HashSet a where
+  liftToMonoid = HS.singleton
+
+maybeToMonoid :: LiftToMonoid m a => Maybe a -> m a
+maybeToMonoid (Just a) = liftToMonoid a
+maybeToMonoid Nothing  = mempty
+
+catMaybes' :: (Foldable t, LiftToMonoid t a) => t (Maybe a) -> t a
+catMaybes' = foldl' (\acc -> maybe acc (mappend acc . liftToMonoid)) mempty

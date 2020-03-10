@@ -23,6 +23,8 @@ module Iodine.Language.IR
   , isInput
   , moduleInputs
   , moduleOutputs
+  , moduleThreads
+  , isStar
   )
 where
 
@@ -128,6 +130,10 @@ data Module a =
 -- | An always block or a module instance
 data Thread a = AB (AlwaysBlock a)
               | MI (ModuleInstance a)
+
+moduleThreads :: Module a -> L (Thread a)
+moduleThreads m =
+  (AB <$> alwaysBlocks m) <> (MI <$> moduleInstances m)
 
 class GetVariables m where
   -- return the name of the variables in type m
@@ -346,9 +352,14 @@ isInput (Output _) = False
 moduleInputs, moduleOutputs :: Module a -> L Id
 (moduleInputs, moduleOutputs) = (helper True, helper False)
   where
-    helper check = \Module{..} ->
+    helper check Module{..} =
       foldl' (addInput check) mempty ports
     addInput check acc p =
       if isInput p == check
       then acc SQ.|> variableName (portVariable p)
       else acc
+
+-- | is the given thread an always block with the star event?
+isStar :: Eq a => Thread a -> Bool
+isStar (AB ab) = abEvent ab == Star
+isStar (MI _)  = False

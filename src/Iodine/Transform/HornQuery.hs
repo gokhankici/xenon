@@ -148,7 +148,7 @@ setInvVarMap :: FD r => Module Int -> Sem r ()
 setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
   -- keep the variables appear in annotations
   extraVars <-
-    (HS.intersection (varMap IM.! n))
+    HS.intersection (varMap IM.! n)
     . annotationVariables
     <$> getAnnotations moduleName
   let params = toList $ getKVarParams n `HS.union` extraVars -- parameters of the kvar
@@ -192,7 +192,7 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
     -- threads of this module
     threads :: IM.IntMap (Thread Int)
     threads = IM.fromList . fmap (\t -> (getData t, t)) . toList $
-              (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
+              moduleThreads m
 
     -- make a kvar
     mkVar :: Int -> [Id] -> FHT.Var FData
@@ -200,7 +200,7 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
 
     -- sorts of a kvar with variables
     mkKVarSorts :: [Id] -> [(FT.Symbol, FT.Sort)]
-    mkKVarSorts vars =
+    mkKVarSorts =
       foldr'
       (\v acc ->
          let go  = getFixpointSymbol True
@@ -209,7 +209,7 @@ setInvVarMap m@Module{..} = for_ (IM.keys varMap) $ \n -> do
              vlt = go $ HVarTL0 v moduleName
              vrt = go $ HVarTR0 v moduleName
          in (vl, is):(vr, is):(vlt, bs):(vrt, bs):acc
-      ) [] vars
+      ) []
 
     is, bs :: FT.Sort
     is = FT.intSort
@@ -249,7 +249,7 @@ addHornConstraint h@Horn{..} = do
           Init -> True
           AssertEqCheck -> True
           TagEqual -> True
-          TagReset -> True
+          TagSet -> True
           _ -> False
     when (checkType hornType) $ modify $ constraints %~ (|> c)
 
@@ -428,7 +428,7 @@ convertExpr HApp {..} = do
   arity = SQ.length hAppArgs
   ret   = toFSort hAppRet
   sort  = if arity > 0
-          then FT.mkFFunc 0 $ (replicate arity FT.intSort) ++ [ret]
+          then FT.mkFFunc 0 $ replicate arity FT.intSort ++ [ret]
           else ret
   toFSort = \case
     HornInt  -> FT.intSort
@@ -491,7 +491,7 @@ VLT_lvar => VLT_rvar1 || VLT_rvar2 || ...
 generateQualifiers (QImplies lhs rhss) = do
   m <- asks moduleName
   let q n = makeQualifierN ("CustomImp_" ++ show n) m LeftRun
-            lhs (FT.PImp) rhss
+            lhs FT.PImp rhss
   q <$> freshQualifierId >>= addQualifier
 
 
@@ -535,7 +535,7 @@ the following qualifiers are generated:
 generateQualifiers (QIff lhs rhss) = do
   m <- asks moduleName
   let q n = makeQualifierN ("CustomIff_" ++ show n) m LeftRun
-            lhs (FT.PIff) rhss
+            lhs FT.PIff rhss
   q <$> freshQualifierId >>= addQualifier
 
 
@@ -626,7 +626,7 @@ addSummaryQualifiers m@Module{..} = do
   let noClk a    = Just a /= mClk
   let inputs     = SQ.filter noClk (moduleInputs m)
   unless (SQ.null inputs) $ do
-    let nonInput a = Just a /= mClk && not (elem a inputs)
+    let nonInput a = Just a /= mClk && notElem a inputs
     let vars       = SQ.filter nonInput (variableName <$> variables)
     trace $ show m
     trace $ show mClk

@@ -18,6 +18,7 @@ where
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
+import           Iodine.Transform.VCGen (VCGenOutput, HornVariableMap, askHornVariables)
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -44,7 +45,6 @@ import           Text.Printf
 -- -----------------------------------------------------------------------------
 
 type FInfo = FT.FInfo HornClauseId
-type Horns = L (Horn ())
 type ModuleMap = HM.HashMap Id (Module Int)
 
 type G r   = Members '[ Trace
@@ -54,7 +54,9 @@ type G r   = Members '[ Trace
                       ] r
 
 type FD r  = ( G r
-             , Member (State St) r
+             , Members '[ State St
+                        , Reader HornVariableMap
+                        ] r
              )
 
 type FDC r = ( FD r
@@ -93,8 +95,8 @@ makeLenses ''St
 
 -- | Given the verification conditions, generate the query to be sent to the
 -- fixpoint solver
-constructQuery :: G r => L (Module Int) -> Horns -> Sem r FInfo
-constructQuery modules horns = evalState initialState $ do
+constructQuery :: G r => L (Module Int) -> VCGenOutput -> Sem r FInfo
+constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ do
   setConstants
   traverse_ generateConstraint horns
   for_ modules $ \m@Module{..} -> do
@@ -126,76 +128,28 @@ generateConstraint Horn {..} = do
 -- | Create a well formedness constraint for every statement of the module
 generateWFConstraints :: FD r => Module Int -> Sem r ()
 generateWFConstraints m@Module{..} = do
-  traverse_ (generateWFConstraint moduleName . abStmt) alwaysBlocks
-  traverse_ (generateWFConstraintMI moduleName) moduleInstances
-  generateWFConstraintM m
+  generateWFConstraint moduleName m
+  traverse_ (generateWFConstraint moduleName) (moduleThreads m)
 
 
 -- | Create a well formedness constraint for the given statement
-generateWFConstraint :: FD r
+generateWFConstraint :: (FD r, MakeKVar t)
                      => Id      -- ^ module name
-                     -> Stmt Int
+                     -> t Int
                      -> Sem r ()
-generateWFConstraint m stmt = do
-  -- piggy back on the ienv generation of convertExpr to get the indices
-  (ienv, _) <-
-    traverse_ convertExpr hvars
-    & runState mempty
+generateWFConstraint threadModuleName thread = do
+  varNames <- askHornVariables thread
+  let hornVars = setThreadIndex thread
+                 <$> foldMap (`allHornVars` threadModuleName) varNames
+  (ienv,_) <- traverse_ convertExpr hornVars & runState mempty
   case FT.wfC ienv (mkInt e) md of
     [wf] -> modify ((wellFormednessConstraints . at kvar) ?~ wf)
     wfcs -> throw $ "did not get only 1 wfc: " ++ show wfcs
  where
-  vars   = getVariables stmt
-  hvars  =
-    -- include all the type & run pairs for the index 0 of the variable
-    mfold (\v -> SQ.empty |>
-                 HVarVL0 v m |> HVarVR0 v m |>
-                 HVarTL0 v m |> HVarTR0 v m) vars
-  stmtId = stmtData stmt
-  kvar   = mkKVar stmtId
+  tid    = getThreadId thread
+  kvar   = mkKVar tid
   e      = FT.PKVar kvar mempty
-  md     = HornClauseId stmtId WellFormed
-
--- | Create a well formedness constraint for the given module instance
-generateWFConstraintMI :: FD r
-                       => Id    -- ^ module name
-                       -> ModuleInstance Int
-                       -> Sem r ()
-generateWFConstraintMI currentModuleName mi@ModuleInstance{..} = do
-  m <- asks @ModuleMap (\m -> case HM.lookup currentModuleName m of
-                                Nothing -> undefined
-                                Just x  -> x)
-  (ienv, _) <- runState mempty $ do
-    traverse_ convertExpr (moduleVariables m)
-    traverse_ convertExpr $ do
-      p <- HM.elems moduleInstancePorts
-      t <- [Tag, Value]
-      r <- [LeftRun, RightRun]
-      return $ toHornVar p t r
-
-  case FT.wfC ienv (mkInt e) md of
-    [wf] -> modify ((wellFormednessConstraints . at kvar) ?~ wf)
-    wfcs -> throw $ "did not get only 1 wfc: " ++ show wfcs
-  where
-    n  = getData mi
-    kvar = mkKVar n
-    e  = FT.PKVar kvar mempty
-    md = HornClauseId n InstanceCheck
-
-generateWFConstraintM :: FD r => Module Int -> Sem r ()
-generateWFConstraintM m@Module{..} = do
-  (ienv, _) <-
-    traverse_ convertExpr (moduleVariables m)
-    & runState mempty
-  case FT.wfC ienv (mkInt e) md of
-    [wf] -> modify ((wellFormednessConstraints . at kvar) ?~ wf)
-    wfcs -> throw $ "did not get only 1 wfc: " ++ show wfcs
-  where
-    n  = moduleData
-    kvar = mkKVar n
-    e  = FT.PKVar kvar mempty
-    md = HornClauseId n ModuleSummary
-
+  md     = HornClauseId tid WellFormed
 
 -- -----------------------------------------------------------------------------
 -- HornExpr -> FT.Expr
@@ -264,7 +218,7 @@ convertExpr HApp {..} = do
   arity = SQ.length hAppArgs
   ret   = toFSort hAppRet
   sort  = if arity > 0
-          then FT.mkFFunc 0 $ (replicate arity FT.intSort) ++ [ret]
+          then FT.mkFFunc 0 $ replicate arity FT.intSort ++ [ret]
           else ret
 
 convertExpr KVar {..} =
@@ -333,7 +287,7 @@ addSummaryQualifiers m@Module{..} = do
 mkSummaryQualifier :: Int -> Id -> L Id -> Id -> FT.Qualifier
 mkSummaryQualifier n moduleName ls r =
   FT.mkQual
-  (FT.symbol $ "summaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n)
+  (FT.symbol $ "SummaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n)
   ( [ FT.QP vSymbol FT.PatNone FT.FInt
     , FT.QP (symbol "rl") (FT.PatExact (symbol $ mkVar r LeftRun)) typ
     , FT.QP (symbol "rr") (FT.PatExact (symbol $ mkVar r RightRun)) typ

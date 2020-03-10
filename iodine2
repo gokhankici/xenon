@@ -1,0 +1,25 @@
+#!/bin/zsh
+
+# Tries to infer the annotation format from the input verilog file
+
+THIS_DIR="${0:A:h}"
+
+if [ $# -ne 1 ]; then
+	printf "usage: ${0:t} <test file>\n" >&2
+	exit 1
+fi
+
+TEST_FILE="${1:A}"
+TEST_DIR="${TEST_FILE:h}"
+TEST_NAME="${TEST_FILE:t:r}"
+TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
+
+if [ -f "${TEST_FILE}" ] && [ -f "${TEST_ANNOT}" ]; then
+	stack build
+	"${THIS_DIR}/iodine" "${TEST_FILE}" "${TEST_ANNOT}" --trace
+else
+	printf "test and/or annot file does not exist" >&2
+	printf "${TEST_FILE}" >&2
+	printf "${TEST_ANNOT}" >&2
+	exit 1
+fi
