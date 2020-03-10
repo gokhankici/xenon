@@ -62,7 +62,7 @@ parseVariable =
 
 parseExpr :: Parser (Expr ())
 parseExpr =
-  parseTerm "const" (Constant <$> constVar <*> parseData) <|>
+  parseConstantExpr <|>
   parseVarExpr <|>
   parseTerm "uf" (UF <$> identifier <*> (comma *> list parseExpr) <*> parseData) <|>
   parseTerm "ite_expr" (IfExpr
@@ -75,6 +75,10 @@ parseExpr =
                       <$> parseExpr
                       <*> (comma *> list parseExpr)
                       <*> parseData)
+
+parseConstantExpr :: Parser (Expr ())
+parseConstantExpr =
+  parseTerm "const" (Constant <$> constVar <*> parseData)
   where
     constVar :: Parser Id
     constVar = T.pack <$> MP.many MPC.alphaNumChar
@@ -102,13 +106,16 @@ parseStmt =
                    <*> (comma *> parseExpr)
                    <*> parseData
 
+parseModuleInstancePortExpr :: Parser (Expr ())
+parseModuleInstancePortExpr = parseConstantExpr <|> parseVarExpr
+
 parseModuleInstance :: Parser (ModuleInstance ())
 parseModuleInstance =
   parseTerm "mod_inst" $
   ModuleInstance
   <$> identifier
   <*> (comma *> identifier)
-  <*> (comma *> parseMap identifier parseVarExpr)
+  <*> (comma *> parseMap identifier parseModuleInstancePortExpr)
   <*> parseData
 
 

@@ -20,11 +20,12 @@ module Iodine.Language.IR
   , Thread (..)
   , GetVariables (..)
   , GetData (..)
-  , isInput
   , moduleInputs
   , moduleOutputs
   , moduleThreads
   , isStar
+  , isInput
+  , isVariable
   )
 where
 
@@ -371,3 +372,7 @@ moduleInputs, moduleOutputs :: Module a -> Maybe Id -> Ids
 isStar :: Eq a => Thread a -> Bool
 isStar (AB ab) = abEvent ab == Star
 isStar (MI _)  = False
+
+isVariable :: Expr a -> Bool
+isVariable Variable{} = True
+isVariable _ = False

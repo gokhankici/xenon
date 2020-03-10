@@ -168,7 +168,9 @@ initializeTop thread@(MI ModuleInstance{..}) = do
       subs = second (setThreadId targetModule) <$>
              HM.foldlWithKey'
              (\acc portName portExpr ->
-                acc <> mkSubs portExpr portName (moduleName targetModule))
+                if isVariable portExpr
+                then acc <> mkSubs portExpr portName (moduleName targetModule)
+                else acc)
              mempty
              moduleInstancePorts
   return $

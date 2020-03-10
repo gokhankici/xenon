@@ -30,6 +30,9 @@ data Annotations =
               }
   deriving (Show)
 
+emptyAnnotations :: Annotations
+emptyAnnotations = Annotations mempty mempty mempty mempty mempty mempty
+
 data Qualifier =
     QImplies Id (L Id)
   | QIff     Id (L Id)
@@ -42,6 +45,9 @@ data ModuleAnnotations =
                     , _clock             :: Maybe Id
                     }
   deriving (Show)
+
+emptyModuleAnnotations :: ModuleAnnotations
+emptyModuleAnnotations = ModuleAnnotations emptyAnnotations mempty Nothing
 
 data AnnotationFile =
   AnnotationFile { _afAnnotations :: HM.HashMap Id ModuleAnnotations -- ^ module -> annotations
@@ -100,7 +106,7 @@ instance FromJSON Qualifier where
 instance FromJSON ModuleAnnotations where
   parseJSON = withObject "ModuleAnnotation" $ \o ->
     ModuleAnnotations
-    <$> o .:? "annotations" .!= Annotations mempty mempty mempty mempty mempty mempty
+    <$> o .:? "annotations" .!= emptyAnnotations
     <*> o .:? "qualifiers"  .!= mempty
     <*> o .:? "clock"
 
@@ -114,8 +120,7 @@ instance FromJSON AnnotationFile where
 toModuleAnnotations :: Id -> AnnotationFile -> ModuleAnnotations
 toModuleAnnotations m = (^. afAnnotations . to find)
   where
-    errMsg = "Module " ++ show m ++ " not found in annotations"
-    find   = HM.lookupDefault (error errMsg) m
+    find = HM.lookupDefault emptyModuleAnnotations m
 
 getModuleAnnotations :: Member (Reader AnnotationFile) r => Id -> Sem r ModuleAnnotations
 getModuleAnnotations = asks . toModuleAnnotations
