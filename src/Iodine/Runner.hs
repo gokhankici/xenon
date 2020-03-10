@@ -10,11 +10,10 @@ module Iodine.Runner (run , main) where
 import           Iodine.IodineArgs
 import           Iodine.Language.Annotation
 import           Iodine.Language.IRParser
+import           Iodine.Language.PrologParser
 import           Iodine.Pipeline
-import           Iodine.Types
-
--- import           Iodine.Transform.HornQuery (FInfo)
 import           Iodine.Transform.Query (FInfo)
+import           Iodine.Types
 
 import qualified Control.Exception as E
 import           Control.Lens (view)
@@ -22,6 +21,7 @@ import           Control.Monad
 import qualified Data.ByteString.Lazy as B
 import           Data.Function
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import qualified Language.Fixpoint.Solver as F
 import qualified Language.Fixpoint.Types as FT
 import qualified Language.Fixpoint.Types.Config as FC
@@ -123,7 +123,7 @@ checkIR :: (IodineArgs, AnnotationFile) -> IO Bool
 -- -----------------------------------------------------------------------------
 checkIR (IodineArgs{..}, af)
   | printIR = do
-      irFileContents <- readFile fileName
+      irFileContents <- readIRFile
       putStrLn irFileContents
       result <- parse (fileName, irFileContents)
                 & errorToIOFinal
@@ -143,7 +143,7 @@ checkIR (IodineArgs{..}, af)
   where
     computeFInfo :: IO FInfo
     computeFInfo = do
-      irFileContents <- readFile fileName
+      irFileContents <- readIRFile
       -- (bsBuilder, mFInfo) <- pipeline af
       mFInfo <- pipeline af
         (parse (fileName, irFileContents)) -- ir reader
@@ -159,6 +159,13 @@ checkIR (IodineArgs{..}, af)
       case mFInfo of
         Right finfo -> return finfo
         Left e      -> errorHandle e
+
+    readIRFile :: IO String
+    readIRFile = do
+      fileContents <- TIO.readFile fileName
+      return $ case parseProlog fileName fileContents of
+        Right ms -> unlines $ show <$> ms
+        Left msg -> error msg
 
     handleTrace :: Member (Embed IO) r => Sem (Trace ': r) a -> Sem r a
     handleTrace = if enableTrace then traceToIO else ignoreTrace
