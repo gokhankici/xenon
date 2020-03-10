@@ -251,13 +251,15 @@ tagSet thread = withTopModule $ do
     then Nothing
     else
       Just $
-      Horn { hornHead   = makeKVar thread $
-                          second (setThreadId thread) <$> subs
-           , hornBody   = setThreadId thread body'
+      Horn { hornHead   = makeKVar thread $ second sti <$> subs
+           , hornBody   = sti body'
            , hornType   = TagSet
            , hornStmtId = getThreadId thread
            , hornData   = ()
            }
+  where
+    sti = setThreadId thread
+{- HLINT ignore tagSet -}
 
 tagSetHelper :: FDS r => Sem r (Module Int, Ids, Ids)
 tagSetHelper = (,,) <$> ask @(Module Int) <*> getCurrentSources <*> asks (^. currentVariables)
@@ -281,24 +283,26 @@ srcTagReset thread = withTopModule $ do
       aes       <- fmap (updateVarIndex (+ 1)) <$> alwaysEqualEqualities thread
       nextVars  <- HM.map (+ 1) <$> getNextVars thread
       let tr    = updateVarIndex (+ 1) $ transitionRelationT thread
-          -- increment indices of non srcs, keep everything
-          -- always_eq on 1 indices and last hold
-          -- transition starting from 1 indices
-          body' = body <| nonSrcUpdates <> (aes |> tr)
-      return (HAnd body', toSubsTags moduleName nextVars)
+      -- increment indices of non srcs, keep everything
+      -- always_eq on 1 indices and last hold
+      -- transition starting from 1 indices
+      return ( HAnd $ body <| nonSrcUpdates <> (aes |> tr)
+             , toSubsTags moduleName nextVars
+             )
     else return (body, clearSubs)
   return $
     if HS.null srcs
     then Nothing
     else
       Just $
-      Horn { hornHead   = makeKVar thread subs
-           , hornBody   = body'
+      Horn { hornHead   = makeKVar thread $ second sti <$> subs
+           , hornBody   = sti body'
            , hornType   = SourceTagReset
            , hornStmtId = getThreadId thread
            , hornData   = ()
            }
   where
+    sti = setThreadId thread
     keepEverything n =
       foldl' (\es (v, m) -> es <> (mkEqual <$> mkAllSubs v m n 0)) mempty
 
