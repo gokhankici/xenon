@@ -12,9 +12,9 @@ def err(msg):
 
 def parse_args():
     ap = argparse.ArgumentParser(description="updates the old annotation format to the new one")
-    ap.add_argument("annot_file", metavar="ANNOT FILE", type=argparse.FileType('r'), help="Annotation file")
-    ap.add_argument("--has-clock", type=str, nargs='*', metavar="MODULE", help="module(s) with a clock")
-    ap.add_argument("--top-module", type=str, required=True, metavar="MODULE", help="top module name")
+    ap.add_argument("annot_file", metavar="ANNOT-FILE", type=argparse.FileType('r'), help="Annotation file")
+    ap.add_argument("--has-clock", type=str, action='append', metavar="MODULE-NAME", help="module with a clock")
+    ap.add_argument("--top-module", type=str, required=True, metavar="MODULE-NAME", help="top module name")
     ap.add_argument("--replace", action="store_true", default=False, help="replace the original file")
     args = ap.parse_args()
     return args
@@ -25,9 +25,13 @@ NEW_ANNOT_FILE = ANNOT_FILE.parent / (ANNOT_FILE.stem + "_fixed.json")
 
 annots = json.load(args.annot_file)
 
-annot_diff = set(annots.keys()) - set(["clock", "annotations"])
+annot_diff = set(annots.keys()) - set(["clock", "annotations", "blocklist"])
 if annot_diff:
     err(f"Unknown annotations: {annot_diff}")
+
+################################################################################
+# clock ########################################################################
+################################################################################
 
 clock     = annots["clock"] if "clock" in annots else None
 has_clock = set(args.has_clock) if args.has_clock is not None else set()
@@ -35,38 +39,56 @@ has_clock = set(args.has_clock) if args.has_clock is not None else set()
 if has_clock and not clock:
     err("some modules have a clock but clock name is not in the file")
 
+has_clock.add(args.top_module)
+
+################################################################################
+# creating the new format ######################################################
+################################################################################
+
 new_format = {}
 
 new_format["top_module"] = args.top_module
 new_format["modules"] = {}
 
 def set_module_annot(module_name, annot_type, value):
+    if module_name not in new_format["modules"]:
+        new_format["modules"][module_name] = {"annotations": {}}
+    if "annotations" not in new_format["modules"][module_name]:
+        new_format["modules"][module_name]["annotations"] = {}
     new_format["modules"][module_name]["annotations"][annot_type] = value
 
 def set_module_clock(module_name, value):
+    if module_name not in new_format["modules"]:
+        new_format["modules"][module_name] = {}
     new_format["modules"][module_name]["clock"] = value
 
 def get_module_annot(module_name, annot_type):
     return new_format["modules"][module_name]["annotations"][annot_type]
 
 def has_module_annot(module_name, annot_type):
-    return annot_type in new_format["modules"][module_name]["annotations"]
+    try:
+        return annot_type in new_format["modules"][module_name]["annotations"]
+    except KeyError:
+        return False
 
 for annot in annots["annotations"]:
     module_name = annot["module"] if "module" in annot else args.top_module
     annot_type = annot["type"]
-
-    if module_name not in new_format["modules"]:
-        new_format["modules"][module_name] = {"annotations": {}}
 
     if has_module_annot(module_name, annot_type):
         err(f"{module_name} has multiple annotations of the form {annot_type}")
 
     set_module_annot(module_name, annot_type, annot["variables"])
 
-for module_name in new_format["modules"]:
-    if clock and (module_name == args.top_module or module_name in has_clock):
-        set_module_clock(module_name, clock)
+for module_name in has_clock:
+    set_module_clock(module_name, clock)
+
+if "blocklist" in annots:
+    new_format["blocklist"] = annots["blocklist"]
+
+################################################################################
+# writing the new format #######################################################
+################################################################################
 
 with open(NEW_ANNOT_FILE, "w") as f:
     json.dump(new_format, f, indent=2)

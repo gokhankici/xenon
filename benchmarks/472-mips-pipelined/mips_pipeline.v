@@ -170,7 +170,8 @@ input clk, reset;
     //                              ID Stage
     // ********************************************************************
 
-    reg_file	RFILE(clk, WB_RegWrite, ID_rs, ID_rt, WB_RegRd, ID_rd1, ID_rd2, WB_wd);
+    // module reg_file(clk, RegWrite,    RN1,   RN2,   WN,       RD1,    RD2,    WD);
+    reg_file	 RFILE(clk, WB_RegWrite, ID_rs, ID_rt, WB_RegRd, ID_rd1, ID_rd2, WB_wd);
 
     // sign-extender
     assign ID_extend = { {16{ID_immed[15]}}, ID_immed };
