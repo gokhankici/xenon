@@ -44,6 +44,7 @@ type SC r = Members '[ PE.Error IodineException   -- sanity error
 
 type S  = Stmt ()
 type M  = Module ()
+type MI = ModuleInstance ()
 type MA = Maybe (AlwaysBlock ())
 type FD r = ( SC r
             , Members '[ Reader (Module ())
@@ -53,6 +54,7 @@ type FD r = ( SC r
 
 -- | Type alias for the Sanity Check Monad
 type SCM r a = Sem (Reader MA ': Reader M ': r) a
+type SC2 r a = Sem (Reader M ': r) a
 
 -- -----------------------------------------------------------------------------
 sanityCheck :: SC r => Sem r ()
@@ -67,15 +69,25 @@ sanityCheck =
 checkHelper :: SC r
             => (S -> SCM r ()) -- ^ checks the statement
             -> Sem r ()
-checkHelper goS = ask @ParsedIR >>= traverse_ (checkModule goS)
+checkHelper goS = ask @ParsedIR >>= traverse_ (checkModule goS (\_ -> return ()))
+
+checkHelper' :: SC r
+             => (S -> SCM r ()) -- ^ checks the statement
+             -> (MI-> SC2 r ()) -- ^ checks the module instance
+             -> Sem r ()
+checkHelper' goS goMI = ask @ParsedIR >>= traverse_ (checkModule goS goMI)
 
 checkModule :: (S -> SCM r ())
+            -> (MI -> SC2 r ())
             -> Module ()
             -> Sem r ()
-checkModule goS m@Module{..} =
-  ( do traverse_ goS gateStmts & runReader @MA Nothing
-       let goAB ab@AlwaysBlock{..} = goS abStmt & runReader (Just ab)
+checkModule goS goMI m@Module{..} =
+  ( do traverse_ goS gateStmts
+         & runReader @MA Nothing
+       let goAB ab@AlwaysBlock{..} =
+             goS abStmt & runReader (Just ab)
        traverse_ goAB alwaysBlocks
+       traverse_ goMI moduleInstances
   ) & runReader m
 
 getModuleName :: FD r => Sem r Id
@@ -141,16 +153,16 @@ checkSameAssignmentType =
 checkUniqueUpdateLocationOfVariables :: SC r => Sem r ()
 -- -----------------------------------------------------------------------------
 checkUniqueUpdateLocationOfVariables =
-  checkHelper (checkPrevious . asgnVars)
+  checkHelper' (checkPrevious . asgnVars) undefined
   & runUniqueUpdateCheck
   & evalState HS.empty
 
   where
     asgnVars :: Stmt a -> S1
-    asgnVars Block{..}          = foldMap asgnVars blockStmts
-    asgnVars IfStmt{..}         = asgnVars ifStmtThen <> asgnVars ifStmtElse
-    asgnVars Assignment{..}     = HS.singleton (varName assignmentLhs, varModuleName assignmentLhs)
-    asgnVars Skip{..}           = mempty
+    asgnVars Block{..}      = foldMap asgnVars blockStmts
+    asgnVars IfStmt{..}     = asgnVars ifStmtThen <> asgnVars ifStmtElse
+    asgnVars Assignment{..} = HS.singleton (varName assignmentLhs, varModuleName assignmentLhs)
+    asgnVars Skip{..}       = mempty
 
 runUniqueUpdateCheck :: SC r => Sem (UniqueUpdateCheck ': r) a -> Sem (State S1 ': r) a
 runUniqueUpdateCheck = reinterpret $ \case
