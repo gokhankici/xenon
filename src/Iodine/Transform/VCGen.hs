@@ -211,7 +211,7 @@ initializeSub thread = do
 
   return $
     Horn { hornHead   = makeKVar thread subs
-         , hornBody   = HAnd $ makeKVar currentModule mempty <| initEq
+         , hornBody   = HAnd initEq
          , hornType   = Init
          , hornStmtId = getThreadId thread
          , hornData   = ()

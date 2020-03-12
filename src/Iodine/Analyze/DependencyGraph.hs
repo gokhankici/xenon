@@ -6,11 +6,17 @@
 {-# LANGUAGE GADTs #-}
 
 module Iodine.Analyze.DependencyGraph
-  (
-    dependencyGraph
-  , dependencyGraphFromMany
+  ( dependencyGraph
   , VarDepGraph
   , VarDepEdgeType(..)
+  , ThreadDepGraph
+  , depGraph
+  , pathVars
+  , varMap
+  , varCounter
+  , varReads
+  , varUpdates
+  , threadGraph
   )
 where
 
@@ -26,18 +32,26 @@ import qualified Data.HashSet as HS
 import qualified Data.IntSet as IS
 import           Polysemy
 import           Polysemy.State
+import           Polysemy.Reader
 
 type VarDepGraph = Gr () VarDepEdgeType
 data VarDepEdgeType = Implicit | Explicit AssignmentType
+type Ints = IS.IntSet
+type ThreadDepGraph = Gr () ()
 
-data St =
-  St { _depGraph   :: VarDepGraph
-     , _pathVars   :: IS.IntSet
-     , _varMap     :: HM.HashMap Id Int
-     , _varCounter :: Int
-     }
+data DependencyGraphSt =
+  DependencyGraphSt
+  { _depGraph    :: VarDepGraph        -- ^ variable dependency map
+  , _pathVars    :: Ints               -- ^ path variables
+  , _varMap      :: HM.HashMap Id Int  -- ^ variable name -> node id
+  , _varCounter  :: Int                -- ^ for creating fresh node ids
+  , _varReads    :: HM.HashMap Id Ints -- ^ thread ids that read a variable
+  , _varUpdates  :: HM.HashMap Id Ints -- ^ thread ids that update a variable
+  , _threadGraph :: ThreadDepGraph     -- ^ thread dependency graph
+  }
 
-makeLenses ''St
+makeLenses ''DependencyGraphSt
+
 
 {- |
 Creates a dependency graph for the variables that occur inside the given
@@ -48,30 +62,37 @@ statement.
 - (v1, v2, Implicit) \in E iff v1 is a path variable (occurs inside the
   condition of an if statement where v2 is assigned)
 -}
-dependencyGraph :: Stmt a -> (VarDepGraph, HM.HashMap Id Int)
-dependencyGraph stmt = dependencyGraphFromMany [stmt]
-
-{- |
-Like 'dependencyGraph', but creates a graph from many statements.
--}
-dependencyGraphFromMany :: Foldable t
-                        => t (Stmt a)
-                        -> (VarDepGraph, HM.HashMap Id Int)
-dependencyGraphFromMany stmts = (st ^. depGraph, st ^. varMap)
+dependencyGraph :: Foldable t => t (AlwaysBlock Int) -> DependencyGraphSt
+dependencyGraph threads = for_ threads dependencyGraphAct
+                          & execState initialState & run
   where
-    st = traverse_ handleStmt stmts
-         & runState initialState
-         & run
-         & fst
     initialState =
-      St { _depGraph   = G.empty
-         , _pathVars   = mempty
-         , _varMap     = mempty
-         , _varCounter = 0
-         }
+      DependencyGraphSt
+      { _depGraph    = G.empty
+      , _pathVars    = mempty
+      , _varMap      = mempty
+      , _varCounter  = 0
+      , _varReads    = mempty
+      , _varUpdates  = mempty
+      , _threadGraph = G.empty
+      }
 
+dependencyGraphAct :: AlwaysBlock Int -> Sem '[State DependencyGraphSt] ()
+dependencyGraphAct ab = do
+  runReader (getData ab) $ handleStmt (abStmt ab)
+  gets (HM.toList . (^. varUpdates))
+    >>= traverse_ (
+    \(writtenVar, writtenThreads) -> do
+      mReadThreads <- gets (HM.lookup writtenVar . (^. varReads))
+      case mReadThreads of
+        Nothing -> return ()
+        Just readThreads ->
+          for_ (IS.toList writtenThreads) $ \wt ->
+          for_ (IS.toList readThreads) $ \rt ->
+          modify (threadGraph %~ (G.insEdge (wt, rt, ()) . G.insNode (rt, ()) . G.insNode (wt, ())))
+    )
 
-type FD r = Member (State St) r
+type FD r = Members '[State DependencyGraphSt, Reader Int] r
 
 handleStmt :: FD r => Stmt a -> Sem r ()
 handleStmt Skip{..}  = return ()
@@ -80,12 +101,17 @@ handleStmt Assignment{..} =
   case assignmentLhs of
     Variable{..} -> do
       lhsNode <- getNode varName
-      rhsNodes <- getNodes (getVariables assignmentRhs)
+      let rhsVars = getVariables assignmentRhs
+      rhsNodes <- getNodes rhsVars
       for_ (IS.toList rhsNodes) $ \rhsNode ->
         addNode (rhsNode, lhsNode, Explicit assignmentType)
       pathNodes <- gets (^. pathVars)
       for_ (IS.toList pathNodes) $ \pathNode ->
         addNode (pathNode, lhsNode, Implicit)
+      -- update the thread map
+      tid <- ask
+      modify (varUpdates %~ addToSet varName tid)
+      for_ rhsVars $ \rhsVar -> modify (varReads %~ addToSet rhsVar tid)
     _ -> error "assignment lhs is non-variable"
 handleStmt IfStmt{..} = do
   currentSt <- get
@@ -116,3 +142,9 @@ getNode v = do
         (varMap %~ HM.insert v n)
       return n
     Just n -> return n
+
+addToSet :: Id -> Int -> HM.HashMap Id Ints -> HM.HashMap Id Ints
+addToSet k i = HM.alter upd k
+  where
+    upd Nothing   = Just $ IS.singleton i
+    upd (Just is) = Just $ IS.insert i is

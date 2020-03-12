@@ -35,9 +35,9 @@ import           Text.Printf
 {- |
 Implements the following pipeline:
 
-IR ----+              ModuleSummary
-       |                    |
-       |                    v
+IR ----+                                    ModuleSummary
+       |                                          |
+       |                                          v
 Annot ---> SanityCheck -> Merge -> Normalize -> VCGen -> Query
 -}
 pipeline
@@ -49,26 +49,22 @@ pipeline af irReader = do
   ir <- irReader
   runReader af $ do
     sanityCheck & runReader ir
-    -- traceResult "IR" ir
-
-    let moduleMap = mkModuleMap ir
-    summaryMap <- createModuleSummaries moduleMap
 
     ssaOutput@(normalizedIR, _) <-
-      runReader summaryMap $
-      runReader moduleMap $
-      do mergedIR <- merge ir
-         -- traceResult "Merged IR" mergedIR
-         normalize mergedIR
+      runReader (mkModuleMap ir) (merge ir) >>= normalize
 
     traceResult "Normalized IR" normalizedIR
 
-    let moduleMap' = mkModuleMap normalizedIR
-    runReader summaryMap $
-      runReader moduleMap' $
-      vcgen ssaOutput >>=
-      constructQuery normalizedIR
+    let moduleMap = mkModuleMap normalizedIR
+    moduleSummaries <-
+      createModuleSummaries moduleMap
+      & runReader moduleMap
+
+    ( vcgen ssaOutput >>= constructQuery normalizedIR )
+      & runReader moduleSummaries
+      & runReader moduleMap
   where
+    mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
     mkModuleMap =
       foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty
 

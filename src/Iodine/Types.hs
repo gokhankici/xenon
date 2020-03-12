@@ -23,6 +23,7 @@ data IodineExceptionType =
   | Query
   | Assert
   | NotSupported
+  | Analysis
   deriving (Show, Eq)
 
 data IodineException =

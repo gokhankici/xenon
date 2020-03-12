@@ -25,7 +25,7 @@ NEW_ANNOT_FILE = ANNOT_FILE.parent / (ANNOT_FILE.stem + "_fixed.json")
 
 annots = json.load(args.annot_file)
 
-OTHER_TYPES = set(["blocklist", "history"])
+OTHER_TYPES = set(["blocklist", "history", "qualifiers-history", "qualifiers"])
 annot_diff = set(annots.keys()) - set(["clock", "annotations"]) - OTHER_TYPES
 if annot_diff:
     err(f"Unknown annotations: {annot_diff}")

@@ -15,6 +15,7 @@ module Iodine.Transform.Query
   )
 where
 
+import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
@@ -28,15 +29,16 @@ import           Control.Monad
 import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import           Data.List (nub)
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics hiding ( moduleName, to )
 import qualified Language.Fixpoint.Types as FT
 import           Polysemy
-import           Polysemy.Reader
-import           Polysemy.Trace
-import           Polysemy.State
 import qualified Polysemy.Error as PE
+import           Polysemy.Reader
+import           Polysemy.State
+import           Polysemy.Trace
 import qualified Text.PrettyPrint.HughesPJ as PP
 -- import           Text.Printf
 
@@ -51,6 +53,7 @@ type G r   = Members '[ Trace
                       , Reader AnnotationFile
                       , PE.Error IodineException
                       , Reader ModuleMap
+                      , Reader SummaryMap
                       ] r
 
 type FD r  = ( G r
@@ -88,6 +91,8 @@ data St = St { _hornConstraints           :: HM.HashMap Integer (FT.SubC HornCla
 
 makeLenses ''St
 
+initialState :: St
+initialState = St mempty mempty mempty mempty defaultQualifiers 0 0 mempty
 
 -- -----------------------------------------------------------------------------
 -- generate a query for the liquid-fixpoint solver
@@ -271,13 +276,12 @@ toFSort HornBool = FT.boolSort
 -- -----------------------------------------------------------------------------
 
 addSummaryQualifiers :: FD r => Module Int -> Sem r ()
-addSummaryQualifiers m@Module{..} = do
-  mClks <- getClocks moduleName
-  let inputs     = moduleInputs m mClks
-  let inputLists = toList $ powerset $ toSequence inputs
+addSummaryQualifiers Module{..} = do
+  inputLists <- filter (not . HS.null) . nub . concat
+                <$> asks (fmap (HM.elems . portDependencies) . HM.lookup moduleName)
   for_ (zip inputLists [0..]) $ \(ls, n) ->
     let qualifierName = "SummaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n
-    in addQualifier $ mkSummaryQualifier qualifierName ls
+    in addQualifier $ mkSummaryQualifier qualifierName (toSequence ls)
 
 -- | given a list of input ports i1, i2, ... creates a qualifier of the form:
 -- ((TL_i1 <=> TR_i1) && (TL_i2 <=> TR_i2) && ...) ==> TL_$1 <=> TR_$1)
@@ -308,12 +312,12 @@ mkSummaryQualifier qualifierName inputs =
     mkVar v = HVar0 v "" Tag -- module name is never used in the patterns
     typ = FT.boolSort
 
--- non empty powerset of the given sequence
-powerset :: L a -> L (L a)
-powerset SQ.Empty            = SQ.Empty
-powerset (a SQ.:<| SQ.Empty) = SQ.singleton $ SQ.singleton a
-powerset (a SQ.:<| as)       = let ps = powerset as
-                               in ps <> ((a SQ.:<|) <$> ps)
+-- -- | non empty powerset of the given sequence
+-- powerset :: L a -> L (L a)
+-- powerset SQ.Empty            = SQ.Empty
+-- powerset (a SQ.:<| SQ.Empty) = SQ.singleton $ SQ.singleton a
+-- powerset (a SQ.:<| as)       = let ps = powerset as
+                               -- in ps <> ((a SQ.:<|) <$> ps)
 
 -- | Creates the fixpoint qualifier based on the description given in the
 -- annotation file
@@ -568,9 +572,6 @@ getVarPrefix hVarType hVarRun =
 -- | update the state with the given fixpoint qualifier
 addQualifier :: Member (State St) r => FT.Qualifier -> Sem r ()
 addQualifier q = modify (& qualifiers %~ (|> q))
-
-initialState :: St
-initialState = St mempty mempty mempty mempty defaultQualifiers 0 0 mempty
 
 -- | return the current constraint id and increment it later
 freshConstraintId :: FD r => Sem r Integer

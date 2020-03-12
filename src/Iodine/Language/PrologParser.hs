@@ -1,4 +1,3 @@
--- {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}

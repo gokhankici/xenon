@@ -9,7 +9,6 @@
 
 module Iodine.Transform.Merge (merge) where
 
-import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Language.IRParser
@@ -44,7 +43,6 @@ data St =
 makeLenses ''St
 
 type G r = Members '[ Reader AnnotationFile
-                    , Reader SummaryMap
                     , Reader ModuleMap
                     , Error IodineException] r
 

@@ -354,6 +354,8 @@ isInput :: Port -> Bool
 isInput (Input _)  = True
 isInput (Output _) = False
 
+-- | given a module and a set of clocks, return the input/output port names of
+-- that module
 moduleInputs, moduleOutputs :: Module a -> Ids -> Ids
 (moduleInputs, moduleOutputs) = (helper True, helper False)
   where

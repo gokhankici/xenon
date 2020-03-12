@@ -106,16 +106,13 @@ parseStmt =
                    <*> (comma *> parseExpr)
                    <*> parseData
 
-parseModuleInstancePortExpr :: Parser (Expr ())
-parseModuleInstancePortExpr = parseConstantExpr <|> parseVarExpr
-
 parseModuleInstance :: Parser (ModuleInstance ())
 parseModuleInstance =
   parseTerm "mod_inst" $
   ModuleInstance
   <$> identifier
   <*> (comma *> identifier)
-  <*> (comma *> parseMap identifier parseModuleInstancePortExpr)
+  <*> (comma *> parseMap identifier parseExpr)
   <*> parseData
 
 
