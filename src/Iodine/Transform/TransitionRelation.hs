@@ -4,11 +4,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 
-module Iodine.Transform.TransitionRelation
-  ( transitionRelation
-  , transitionRelationT
-  )
-where
+module Iodine.Transform.TransitionRelation (transitionRelation) where
 
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
@@ -25,10 +21,6 @@ import           Polysemy.State
 import           Text.Read (readEither)
 
 type S = Stmt Int
-
-transitionRelationT :: Thread Int -> HornExpr
-transitionRelationT (AB ab) = transitionRelation $ abStmt ab
-transitionRelationT (MI _)  = HBool True
 
 transitionRelation :: S -> HornExpr
 transitionRelation s =

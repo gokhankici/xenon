@@ -134,7 +134,7 @@ generateConstraint Horn {..} = do
 generateWFConstraints :: FD r => Module Int -> Sem r ()
 generateWFConstraints m@Module{..} = do
   generateWFConstraint moduleName m
-  traverse_ (generateWFConstraint moduleName) (moduleThreads m)
+  traverse_ (generateWFConstraint moduleName) alwaysBlocks
 
 
 -- | Create a well formedness constraint for the given statement

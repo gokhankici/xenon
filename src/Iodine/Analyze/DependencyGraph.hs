@@ -7,9 +7,7 @@
 
 module Iodine.Analyze.DependencyGraph
   ( dependencyGraph
-  , VarDepGraph
-  , VarDepEdgeType(..)
-  , ThreadDepGraph
+  , DependencyGraphSt
   , depGraph
   , pathVars
   , varMap
@@ -17,9 +15,12 @@ module Iodine.Analyze.DependencyGraph
   , varReads
   , varUpdates
   , threadGraph
+  , VarDepGraph
+  , VarDepEdgeType(..)
   )
 where
 
+import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
 
@@ -34,6 +35,7 @@ import           Polysemy
 import           Polysemy.State
 import           Polysemy.Reader
 
+type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
 data VarDepEdgeType = Implicit | Explicit AssignmentType
 type Ints = IS.IntSet
@@ -62,9 +64,11 @@ statement.
 - (v1, v2, Implicit) \in E iff v1 is a path variable (occurs inside the
   condition of an if statement where v2 is assigned)
 -}
-dependencyGraph :: Foldable t => t (AlwaysBlock Int) -> DependencyGraphSt
-dependencyGraph threads = for_ threads dependencyGraphAct
-                          & execState initialState & run
+dependencyGraph :: Members '[Reader ModuleMap, Reader AnnotationFile] r
+                =>  Module Int -> Sem r DependencyGraphSt
+dependencyGraph Module{..} = execState initialState $ do
+  for_ alwaysBlocks dependencyGraphActAB
+  for_ moduleInstances dependencyGraphActMI
   where
     initialState =
       DependencyGraphSt
@@ -77,8 +81,40 @@ dependencyGraph threads = for_ threads dependencyGraphAct
       , _threadGraph = G.empty
       }
 
-dependencyGraphAct :: AlwaysBlock Int -> Sem '[State DependencyGraphSt] ()
-dependencyGraphAct ab = do
+dependencyGraphActMI :: Members '[ Reader ModuleMap
+                                 , Reader AnnotationFile
+                                 , State DependencyGraphSt] r
+                     => ModuleInstance Int
+                     -> Sem r ()
+dependencyGraphActMI mi@ModuleInstance{..} = do
+  let miThreadId = getData mi
+  modify (threadGraph %~ G.insNode (miThreadId, ()))
+  (miReads, miWrites) <-
+    moduleInstanceReadsAndWrites
+    <$> asks (HM.! moduleInstanceType)
+    <*> getClocks moduleInstanceType
+    <*> return mi
+  for_ miReads $ \readVar -> do
+    modify (varReads %~ addToSet readVar miThreadId)
+    lookupThreads readVar varUpdates
+      >>= traverse_ (\writtenThread ->
+                       modify (threadGraph %~ G.insEdge (writtenThread, miThreadId, ())))
+  for_ miWrites $ \writtenVar -> do
+    modify (varUpdates %~ addToSet writtenVar miThreadId)
+    lookupThreads writtenVar varReads
+      >>= traverse_ (\readThread ->
+                       modify (threadGraph %~ G.insEdge (miThreadId, readThread, ())))
+
+lookupThreads :: Member (State DependencyGraphSt) r
+              => Id
+              -> Getter DependencyGraphSt (HM.HashMap Id Ints)
+              -> Sem r [Int]
+lookupThreads v optic =
+  gets (concatMap IS.toList . HM.lookup v . (^. optic))
+
+dependencyGraphActAB :: Member (State DependencyGraphSt) r
+                     => AlwaysBlock Int -> Sem r ()
+dependencyGraphActAB ab = do
   runReader (getData ab) $ handleStmt (abStmt ab)
   gets (HM.toList . (^. varUpdates))
     >>= traverse_ (

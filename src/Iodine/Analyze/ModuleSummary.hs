@@ -13,7 +13,7 @@ module Iodine.Analyze.ModuleSummary
   )
 where
 
-import           Iodine.Analyze.DependencyGraph
+import           Iodine.Analyze.DependencyGraph hiding (getNode)
 import           Iodine.Analyze.ModuleDependency
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
@@ -36,8 +36,7 @@ import           Polysemy.Reader
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
 
-type M           = Module Int
-type ModuleMap   = HM.HashMap Id M
+type ModuleMap   = HM.HashMap Id (Module Int)
 type SummaryMap  = HM.HashMap Id ModuleSummary
 type TDGraph     = G.Gr () () -- | thread dependency graph
 type Error       = PE.Error IodineException
@@ -47,12 +46,18 @@ data ModuleSummary =
                   -- set of inputs that affect it
                   portDependencies :: HM.HashMap Id Ids,
 
-                  -- ^ whether the module is a combinational logic (i.e., does
+                  -- | whether the module is a combinational logic (i.e., does
                   isCombinatorial :: Bool,
 
                   -- | (t1, t2) \in E <=> thread t1 updates a variable that
                   -- thread t2 uses
-                  threadDependencies :: TDGraph
+                  threadDependencies :: TDGraph,
+
+                  -- | maps variables to threads that read it
+                  threadReadMap :: HM.HashMap Id IS.IntSet,
+
+                  -- | maps variables to threads that update it
+                  threadWriteMap :: HM.HashMap Id IS.IntSet
                   }
   deriving (Show)
 
@@ -82,16 +87,18 @@ createModuleSummary :: Members '[ Reader AnnotationFile
                                 , Error
                                 , Reader ModuleMap
                                 ] r
-                    => M
+                    => Module Int
                     -> Sem r ModuleSummary
 createModuleSummary m@Module{..} = do
-  (varDepGraph, varDepMap, threadGr) <- dependencyGraphFromModule m
+  dgState <- dependencyGraphFromModule m
+  let varDepGraph = dgState ^. depGraph
+      varDepMap   = dgState ^. varMap
   trace "createModuleSummary-module" moduleName
   let lookupNode v = mapLookup 1 v varDepMap
   clks <- getClocks moduleName
   let hasClock = not $ HS.null clks
       isClk v = v `elem` clks
-  let portDependencies =
+  let portDeps =
         foldl'
         (\deps o ->
            let is = HS.fromList $ toList $
@@ -108,9 +115,16 @@ createModuleSummary m@Module{..} = do
     fmap and $
     forM moduleInstances $ \ModuleInstance{..} ->
     isCombinatorial <$> gets (mapLookup 2 moduleInstanceType)
-  let isCombinatorial = not hasClock && submodulesCanBeSummarized
+  let isComb = not hasClock && submodulesCanBeSummarized
 
-  return $ ModuleSummary portDependencies isCombinatorial threadGr
+  return $
+    ModuleSummary
+    { portDependencies   = portDeps
+    , isCombinatorial    = isComb
+    , threadDependencies = dgState ^. threadGraph
+    , threadReadMap      = dgState ^. varReads
+    , threadWriteMap     = dgState ^. varUpdates
+    }
   where
     isReachable g toNode fromNode =
       let ns = GQ.reachable fromNode g
@@ -129,34 +143,19 @@ dependencyGraphFromModule :: Members '[ State SummaryMap
                                       , Reader AnnotationFile
                                       , Reader ModuleMap
                                       ] r
-                          => M
-                          -> Sem r (VarDepGraph, HM.HashMap Id Int, ThreadDepGraph)
-dependencyGraphFromModule Module{..} =
+                          => Module Int
+                          -> Sem r DependencyGraphSt
+dependencyGraphFromModule m@Module{..} = do
+  dgState <- dependencyGraph m
   if   SQ.null moduleInstances
-  then return (g, nodeMap, tg)
-  else do
+    then return dgState
+    else do
+    let nodeMap = dgState ^. varMap
+        maxId   = maximum $ HM.elems nodeMap
     unless (SQ.null gateStmts) (PE.throw $ IE Analysis "non null gate stmts")
-    (tg', (nodeMap', extraEdges)) <- runState tg $ runState nodeMap $ evalState maxId $
-                              foldlM' SQ.empty moduleInstances $ \es mi@ModuleInstance{..} -> do
-      let miThreadId = getData mi
-      modify (G.insNode (miThreadId, ()))
-      miModule <- asks (HM.! moduleInstanceType)
-      miClocks <- getClocks moduleInstanceType
-      let miInputs = moduleInputs miModule miClocks
-          miOutputs = moduleOutputs miModule miClocks
-          lookupThreads p optic =
-            let e = moduleInstancePorts HM.! p
-                vs = getVariables e
-            in do v <- toList vs
-                  concat $ IS.toList <$> HM.lookup v (dgState ^. optic)
-      -- FIXME
-      for_ miInputs $ \p ->
-        for_ (lookupThreads p varUpdates) $ \wt ->
-        modify (G.insEdge (wt, miThreadId, ()))
-      for_ miOutputs $ \p ->
-        for_ (lookupThreads p varReads) $ \rt ->
-        modify (G.insEdge (miThreadId, rt, ()))
-
+    (nodeMap', extraEdges) <-
+      runState nodeMap $ evalState maxId $
+      foldlM' SQ.empty moduleInstances $ \es ModuleInstance{..} -> do
       ModuleSummary{..} <- gets (mapLookup 3 moduleInstanceType)
       let assignedVars p = toSequence . getVariables $ mapLookup 4 p moduleInstancePorts
           tmpEdges = do (o, is) <- toSequence $ HM.toList portDependencies
@@ -169,14 +168,11 @@ dependencyGraphFromModule Module{..} =
         toNode <- getNode toVar
         return (fromNode, toNode, Explicit Blocking)
       return $ es <> es'
-    trace "thread graph" tg'
-    return (foldr' G.insEdge g extraEdges, nodeMap', tg')
-  where
-    maxId = maximum $ HM.elems nodeMap
-    dgState = dependencyGraph alwaysBlocks
-    g       = dgState ^. depGraph
-    nodeMap = dgState ^. varMap
-    tg      = dgState ^. threadGraph
+    trace "thread graph" $ dgState ^. threadGraph
+    return $
+      dgState
+      & over depGraph (\g -> foldr' G.insEdge g extraEdges)
+      & set varMap nodeMap'
 
 getNode :: Members '[State (HM.HashMap Id Int), State Int] r => Id -> Sem r Int
 getNode nodeName = do

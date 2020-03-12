@@ -22,23 +22,27 @@ module Iodine.Language.IR
   , GetData (..)
   , moduleInputs
   , moduleOutputs
-  , moduleThreads
   , isStar
   , isInput
   , isVariable
+  , moduleInstanceReadsAndWrites
   )
 where
 
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Lens hiding (op)
 import           Data.Foldable
-import qualified Data.HashSet as HS
+import           Data.Functor (void)
 import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
+import           Data.Hashable
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics hiding (moduleName)
-import           Data.Hashable
+import           Polysemy
+import           Polysemy.State
 import qualified Text.PrettyPrint as PP
 
 data Variable =
@@ -131,10 +135,6 @@ data Module a =
 -- | An always block or a module instance
 data Thread a = AB (AlwaysBlock a)
               | MI (ModuleInstance a)
-
-moduleThreads :: Module a -> L (Thread a)
-moduleThreads m =
-  (AB <$> alwaysBlocks m) <> (MI <$> moduleInstances m)
 
 class GetVariables m where
   -- return the name of the variables in type m
@@ -368,10 +368,38 @@ moduleInputs, moduleOutputs :: Module a -> Ids -> Ids
          then acc <> liftToMonoid v
          else acc
 
+-- | given a module, module's clocks and an instance of it, returns the
+-- variables that are read and written by the instance.
+moduleInstanceReadsAndWrites :: Module a -> Ids -> ModuleInstance a -> (Ids, Ids)
+moduleInstanceReadsAndWrites m mClks mi = run $ execState (mempty, mempty) $ do
+  for_ miInputs $ \inputPort ->
+    for_ (getVariables $ moduleInstancePorts mi HM.! inputPort) $ \v ->
+    modify (_1 %~ HS.insert v)
+  for_ miOutputs $ \outputPort -> do
+    let portExpr    = moduleInstancePorts mi HM.! outputPort
+        updatedVars = getUpdatedVars portExpr
+        readVars    = getVariables portExpr `HS.difference` updatedVars
+    for_ readVars    $ \v -> modify (_1 %~ HS.insert v)
+    for_ updatedVars $ \v -> modify (_2 %~ HS.insert v)
+  where
+    miInputs = moduleInputs m mClks
+    miOutputs = moduleOutputs m mClks
+
+    getUpdatedVars = \case
+      Variable{..}  -> HS.singleton varName
+      Constant {..} -> mempty
+      e@UF {}       -> error
+                       $ unlines [ "Module instance output port expression is an uninterpreted function!"
+                                 , show $ void e
+                                 ]
+      IfExpr {..}   -> mfold getUpdatedVars [ifExprThen, ifExprElse]
+      Str {..}      -> mempty
+      Select {..}   -> getUpdatedVars selectVar
+
+
 -- | is the given thread an always block with the star event?
-isStar :: Eq a => Thread a -> Bool
-isStar (AB ab) = abEvent ab == Star
-isStar (MI _)  = False
+isStar :: Eq a => AlwaysBlock a -> Bool
+isStar ab = abEvent ab == Star
 
 isVariable :: Expr a -> Bool
 isVariable Variable{} = True

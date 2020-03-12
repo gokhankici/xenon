@@ -42,7 +42,7 @@ data HornType = Init
               | AssertEqCheck
               | WellFormed
               | InstanceCheck
-              | ModuleSummary
+              | Summary
               deriving (Eq, Show, Generic)
 
 data HornVarType = Tag | Value
@@ -89,7 +89,7 @@ class MakeKVar m where
   makeKVar :: m Int -> L (HornExpr, HornExpr) -> HornExpr
   makeKVar t = KVar (getThreadId t) . fmap (first $ setThreadId t)
 
-instance MakeKVar Thread where
+instance MakeKVar AlwaysBlock where
   getThreadId = getData
 
 instance MakeKVar Module where
@@ -211,7 +211,7 @@ instance FT.Fixpoint HornType where
        toFix AssertEqCheck  = PP.text "assert-eq"
        toFix WellFormed     = PP.text "wellformed"
        toFix InstanceCheck  = PP.text "instance-check"
-       toFix ModuleSummary  = PP.text "module-summary"
+       toFix Summary        = PP.text "module-summary"
 
 instance NFData HornType
 
