@@ -37,7 +37,7 @@ import           Polysemy.Reader
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
-data VarDepEdgeType = Implicit | Explicit AssignmentType
+data VarDepEdgeType = Implicit | Explicit AssignmentType deriving (Show)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 
@@ -115,6 +115,7 @@ lookupThreads v optic =
 dependencyGraphActAB :: Member (State DependencyGraphSt) r
                      => AlwaysBlock Int -> Sem r ()
 dependencyGraphActAB ab = do
+  modify (threadGraph %~ G.insNode (getData ab, ()))
   runReader (getData ab) $ handleStmt (abStmt ab)
   gets (HM.toList . (^. varUpdates))
     >>= traverse_ (

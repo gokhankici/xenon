@@ -397,23 +397,33 @@ defaultQualifiers :: L FT.Qualifier
 defaultQualifiers =
     mkEq "ValueEq" Value True
     |:> mkEq "TagEq" Tag False
-    -- |> mkTagZero 0 LeftRun
-    -- |> mkTagZero 1 RightRun
+    |> mkTagZero 0 LeftRun
+    |> mkTagZero 1 RightRun
  where
   mkEq name t sameSuffix =
     makeQualifier2 name t
     (FT.PatPrefix (symbol $ getVarPrefix t LeftRun) 1)
     (FT.PatPrefix (symbol $ getVarPrefix t RightRun) (if sameSuffix then 1 else 2))
 
-  -- mkTagZero n r = FT.mkQual
-  --   (FT.symbol @String (printf "TagZero%d" (n :: Int)))
+  -- q3 =
+  --   FT.mkQual
+  --   (FT.symbol @Id "TagEq2")
   --   [ FT.QP vSymbol FT.PatNone FT.FInt
-  --   , FT.QP (symbol "x")
-  --           (FT.PatPrefix (symbol $ getVarPrefix Tag r) 1)
-  --           (FT.FTC FT.boolFTyCon)
+  --   , FT.QP (symbol "x") (FT.PatPrefix (symbol $ getVarPrefix Tag LeftRun) 1) FT.boolSort
+  --   , FT.QP (symbol "y") (FT.PatPrefix (symbol $ getVarPrefix Tag LeftRun) 1) FT.boolSort
   --   ]
-  --   (FT.PIff (FT.eVar @Id "x") FT.PFalse)
+  --   (FT.PAtom FT.Eq (FT.eVar @Id "x") (FT.eVar @Id "y"))
   --   (FT.dummyPos "")
+
+  mkTagZero n r = FT.mkQual
+    (FT.symbol @String ("TagZero" ++ show n))
+    [ FT.QP vSymbol FT.PatNone FT.FInt
+    , FT.QP (symbol "x")
+            (FT.PatPrefix (symbol $ getVarPrefix Tag r) 1)
+            (FT.FTC FT.boolFTyCon)
+    ]
+    (FT.PIff (FT.eVar @Id "x") FT.PFalse)
+    (FT.dummyPos "")
 
 
 {-|
@@ -603,11 +613,6 @@ mkBool e = FT.RR FT.boolSort (FT.reft vSymbol e)
 
 throw :: Member (PE.Error IodineException) r => String -> Sem r a
 throw = PE.throw . IE Query
-
--- | return combinations of the elements
-twoPairs :: L a -> L (a, a)
-twoPairs SQ.Empty      = mempty
-twoPairs (a SQ.:<| as) = ((a, ) <$> as) <> twoPairs as
 
 -- | make a KVar for the given invariant id
 mkKVar :: Int -> FT.KVar

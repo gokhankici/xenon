@@ -47,11 +47,16 @@ pipeline
   -> Sem r FInfo                -- ^ fixpoint query to run
 pipeline af irReader = do
   ir <- irReader
+  let irMap = mkModuleMap ir
+
   runReader af $ do
-    sanityCheck & runReader ir
+    sanityCheck
+      & runReader ir
+      & runReader irMap
 
     ssaOutput@(normalizedIR, _) <-
-      runReader (mkModuleMap ir) (merge ir) >>= normalize
+      (merge ir & runReader irMap)
+      >>= normalize
 
     traceResult "Normalized IR" normalizedIR
 
@@ -60,7 +65,7 @@ pipeline af irReader = do
       createModuleSummaries moduleMap
       & runReader moduleMap
 
-    ( vcgen ssaOutput >>= constructQuery normalizedIR )
+    (vcgen ssaOutput >>= constructQuery normalizedIR)
       & runReader moduleSummaries
       & runReader moduleMap
   where

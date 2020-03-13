@@ -82,7 +82,7 @@ data Expr a =
   deriving (Eq, Generic, Functor, Foldable, Traversable)
 
 data AssignmentType = Blocking | NonBlocking | Continuous
-                    deriving (Generic, Eq)
+                    deriving (Generic, Eq, Show)
 
 data ModuleInstance a =
   ModuleInstance { moduleInstanceType  :: Id

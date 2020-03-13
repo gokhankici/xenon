@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TupleSections #-}
 
 module Iodine.Transform.SanityCheck (sanityCheck) where
 
@@ -15,10 +16,11 @@ import           Iodine.Types
 
 import           Control.Lens
 import           Control.Monad
-import           Data.Maybe
 import           Data.Foldable
+import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.List
+import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Polysemy
@@ -30,6 +32,7 @@ import           Text.Printf
 
 type K1 = (Id, Id)
 type S1 = HS.HashSet K1
+type ModuleMap = HM.HashMap Id (Module ())
 
 data UniqueUpdateCheck m a where
   CheckPrevious :: S1 -> UniqueUpdateCheck m ()
@@ -40,6 +43,7 @@ type SC r = Members '[ PE.Error IodineException   -- sanity error
                      , Reader ParsedIR            -- parsed IR
                      , Reader AnnotationFile      -- parsed annotation file
                      , PO.Output String              -- output to stderr
+                     , Reader ModuleMap
                      ] r
 
 type S  = Stmt ()
@@ -53,8 +57,8 @@ type FD r = ( SC r
             )
 
 -- | Type alias for the Sanity Check Monad
-type SCM r a = Sem (Reader MA ': Reader M ': r) a
-type SC2 r a = Sem (Reader M ': r) a
+type SCM r a  = SC r => Sem (Reader MA ': Reader M ': r) a
+type SCMI r a = SC r => Sem (Reader M ': r) a
 
 -- -----------------------------------------------------------------------------
 sanityCheck :: SC r => Sem r ()
@@ -69,16 +73,17 @@ sanityCheck =
 checkHelper :: SC r
             => (S -> SCM r ()) -- ^ checks the statement
             -> Sem r ()
-checkHelper goS = ask @ParsedIR >>= traverse_ (checkModule goS (\_ -> return ()))
+checkHelper goS = checkHelper' goS (\_ -> return ())
 
 checkHelper' :: SC r
-             => (S -> SCM r ()) -- ^ checks the statement
-             -> (MI-> SC2 r ()) -- ^ checks the module instance
+             => (S -> SCM r ())  -- ^ checks the statement
+             -> (MI-> SCMI r ()) -- ^ checks the module instance
              -> Sem r ()
 checkHelper' goS goMI = ask @ParsedIR >>= traverse_ (checkModule goS goMI)
 
-checkModule :: (S -> SCM r ())
-            -> (MI -> SC2 r ())
+checkModule :: SC r
+            => (S -> SCM r ())
+            -> (MI -> SCMI r ())
             -> Module ()
             -> Sem r ()
 checkModule goS goMI m@Module{..} =
@@ -153,7 +158,7 @@ checkSameAssignmentType =
 checkUniqueUpdateLocationOfVariables :: SC r => Sem r ()
 -- -----------------------------------------------------------------------------
 checkUniqueUpdateLocationOfVariables =
-  checkHelper' (checkPrevious . asgnVars) undefined
+  checkHelper' (checkPrevious . asgnVars) handleModuleInstance
   & runUniqueUpdateCheck
   & evalState HS.empty
 
@@ -163,6 +168,16 @@ checkUniqueUpdateLocationOfVariables =
     asgnVars IfStmt{..}     = asgnVars ifStmtThen <> asgnVars ifStmtElse
     asgnVars Assignment{..} = HS.singleton (varName assignmentLhs, varModuleName assignmentLhs)
     asgnVars Skip{..}       = mempty
+
+handleModuleInstance :: SC r
+                     => ModuleInstance ()
+                     -> Sem (Reader M ': UniqueUpdateCheck ': r) ()
+handleModuleInstance mi@ModuleInstance{..} = do
+  currentModuleName <- asks moduleName
+  targetModule <- asks (HM.! moduleInstanceType)
+  targetModuleClocks <- getClocks moduleInstanceType
+  let (_, miWrites) = moduleInstanceReadsAndWrites targetModule targetModuleClocks mi
+  checkPrevious $ HS.map (, currentModuleName) miWrites
 
 runUniqueUpdateCheck :: SC r => Sem (UniqueUpdateCheck ': r) a -> Sem (State S1 ': r) a
 runUniqueUpdateCheck = reinterpret $ \case

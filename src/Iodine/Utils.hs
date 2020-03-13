@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Iodine.Utils where
 
@@ -19,7 +20,7 @@ import           Polysemy
 import           Polysemy.Error
 
 combine :: (Monad f, Monoid m, Traversable t) => (a -> f m) -> t a -> f m
-combine act as = foldl' (<>) mempty <$> traverse act as
+combine act as = fold <$> traverse act as
 
 mfold :: (Foldable f, Monoid m) => (a -> m) -> f a -> m
 mfold f = foldl' (\ms a -> f a <> ms) mempty
@@ -93,3 +94,8 @@ catMaybes' = foldl' (\acc -> maybe acc (mappend acc . liftToMonoid)) mempty
 
 toSequence :: Foldable t => t a -> L a
 toSequence = foldl' (|>) mempty
+
+-- | return combinations of the elements
+twoPairs :: L a -> L (a, a)
+twoPairs SQ.Empty      = mempty
+twoPairs (a SQ.:<| as) = ((a, ) <$> as) <> twoPairs as

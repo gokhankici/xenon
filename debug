@@ -2,11 +2,11 @@
 
 cd "${0:A:h}"
 
-# PROFILE="--profile"
+PROFILE="--profile"
 
 # TEST="examples/verilog/stall.v"
-TEST="test/verilog/pos/tr-submodule-01.v"
-# TEST="test/verilog/pos/tr-test-1.v"
+# TEST="test/verilog/pos/tr-submodule-01.v"
+TEST="test/verilog/pos/tr-test-1.v"
 # TEST="test/verilog/neg/neg-test-2-v0.v"
 # TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"

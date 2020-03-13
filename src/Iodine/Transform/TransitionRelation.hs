@@ -4,7 +4,11 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 
-module Iodine.Transform.TransitionRelation (transitionRelation) where
+module Iodine.Transform.TransitionRelation
+  ( transitionRelation
+  , val
+  , tag
+  ) where
 
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
@@ -38,12 +42,12 @@ transitionRelation' conds r stmt =
 
     Assignment {..} ->
       HAnd $
-      (val assignmentLhs `heq` val assignmentRhs) |:>
-      (tag assignmentLhs `hiff` tagWithCond conds assignmentRhs)
+      (val r assignmentLhs `heq` val r assignmentRhs) |:>
+      (tag r assignmentLhs `hiff` tagWithCond r conds assignmentRhs)
 
     IfStmt {..} ->
       let conds' = ifStmtCondition <| conds
-          hc     = val ifStmtCondition
+          hc     = val r ifStmtCondition
           c      = hc `heq` HInt 0
           not_c  = HBinary HNotEquals hc (HInt 0)
           t      = transitionRelation' conds' r ifStmtThen
@@ -53,57 +57,58 @@ transitionRelation' conds r stmt =
     Skip {..} ->
       HBool True
 
- where
-  ufVal :: Id -> HornAppReturnType -> L (Expr Int) -> HornExpr
-  ufVal name t es = HApp name t hes
-    where
-      hes = val <$> keepVariables es
+ufVal :: HornVarRun -> Id -> HornAppReturnType -> L (Expr Int) -> HornExpr
+ufVal r name t es = HApp name t hes
+  where
+    hes = val r <$> keepVariables es
 
-  mkUFName n = "uf_noname_" <> T.pack (show n)
+mkUFName :: Int -> Id
+mkUFName n = "uf_noname_" <> T.pack (show n)
 
-  val :: Expr Int -> HornExpr
-  val = \case
-    Constant {..} -> parseVerilogInt constantValue
-    Variable {..} -> HVar { hVarName   = varName
-                          , hVarModule = varModuleName
-                          , hVarIndex  = exprData
-                          , hVarType   = Value
-                          , hVarRun    = r
-                          , hThreadId  = 0
-                          }
-    UF {..}     -> ufVal ufName HornInt ufArgs
-    IfExpr {..} -> ufVal name HornInt (ifExprCondition |:> ifExprThen |> ifExprElse)
-      where name = mkUFName exprData
-    Str {..}    -> notSupported
-    Select {..} -> ufVal name HornInt (selectVar <| selectIndices)
-      where name = mkUFName exprData
+val :: HornVarRun -> Expr Int -> HornExpr
+val r = \case
+  Constant {..} -> parseVerilogInt constantValue
+  Variable {..} -> HVar { hVarName   = varName
+                        , hVarModule = varModuleName
+                        , hVarIndex  = exprData
+                        , hVarType   = Value
+                        , hVarRun    = r
+                        , hThreadId  = 0
+                        }
+  UF {..}     -> ufVal r ufName HornInt ufArgs
+  IfExpr {..} -> ufVal r name HornInt (ifExprCondition |:> ifExprThen |> ifExprElse)
+    where name = mkUFName exprData
+  Str {..}    -> notSupported
+  Select {..} -> ufVal r name HornInt (selectVar <| selectIndices)
+    where name = mkUFName exprData
 
-  tagWithCond :: PathCond -> Expr Int -> HornExpr
-  tagWithCond es e =
-    case es of
-      SQ.Empty -> tag e
-      _        -> ufTag (es |> e)
+tagWithCond :: HornVarRun -> PathCond -> Expr Int -> HornExpr
+tagWithCond r es e =
+  case es of
+    SQ.Empty -> tag r e
+    _        -> ufTag r (es |> e)
 
-  ufTag :: L (Expr Int) -> HornExpr
-  ufTag = HOr . fmap tag . keepVariables
+ufTag :: HornVarRun -> L (Expr Int) -> HornExpr
+ufTag r = HOr . fmap (tag r) . keepVariables
 
-  tag :: Expr Int -> HornExpr
-  tag = \case
-    Constant {..} -> HBool False
-    Variable {..} -> HVar { hVarName   = varName
-                          , hVarModule = varModuleName
-                          , hVarIndex  = exprData
-                          , hVarType   = Tag
-                          , hVarRun    = r
-                          , hThreadId  = 0
-                          }
-    UF {..}     -> ufTag ufArgs
-    IfExpr {..} -> ufTag (ifExprCondition |:> ifExprThen |> ifExprElse)
-    Str {..}    -> HBool False
-    Select {..} -> ufTag (selectVar <| selectIndices)
+tag :: HornVarRun -> Expr Int -> HornExpr
+tag r = \case
+  Constant {..} -> HBool False
+  Variable {..} -> HVar { hVarName   = varName
+                        , hVarModule = varModuleName
+                        , hVarIndex  = exprData
+                        , hVarType   = Tag
+                        , hVarRun    = r
+                        , hThreadId  = 0
+                        }
+  UF {..}     -> ufTag r ufArgs
+  IfExpr {..} -> ufTag r (ifExprCondition |:> ifExprThen |> ifExprElse)
+  Str {..}    -> HBool False
+  Select {..} -> ufTag r (selectVar <| selectIndices)
 
-  heq  = HBinary HEquals
-  hiff = HBinary HIff
+heq, hiff :: HornExpr -> HornExpr -> HornExpr
+heq  = HBinary HEquals
+hiff = HBinary HIff
 
 {- |
 Given a list of expressions, this returns a list of variables that appear in the

@@ -57,7 +57,13 @@ data ModuleSummary =
                   threadReadMap :: HM.HashMap Id IS.IntSet,
 
                   -- | maps variables to threads that update it
-                  threadWriteMap :: HM.HashMap Id IS.IntSet
+                  threadWriteMap :: HM.HashMap Id IS.IntSet,
+
+                  -- | variable dependency map
+                  variableDependencies :: VarDepGraph,
+
+                  -- | variable name -> node id
+                  variableDependencyNodeMap  :: HM.HashMap Id Int
                   }
   deriving (Show)
 
@@ -119,11 +125,13 @@ createModuleSummary m@Module{..} = do
 
   return $
     ModuleSummary
-    { portDependencies   = portDeps
-    , isCombinatorial    = isComb
-    , threadDependencies = dgState ^. threadGraph
-    , threadReadMap      = dgState ^. varReads
-    , threadWriteMap     = dgState ^. varUpdates
+    { portDependencies          = portDeps
+    , isCombinatorial           = isComb
+    , threadDependencies        = dgState ^. threadGraph
+    , threadReadMap             = dgState ^. varReads
+    , threadWriteMap            = dgState ^. varUpdates
+    , variableDependencies      = varDepGraph
+    , variableDependencyNodeMap = varDepMap
     }
   where
     isReachable g toNode fromNode =
