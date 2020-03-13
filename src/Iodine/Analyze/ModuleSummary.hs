@@ -78,11 +78,12 @@ createModuleSummaries :: Members '[ Reader AnnotationFile
                                   , Reader ModuleMap
                                   ] r
                       => ModuleMap -> Sem r SummaryMap
-createModuleSummaries moduleMap =
+createModuleSummaries moduleMap = do
+  trace "ordered modules" (moduleName <$> orderedModules)
   for_ orderedModules (\m@Module{..} ->
-      createModuleSummary m >>= (modify . HM.insert moduleName))
-  & runState @SummaryMap mempty
-  & fmap fst
+                          createModuleSummary m >>= (modify . HM.insert moduleName))
+    & runState @SummaryMap mempty
+    & fmap fst
   where
     orderedModules = topsortModules moduleMap
 
