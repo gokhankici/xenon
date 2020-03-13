@@ -23,19 +23,20 @@ import           Iodine.Transform.TransitionRelation
 import           Iodine.Types
 import           Iodine.Utils
 
-import qualified Data.Graph.Inductive as G
 import           Control.Lens
 import           Control.Monad
 import           Data.Bifunctor
-import           Data.Hashable
 import           Data.Foldable
-import           Data.Traversable
-import           Data.Maybe
+import qualified Data.Graph.Inductive as G
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import           Data.Hashable
 import qualified Data.IntMap as IM
+import qualified Data.IntSet as IS
 import           Data.List (nub)
+import           Data.Maybe
 import qualified Data.Sequence as SQ
+import           Data.Traversable
 import           Polysemy
 import qualified Polysemy.Error as PE
 import           Polysemy.Reader
@@ -399,7 +400,6 @@ interferenceCheck :: (FDM r, Members '[State Horns] r)
 interferenceCheck (MI _)  = return ()
 interferenceCheck (AB ab) = do
   Module{..} <- ask
-  -- FIXME: module summary not generated for top modules at the moment
   ModuleSummary{..} <- asks (hmGet 1 moduleName)
   trace "threadDependencies" threadDependencies
   unless (null $ G.pre threadDependencies $ getThreadId ab) $
@@ -411,7 +411,6 @@ interferenceCheckWR :: (FDM r, Members '[State Horns] r)
                     -> Sem r ()
 interferenceCheckWR readAB = do
   currentModule <- ask @(Module Int)
-  -- FIXME: add aeq of variables
   sourceTagEqs <- do
     isTop <- isTopModule
     if isTop
@@ -426,32 +425,42 @@ interferenceCheckWR readAB = do
                 foldl' (\acc v -> acc |> mkSrcEq v) mempty srcs
       else return mempty
   let currentModuleName = moduleName currentModule
-  rSt :: ThreadSt <- asks (IM.! threadId)
   allInsts <- instantiateAllThreads (Just readAB)
   let readTr = setThreadId currentModule $
                updateVarIndex (+ 1) $
                transitionRelation $ abStmt readAB
-  readNext <- HM.map (+ 1) . HM.filter (== 0)
-              <$> getNextVars readAB
+  ModuleSummary{..} <- asks (hmGet 6 currentModuleName)
+  hvars <- getHornVariables readAB
+  let freeHVars =
+        -- variables that are not updated by other threads
+        HS.filter (\v -> maybe True IS.null $ HM.lookup v threadWriteMap) hvars
+      fixNextIds =
+        HM.foldlWithKey'
+        (\m v n ->
+           if n == 0 && v `notElem` freeHVars
+           then HM.insert v (n + 1) m
+           else m)
+        mempty
+  readNext <- fixNextIds <$> getNextVars readAB
   let readSubs = second (setThreadId currentModule)
                  <$> toSubs currentModuleName readNext
       mkAEs v =
         let sti = setThreadId currentModule
-            fix = bimap sti sti
             mn  = currentModuleName
-        in  (case HM.lookup v readNext of
-               Just n  -> fix (HVarTL v mn n, HVarTR v mn n)
-                          |:> fix (HVarVL v mn n, HVarVR v mn n)
-               Nothing -> mempty
-            )
-            |> fix (HVarTL v mn 1, HVarTR v mn 1)
-            |> fix (HVarVL v mn 1, HVarVR v mn 1)
-      readAlwaysEqs = foldMap mkAEs (rSt ^. currentAlwaysEquals)
+        in  (sti <$> mkAEEquality v mn 1)
+            <> (case HM.lookup v readNext of
+                  Just n  -> sti <$> mkAEEquality v mn n
+                  Nothing -> mempty
+               )
+  annots <- getAnnotations currentModuleName
+  trace ("annots of " ++ show currentModuleName) annots
+  let moduleAlwaysEqs = foldMap mkAEs (annots ^. alwaysEquals)
+
   let hornClause =
         Horn { hornHead   = makeKVar readAB readSubs
              , hornBody   = HAnd $
                             (sourceTagEqs |> allInsts |> readTr)
-                            <> (mkEqual <$> readAlwaysEqs)
+                            <> moduleAlwaysEqs
              , hornType   = Interference
              , hornStmtId = threadId
              , hornData   = ()
@@ -635,22 +644,23 @@ alwaysEqualEqualities t = do
     case t of
       AB ab -> Just <$> getNextVars ab
       MI _ -> return Nothing
-  let addEquals exprs v =
-        exprs |>
-        HBinary HEquals (HVarVL0 v moduleName) (HVarVR0 v moduleName) |>
-        HBinary HIff    (HVarTL0 v moduleName) (HVarTR0 v moduleName)
+  let addEquals exprs v = exprs <> mkAEEquality v moduleName 0
   let go =
         case mNextVars of
           Nothing  -> addEquals
           Just nvs -> \exprs v ->
             let exprs' = addEquals exprs v
             in case HM.lookup v nvs of
-              Just n  -> exprs' |>
-                         HBinary HEquals
-                         (HVar v moduleName n Value LeftRun 0)
-                         (HVar v moduleName n Value RightRun 0)
+              Just n  -> exprs' <> mkAEEquality v moduleName n
               Nothing -> exprs'
   foldl' go mempty <$> asks (^. currentAlwaysEquals)
+
+mkAEEquality :: Id -> Id -> Int -> L HornExpr
+mkAEEquality v m n = mkEqual <$> pairs
+  where
+    pairs = do
+      t <- Value |:> Tag
+      return (HVar v m n t LeftRun 0, HVar v m n t RightRun 0)
 
 
 -- | get the last index of each variable after transitioning from variables with

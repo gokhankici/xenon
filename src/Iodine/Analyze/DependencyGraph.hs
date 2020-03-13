@@ -67,6 +67,7 @@ statement.
 dependencyGraph :: Members '[Reader ModuleMap, Reader AnnotationFile] r
                 =>  Module Int -> Sem r DependencyGraphSt
 dependencyGraph Module{..} = execState initialState $ do
+  for_ variables (getNode . variableName)
   for_ alwaysBlocks dependencyGraphActAB
   for_ moduleInstances dependencyGraphActMI
   where
@@ -157,18 +158,20 @@ handleStmt IfStmt{..} = do
   traverse_ handleStmt [ifStmtThen, ifStmtElse]
   modify $ pathVars .~ (currentSt ^. pathVars)
 
-addNode :: FD r => (Int, Int, VarDepEdgeType) -> Sem r ()
+type DGSt r = Members '[State DependencyGraphSt] r
+
+addNode :: DGSt r => (Int, Int, VarDepEdgeType) -> Sem r ()
 addNode edge@(fromNode, toNode, _) = do
   for_ [fromNode, toNode] $ \n ->
     modify $ depGraph %~ G.insNode (n, ())
   modify $ depGraph %~ G.insEdge edge
 
 
-getNodes :: FD r => HS.HashSet Id -> Sem r IS.IntSet
+getNodes :: DGSt r => HS.HashSet Id -> Sem r IS.IntSet
 getNodes = fmap IS.fromList . traverse getNode . HS.toList
 
 
-getNode :: FD r => Id -> Sem r Int
+getNode :: DGSt r => Id -> Sem r Int
 getNode v = do
   res <- gets (^. varMap . to (HM.lookup v))
   case res of
@@ -176,7 +179,8 @@ getNode v = do
       n <- gets (^. varCounter)
       modify $
         (varCounter +~ 1) .
-        (varMap %~ HM.insert v n)
+        (varMap %~ HM.insert v n) .
+        (depGraph %~ G.insNode (n, ()))
       return n
     Just n -> return n
 
