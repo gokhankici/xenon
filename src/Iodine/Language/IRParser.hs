@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 
-module Iodine.Language.IRParser (parse , ParsedIR) where
+module Iodine.Language.IRParser (parse) where
 
 import           Iodine.Language.IR
 import           Iodine.Types
@@ -126,7 +126,8 @@ parseAlwaysBlock :: Parser (AlwaysBlock ())
 parseAlwaysBlock =
   parseTerm "always" (AlwaysBlock
                      <$> parseEvent
-                     <*> (comma *> parseStmt))
+                     <*> (comma *> parseStmt)
+                     <*> return ())
 
 parseData :: Parser ()
 parseData = return ()

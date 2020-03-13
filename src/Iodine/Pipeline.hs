@@ -46,7 +46,7 @@ pipeline
   -> Sem r (L (Module ()))      -- ^ ir parser
   -> Sem r FInfo                -- ^ fixpoint query to run
 pipeline af irReader = do
-  ir <- irReader
+  ir <- assignThreadIds <$> irReader
   let irMap = mkModuleMap ir
 
   runReader af $ do

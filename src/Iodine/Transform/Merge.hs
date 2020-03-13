@@ -11,7 +11,6 @@ module Iodine.Transform.Merge (merge) where
 
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
-import           Iodine.Language.IRParser
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -31,8 +30,9 @@ import           Polysemy.Error
 import           Polysemy.Reader
 import           Polysemy.State
 
+type A = Int
 type DepGraph = Gr () ()
-type StmtMap  = IM.IntMap (Stmt ())
+type StmtMap  = IM.IntMap (Stmt A)
 data St =
   St { _writtenBy   :: HM.HashMap Id IS.IntSet
      , _readBy      :: HM.HashMap Id IS.IntSet
@@ -42,44 +42,45 @@ data St =
 
 makeLenses ''St
 
-type G r = Members '[ Reader AnnotationFile
-                    , Reader ModuleMap
-                    , Error IodineException] r
+type OldG r = Members '[ Reader AnnotationFile
+                       , Reader ModuleMap
+                       , Error IodineException] r
+type G r = (OldG r, Members '[State Int] r)
 
 -- -----------------------------------------------------------------------------
-merge :: G r => ParsedIR -> Sem r ParsedIR
+merge :: OldG r => L (Module A) -> Sem r (L (Module A))
 -- -----------------------------------------------------------------------------
-merge = traverse mergeModule
+merge modules = evalState (getMaxThreadId modules + 1) $
+                traverse mergeModule modules
 
 -- | make gate statements a always* block, and merge with the rest
-mergeModule :: G r => Module () -> Sem r (Module ())
+-- assumes that module id is greater than the ids of its thread
+mergeModule :: G r => Module A -> Sem r (Module A)
 mergeModule Module {..} = do
+  gateBlocks <- traverse  makeStarBlock gateStmts
   alwaysBlocks' <- mergeAlwaysBlocks $ alwaysBlocks <> gateBlocks
   return $
-    Module { alwaysBlocks    = alwaysBlocks'
-           , gateStmts       = mempty
-           , moduleInstances = moduleInstances
+    Module { gateStmts    = mempty
+           , alwaysBlocks = alwaysBlocks'
            , ..
            }
-  where
-    gateBlocks = makeStarBlock <$> gateStmts
 
 {- |
 All blocks with the same non-star event are merged into a single block (with
 random ordering). For the always* blocks, a dependency graph is created first
 and then they are merged according to their order in the directed-acyclic graph.
 -}
-mergeAlwaysBlocks :: G r => L (AlwaysBlock ()) -> Sem r (L (AlwaysBlock ()))
+mergeAlwaysBlocks :: G r => L (AlwaysBlock A) -> Sem r (L (AlwaysBlock A))
 mergeAlwaysBlocks as =
-  foldlM' mempty (HM.toList eventMap) $ \acc (e, stmts) -> do
+  foldlM' mempty (HM.toList eventMap) $ \acc (e, eAs) -> do
     ab' <-
       case e of
-        Star -> mergeAlwaysStarBlocks stmts
-        _    -> return $ mergeAlwaysEventBlocks e stmts
+        Star -> mergeAlwaysStarBlocks eAs
+        _    -> return $ mergeAlwaysEventBlocks e eAs
     return $ acc |> ab'
   where
     eventMap = foldl' updateM mempty as
-    updateM m AlwaysBlock{..} = HM.alter (append (SQ.<|) abStmt) abEvent m
+    updateM m ab@AlwaysBlock{..} = HM.alter (append (SQ.<|) ab) abEvent m
 
 
 {- |
@@ -87,10 +88,10 @@ Merge every always* block into a single one. The statements that belong to the
 same connected components are ordered according to their topological sort.
 However, the order between connected components are random.
 -}
-mergeAlwaysStarBlocks :: G r => L (Stmt ()) -> Sem r (AlwaysBlock ())
-mergeAlwaysStarBlocks stmts = do
-  (depGraph, stmtIds) <- buildDependencyGraph stmts
-  unless (G.noNodes depGraph == SQ.length stmts) $
+mergeAlwaysStarBlocks :: G r => L (AlwaysBlock A) -> Sem r (AlwaysBlock A)
+mergeAlwaysStarBlocks as = do
+  (depGraph, stmtIds) <- buildDependencyGraph (abStmt <$> as)
+  unless (G.noNodes depGraph == SQ.length as) $
     throw . IE Merge  $ "graph size does not match up with the initial statements"
   let components = G.components depGraph
       graphs = (\ns -> G.nfilter (`elem` ns) depGraph) <$> components
@@ -103,22 +104,23 @@ mergeAlwaysStarBlocks stmts = do
     return $ (stmtIds IM.!) <$> stmtOrder
              & SQ.fromList
              & (acc <>)
-  return $ makeStarBlock (Block stmts' ())
+  makeStarBlock (Block stmts' emptyStmtData)
 
 {- |
 merge the always blocks with the same non-star event after makign sure that
 their dependecy graph form a DAG
 -}
-mergeAlwaysEventBlocks :: Event () -> L (Stmt ()) -> AlwaysBlock ()
-mergeAlwaysEventBlocks e stmts = AlwaysBlock e stmt'
+mergeAlwaysEventBlocks :: Event A -> L (AlwaysBlock A) -> AlwaysBlock A
+mergeAlwaysEventBlocks e as = AlwaysBlock e stmt' (getFirstData as)
   where
+    stmts = abStmt <$> as
     stmt' =
       case stmts of
         SQ.Empty          -> error "this should be unreachable"
         s SQ.:<| SQ.Empty -> s
-        _                 -> Block stmts ()
+        _                 -> Block stmts emptyStmtData
 
-type ModuleMap = HM.HashMap Id (Module ())
+type ModuleMap = HM.HashMap Id (Module A)
 type FD r = Members '[State St, Reader ModuleMap] r
 
 {- |
@@ -126,7 +128,7 @@ builds a dependency graph where (s1, s2) \in G iff there exists a variable v
 such that s1 updates v and s2 reads v
 -}
 buildDependencyGraph :: Member (Reader ModuleMap) r
-                     => L (Stmt ()) -> Sem r (DepGraph, StmtMap)
+                     => L (Stmt A) -> Sem r (DepGraph, StmtMap)
 buildDependencyGraph stmts =
   traverse_ update stmts
   & runState initialState
@@ -154,7 +156,7 @@ buildDependencyGraph stmts =
       writeMap
 
     -- create a new id for the given statement, and update its read & write set
-    update :: FD r => Stmt () -> Sem r ()
+    update :: FD r => Stmt A -> Sem r ()
     update s = do
       n <- gets (^. stmtCounter)
       modify $
@@ -163,7 +165,7 @@ buildDependencyGraph stmts =
       updateN n s
 
     -- update read & write sets for the given statement id
-    updateN :: FD r => Int -> Stmt () -> Sem r ()
+    updateN :: FD r => Int -> Stmt A -> Sem r ()
     updateN n Block {..} = traverse_ (updateN n) blockStmts
     updateN n Assignment {..} = do
       forM_ (getVariables assignmentLhs) (insertToWrites n)
@@ -183,8 +185,8 @@ buildDependencyGraph stmts =
 initialState :: St
 initialState = St mempty mempty 0 mempty
 
-makeStarBlock :: Stmt () -> AlwaysBlock ()
-makeStarBlock = AlwaysBlock Star
+makeStarBlock :: G r => Stmt A -> Sem r (AlwaysBlock A)
+makeStarBlock stmts = AlwaysBlock Star stmts <$> getFreshId
 
 {- |
 given a updater function and an element, create a helper function to be used
@@ -201,3 +203,23 @@ should consist of a single element
 -}
 hasCycle :: DepGraph -> Bool
 hasCycle g = length (GQ.scc g) /= G.noNodes g
+
+emptyStmtData :: A
+emptyStmtData = 0
+
+getFirstData :: L (AlwaysBlock a) -> a
+getFirstData (ab SQ.:<| _) = getData ab
+getFirstData _ = undefined
+
+getFreshId :: G r => Sem r Int
+getFreshId = get <* modify (+ 1)
+
+getMaxThreadId :: Ord a => L (Module a) -> a
+getMaxThreadId = maximum . fmap goM
+  where
+    goM m@Module{..} =
+      maximum $
+      getData m
+      <| (getData <$> alwaysBlocks)
+      <> (getData <$> moduleInstances)
+

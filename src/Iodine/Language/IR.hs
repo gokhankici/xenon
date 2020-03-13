@@ -118,6 +118,7 @@ data Event a =
 data AlwaysBlock a =
     AlwaysBlock { abEvent :: Event a
                 , abStmt  :: Stmt a
+                , abData  :: a
                 }
   deriving (Generic, Functor, Foldable, Traversable)
 
@@ -174,9 +175,6 @@ instance GetVariables Module where
 class GetData m where
   getData :: m a -> a
 
-instance GetData Stmt where
-  getData = stmtData
-
 instance GetData Expr where
   getData = exprData
 
@@ -184,7 +182,7 @@ instance GetData ModuleInstance where
   getData = moduleInstanceData
 
 instance GetData AlwaysBlock where
-  getData = getData . abStmt
+  getData = abData
 
 instance GetData Thread where
   getData (AB ab) = getData ab
@@ -282,9 +280,9 @@ instance ShowIndex a => Doc (ModuleInstance a) where
       args = docArgs ps
 
 instance ShowIndex a => Doc (AlwaysBlock a) where
-  doc (AlwaysBlock e s) =
+  doc (AlwaysBlock e s a) =
     PP.sep [ PP.text "always"
-             PP.<> PP.text (showIndex $ stmtData s)
+             PP.<> PP.text (showIndex a)
              PP.<+> doc e
            , doc s
            ]

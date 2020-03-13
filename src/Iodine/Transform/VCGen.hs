@@ -27,6 +27,7 @@ import qualified Data.Graph.Inductive as G
 import           Control.Lens
 import           Control.Monad
 import           Data.Bifunctor
+import           Data.Hashable
 import           Data.Foldable
 import           Data.Traversable
 import           Data.Maybe
@@ -119,7 +120,7 @@ vcgenMod m@Module {..} = do
                    ) moduleInstances
       <||> interferenceChecks allThreads
       <||> (SQ.singleton <$> summaryConstraint)
-      <||> debuggingConstraints
+      -- <||> debuggingConstraints
   where
     allThreads          = (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
     allEvents           = void <$> toList (abEvent <$> alwaysBlocks)
@@ -398,7 +399,8 @@ interferenceCheck :: (FDM r, Members '[State Horns] r)
 interferenceCheck (MI _)  = return ()
 interferenceCheck (AB ab) = do
   Module{..} <- ask
-  ModuleSummary{..} <- asks (HM.! moduleName)
+  -- FIXME: module summary not generated for top modules at the moment
+  ModuleSummary{..} <- asks (hmGet 1 moduleName)
   trace "threadDependencies" threadDependencies
   unless (null $ G.pre threadDependencies $ getThreadId ab) $
     interferenceCheckWR ab
@@ -429,7 +431,8 @@ interferenceCheckWR readAB = do
   let readTr = setThreadId currentModule $
                updateVarIndex (+ 1) $
                transitionRelation $ abStmt readAB
-  readNext <-  HM.map (+ 1) <$> getNextVars readAB
+  readNext <- HM.map (+ 1) . HM.filter (== 0)
+              <$> getNextVars readAB
   let readSubs = second (setThreadId currentModule)
                  <$> toSubs currentModuleName readNext
       mkAEs v =
@@ -490,7 +493,7 @@ instantiateModule :: FDM r => ModuleInstance Int -> Sem r HornExpr
 instantiateModule ModuleInstance{..} = do
   currentModule <- ask
   let currentModuleName = moduleName currentModule
-  targetModule <- asks (HM.! moduleInstanceType)
+  targetModule <- asks (hmGet 2 moduleInstanceType)
   let targetModuleName = moduleName targetModule
   targetModuleClocks <- getClocks moduleInstanceType
   let inputs  = moduleInputs targetModule targetModuleClocks
@@ -500,11 +503,11 @@ instantiateModule ModuleInstance{..} = do
         r <- LeftRun |:> RightRun
         return ( HVar0 i targetModuleName t r
                , updateVarIndex (const 1) $
-                 f r $ moduleInstancePorts HM.! i
+                 f r $ hmGet 3 i moduleInstancePorts
                )
       mkOutputSubs o = do
         (t, r) <- allTagRuns
-        let e = moduleInstancePorts HM.! o
+        let e = hmGet 4 o moduleInstancePorts
             rhs = if isVariable e
                   then HVar (varName e) currentModuleName 1 t r 0
                   else error "output port expresssion of a module instance should be a variable"
@@ -536,33 +539,33 @@ summaryConstraint = do
          , hornData   = ()
          }
 
-debuggingConstraints :: FDM r => Sem r Horns
-debuggingConstraints = do
-  currentModule <- ask
-  case SQ.filter ((== 3) . getData) (moduleInstances currentModule) of
-    mi SQ.:<| _ -> do
-      trace "mi" mi
-      targetModule <- asks (HM.! moduleInstanceType mi)
-      let tmName = moduleName targetModule
-      let sti = setThreadId targetModule
-      let srcEq = mkEqual $
-                  bimap sti sti
-                  ( HVar "in2" tmName 0 Tag LeftRun 0
-                  , HVar "in2" tmName 0 Tag RightRun 0
-                  )
-      let outEq = mkEqual $
-                  bimap sti sti
-                  ( HVar "out2" tmName 0 Tag LeftRun 0
-                  , HVar "out2" tmName 0 Tag RightRun 0
-                  )
-      return . SQ.singleton $
-        Horn { hornHead   = outEq
-             , hornBody   = HAnd $ srcEq |:> makeEmptyKVar targetModule
-             , hornType   = TagEqual
-             , hornStmtId = getThreadId targetModule
-             , hornData   = ()
-             }
-    _ -> return mempty
+-- debuggingConstraints :: FDM r => Sem r Horns
+-- debuggingConstraints = do
+--   currentModule <- ask
+--   case SQ.filter ((== 3) . getData) (moduleInstances currentModule) of
+--     mi SQ.:<| _ -> do
+--       trace "mi" mi
+--       targetModule <- asks (`hmGet` moduleInstanceType mi)
+--       let tmName = moduleName targetModule
+--       let sti = setThreadId targetModule
+--       let srcEq = mkEqual $
+--                   bimap sti sti
+--                   ( HVar "in2" tmName 0 Tag LeftRun 0
+--                   , HVar "in2" tmName 0 Tag RightRun 0
+--                   )
+--       let outEq = mkEqual $
+--                   bimap sti sti
+--                   ( HVar "out2" tmName 0 Tag LeftRun 0
+--                   , HVar "out2" tmName 0 Tag RightRun 0
+--                   )
+--       return . SQ.singleton $
+--         Horn { hornHead   = outEq
+--              , hornBody   = HAnd $ srcEq |:> makeEmptyKVar targetModule
+--              , hornType   = TagEqual
+--              , hornStmtId = getThreadId targetModule
+--              , hornData   = ()
+--              }
+--     _ -> return mempty
 
 -- -----------------------------------------------------------------------------
 -- Helper functions
@@ -708,7 +711,7 @@ getUpdatedVariables = \case
   MI mi@ModuleInstance{..} -> do
     (_, writtenVars) <-
       moduleInstanceReadsAndWrites
-      <$> asks (HM.! moduleInstanceType)
+      <$> asks (hmGet 5 moduleInstanceType)
       <*> getClocks moduleInstanceType
       <*> return mi
     return writtenVars
@@ -800,3 +803,15 @@ trace msg a = do
 
 getCurrentClocks :: FDM r => Sem r Ids
 getCurrentClocks = asks moduleName >>= getClocks
+
+hmGet :: (Show k, Show v, Eq k, Hashable k)
+      => Int -> k -> HM.HashMap k v -> v
+hmGet n k m =
+  case HM.lookup k m of
+    Nothing ->
+      error $ unlines [ "hashmap"
+                      , show m
+                      , "key " ++ show k
+                      , "no " ++ show n
+                      ]
+    Just v -> v

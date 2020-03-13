@@ -11,7 +11,6 @@ module Iodine.Transform.SanityCheck (sanityCheck) where
 
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
-import           Iodine.Language.IRParser (ParsedIR)
 import           Iodine.Types
 
 import           Control.Lens
@@ -30,9 +29,15 @@ import           Polysemy.Reader
 import           Polysemy.State
 import           Text.Printf
 
+type A  = Int
+type S  = Stmt A
+type M  = Module A
+type MI = ModuleInstance A
+type MA = Maybe (AlwaysBlock A)
+
 type K1 = (Id, Id)
 type S1 = HS.HashSet K1
-type ModuleMap = HM.HashMap Id (Module ())
+type ModuleMap = HM.HashMap Id M
 
 data UniqueUpdateCheck m a where
   CheckPrevious :: S1 -> UniqueUpdateCheck m ()
@@ -40,18 +45,14 @@ data UniqueUpdateCheck m a where
 makeSem ''UniqueUpdateCheck
 
 type SC r = Members '[ PE.Error IodineException   -- sanity error
-                     , Reader ParsedIR            -- parsed IR
+                     , Reader (L M)               -- parsed IR
                      , Reader AnnotationFile      -- parsed annotation file
-                     , PO.Output String              -- output to stderr
+                     , PO.Output String           -- output to stderr
                      , Reader ModuleMap
                      ] r
 
-type S  = Stmt ()
-type M  = Module ()
-type MI = ModuleInstance ()
-type MA = Maybe (AlwaysBlock ())
 type FD r = ( SC r
-            , Members '[ Reader (Module ())
+            , Members '[ Reader M
                        , Reader MA
                        ] r
             )
@@ -79,12 +80,12 @@ checkHelper' :: SC r
              => (S -> SCM r ())  -- ^ checks the statement
              -> (MI-> SCMI r ()) -- ^ checks the module instance
              -> Sem r ()
-checkHelper' goS goMI = ask @ParsedIR >>= traverse_ (checkModule goS goMI)
+checkHelper' goS goMI = ask @(L M) >>= traverse_ (checkModule goS goMI)
 
 checkModule :: SC r
             => (S -> SCM r ())
             -> (MI -> SCMI r ())
-            -> Module ()
+            -> M
             -> Sem r ()
 checkModule goS goMI m@Module{..} =
   ( do traverse_ goS gateStmts
@@ -108,7 +109,7 @@ checkAssignmentsAreToLocalVariables =
   \assignmentType assignmentLhs assignmentRhs -> do
     moduleName <- getModuleName
     when (varModuleName assignmentLhs /= moduleName) $
-      let stmt = Assignment{ stmtData = (), .. }
+      let stmt = Assignment{ stmtData = emptyStmtData, .. }
       in throw $ printf "%s :: lhs is not from the module %s" (show stmt) moduleName
 
 handleAssignment :: (AssignmentType -> Expr a -> Expr a -> Sem r ())
@@ -131,7 +132,7 @@ checkSameAssignmentType :: SC r => Sem r ()
 checkSameAssignmentType =
   checkHelper $ handleAssignment $
   \assignmentType assignmentLhs assignmentRhs -> do
-    let stmt = Assignment{stmtData = (), ..}
+    let stmt = Assignment{stmtData = emptyStmtData, ..}
     mAB <- ask @MA
     case mAB of
       Nothing ->
@@ -170,7 +171,7 @@ checkUniqueUpdateLocationOfVariables =
     asgnVars Skip{..}       = mempty
 
 handleModuleInstance :: SC r
-                     => ModuleInstance ()
+                     => MI
                      -> Sem (Reader M ': UniqueUpdateCheck ': r) ()
 handleModuleInstance mi@ModuleInstance{..} = do
   currentModuleName <- asks moduleName
@@ -192,7 +193,7 @@ runUniqueUpdateCheck = reinterpret $ \case
 checkVariables :: SC r => Sem r ()
 -- -----------------------------------------------------------------------------
 checkVariables =
-  ask @ParsedIR >>= traverse_
+  ask @(L M) >>= traverse_
     (\Module{..} -> do
         af <- getAnnotations moduleName
         let srcs = af ^. sources
@@ -269,3 +270,6 @@ checkVariables =
 
 throw :: Member (PE.Error IodineException) r => String -> Sem r a
 throw = PE.throw . IE SanityCheck
+
+emptyStmtData :: A
+emptyStmtData = 0
