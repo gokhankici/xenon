@@ -11,9 +11,9 @@
         "sink": [
           "out1"
         ],
-		"always_eq": [
-          "ct"
-		]
+        "always_eq": [
+            "ct"
+	]
       }
     },
     "test_sub_1": {

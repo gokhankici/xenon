@@ -61,6 +61,32 @@ data ThreadSt =
 
 makeLenses ''ThreadSt
 
+-- | global state
+type G r = Members '[ Reader AnnotationFile
+                    , PE.Error IodineException
+                    , PT.Trace
+                    , Reader ModuleMap
+                    , Reader SummaryMap
+                    ] r
+
+-- | vcgen state  = global effects + next var map
+type FD r  = ( G r
+             , Members '[ Reader NextVars
+                        , State  HornVariableMap
+                        ] r)
+
+-- | module state = vcgen state + current module
+type FDM r = ( FD r
+             , Members '[ Reader (Module Int)
+                        , Reader (IM.IntMap TI)
+                        , Reader (IM.IntMap ThreadSt)
+                        ] r
+             )
+
+-- | stmt state = module state + current statement state
+type FDS r = (FDM r, Members '[Reader ThreadSt] r)
+
+
 {- |
 Verification condition generation creates the following 7 type of horn
 constraints to encode our check:
@@ -186,20 +212,37 @@ initializeSub ab = do
   vars <- asks (^. currentVariables)
   let srcs    = moduleInputs currentModule mClks
       nonSrcs = vars `HS.difference` srcs
+      sti = setThreadId ab
 
-  -- let srcSubs    = second (setThreadId currentModule)
-  --                  <$> foldMap (\v -> mkAllSubs v currentModuleName 0 0) srcs
-  let nonSrcSubs = second (setThreadId ab)
-                   <$> foldl' (mkZeroTags currentModuleName) mempty nonSrcs
-  -- let subs       = srcSubs <> nonSrcSubs
+  ModuleSummary{..} <- asks (hmGet 7 (moduleName currentModule))
+  let mkIsCombEqs o i =
+        let subs =
+              do (t, r) <- allTagRuns
+                 return ( HVar0 i currentModuleName t r
+                        , HVar0 o currentModuleName t r
+                        )
+        in sti . mkEqual <$> subs
+      mkIsCombExpr v =
+        case HM.lookup v portDependencies of
+          Nothing -> mempty
+          Just is -> foldMap (mkIsCombEqs v) is
+      isCombExprs = if isCombinatorial
+                    then foldMap mkIsCombExpr nonSrcs
+                    else mempty
 
   initEqVars <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
-  let initEq = setThreadId ab
-               <$> foldl' (valEquals currentModuleName) mempty initEqVars
+  let initEq = sti <$> foldl' (valEquals currentModuleName) mempty initEqVars
+
+  let subVars =
+        if isCombinatorial
+        then HS.filter (\v -> not (HM.member v portDependencies)) nonSrcs
+        else nonSrcs
+      nonSrcSubs = second sti
+                   <$> foldl' (mkZeroTags currentModuleName) mempty subVars
 
   return $
     Horn { hornHead   = makeKVar ab nonSrcSubs
-         , hornBody   = HAnd initEq
+         , hornBody   = HAnd $ initEq <> isCombExprs
          , hornType   = Init
          , hornStmtId = getThreadId ab
          , hornData   = ()
@@ -593,31 +636,6 @@ type Substitutions = HM.HashMap Id Int
 newtype NextVars = NextVars { _nextVars :: IM.IntMap Substitutions }
 
 type ModuleMap = HM.HashMap Id (Module Int)
-
--- | global state
-type G r = Members '[ Reader AnnotationFile
-                    , PE.Error IodineException
-                    , PT.Trace
-                    , Reader ModuleMap
-                    , Reader SummaryMap
-                    ] r
-
--- | vcgen state  = global effects + next var map
-type FD r  = ( G r
-             , Members '[ Reader NextVars
-                        , State  HornVariableMap
-                        ] r)
-
--- | module state = vcgen state + current module
-type FDM r = ( FD r
-             , Members '[ Reader (Module Int)
-                        , Reader (IM.IntMap TI)
-                        , Reader (IM.IntMap ThreadSt)
-                        ] r
-             )
-
--- | stmt state = module state + current statement state
-type FDS r = (FDM r, Members '[Reader ThreadSt] r)
 
 type ModuleInstanceMap = HM.HashMap Id (L (ModuleInstance Int))
 

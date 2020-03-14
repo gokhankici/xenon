@@ -17,26 +17,6 @@
         ]
       },
       "clock": "clk"
-    },
-    "decide_stall": {
-      "annotations": {
-        "source": [
-          "i"
-        ],
-        "sink": [
-          "o"
-        ]
-      }
-    },
-    "alu": {
-      "annotations": {
-        "source": [
-          "i"
-        ],
-        "sink": [
-          "o"
-        ]
-      }
     }
   }
 }

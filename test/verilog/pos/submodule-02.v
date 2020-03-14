@@ -19,22 +19,11 @@ module test_sub_1(clk, ct, x, y);
    input wire x;
    output reg y;
    
-   reg        tmp;
-   
    always @(posedge clk)
      if (ct)
-       begin
-          tmp <= x;
-          y <= tmp;
-       end
+       y <= 0;
      else
-       if (x == 0)
-         y <= 0;
-       else
-         begin
-            tmp <= x;
-            y <= tmp;
-         end
+       y <= x;
 endmodule // test_sub_1
 
    

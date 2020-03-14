@@ -60,14 +60,12 @@ pipeline af irReader = do
 
     traceResult "Normalized IR" normalizedIR
 
-    let moduleMap = mkModuleMap normalizedIR
-    moduleSummaries <-
-      createModuleSummaries moduleMap
-      & runReader moduleMap
+    let normalizedIRMap = mkModuleMap normalizedIR
+    moduleSummaries <- createModuleSummaries normalizedIRMap
 
     (vcgen ssaOutput >>= constructQuery normalizedIR)
       & runReader moduleSummaries
-      & runReader moduleMap
+      & runReader normalizedIRMap
   where
     mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
     mkModuleMap =

@@ -74,14 +74,13 @@ Create a summary for each given module
 -}
 createModuleSummaries :: Members '[ Reader AnnotationFile
                                   , PT.Trace
-                                  , Error
-                                  , Reader ModuleMap
-                                  ] r
+                                  , Error ] r
                       => ModuleMap -> Sem r SummaryMap
 createModuleSummaries moduleMap = do
   trace "ordered modules" (moduleName <$> orderedModules)
   for_ orderedModules (\m@Module{..} ->
                           createModuleSummary m >>= (modify . HM.insert moduleName))
+    & runReader moduleMap
     & runState @SummaryMap mempty
     & fmap fst
   where

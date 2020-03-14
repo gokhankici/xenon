@@ -19,8 +19,9 @@ module alu_ctl_stub(ALUOp, Funct, ALUOperation);
     parameter ALU_slt = 3'b111;
 
     always @(*)
-      ALUOperation = ALUOp + Funct;
-   
+      // ALUOperation = ALUOp + Funct;
+      ALUOperation = ALUOp + ALU_add + ALU_sub + ALU_and + ALU_or + ALU_slt;
+
       // case (ALUOp) 
       //   2'b00 :
       //     ALUOperation = ALU_add;
