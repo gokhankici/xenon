@@ -19,7 +19,7 @@ import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
-import           Iodine.Transform.VCGen (VCGenOutput, HornVariableMap, askHornVariables)
+import           Iodine.Transform.VCGen
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -108,6 +108,9 @@ constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ d
     generateWFConstraints m
     (getQualifiers moduleName >>= traverse_ generateQualifiers) & runReader m
     addSummaryQualifiers m
+    simpleCheck <- isModuleSimple m
+    when simpleCheck $
+      addSimpleModuleQualifiers m
   ask >>= generateAutoQualifiers
   toFInfo
 
@@ -271,12 +274,93 @@ toFSort :: HornAppReturnType -> FT.Sort
 toFSort HornInt  = FT.intSort
 toFSort HornBool = FT.boolSort
 
+
 -- -----------------------------------------------------------------------------
 -- generate qualifiers
 -- -----------------------------------------------------------------------------
 
+-- | if all inputs are ct and some of them are public, define the output color
+addSimpleModuleQualifiers :: FD r => Module Int -> Sem r ()
+addSimpleModuleQualifiers m =
+  (zip [0..] <$> asks (HM.toList . portDependencies . (HM.! moduleName m))) >>=
+    traverse_
+    (\(n1, (o, inputSet)) -> do
+       let inputSeq = toSequence inputSet
+           inputList = toList inputSet
+       flip SQ.traverseWithIndex (powerset inputSeq) $ \n2 vs ->
+         for_ [Tag, Value] $ \t ->
+         let name = "SimpleModule_" <> T.unpack (moduleName m) <> "_" <> show n1 <> "_" <> show n2 <> "_" <> show t
+         in addQualifier $
+            mkSimpleModuleQualifierHelper m name inputList (toList vs) o t
+    )
+
+
+mkSimpleModuleQualifierHelper :: Module Int -> String -> [Id] -> [Id] -> Id -> HornVarType -> FT.Qualifier
+mkSimpleModuleQualifierHelper m qualifierName inputs valEqInputs rhsName rhsType =
+  FT.mkQual
+  (FT.symbol qualifierName)
+  ([ FT.QP vSymbol FT.PatNone FT.FInt
+   , FT.QP (symbol "rl") (FT.PatExact $ mkRhsSymbol LeftRun)  rt
+   , FT.QP (symbol "rr") (FT.PatExact $ mkRhsSymbol RightRun) rt
+   ] ++
+   concat [ [ FT.QP (FT.symbol $ "it" ++ show n2)     (FT.PatExact $ mkLhsSymbol i Tag LeftRun)  bt
+            , FT.QP (FT.symbol $ "it" ++ show (n2+1)) (FT.PatExact $ mkLhsSymbol i Tag RightRun) bt
+            ]
+          | (i, n2) <- zip inputs [0,2..]
+          ] ++
+   concat [ [ FT.QP (FT.symbol $ "iv" ++ show n2)     (FT.PatExact $ mkLhsSymbol i Value LeftRun)  it
+            , FT.QP (FT.symbol $ "iv" ++ show (n2+1)) (FT.PatExact $ mkLhsSymbol i Value RightRun) it
+            ]
+          | (i, n2) <- zip valEqInputs [0,2..]
+          ]
+  )
+  (FT.PAnd lhsExprs `FT.PImp` rhsExpr)
+  (FT.dummyPos "")
+  where
+    rhsExpr =
+      case rhsType of
+        Tag   -> FT.PAnd $ rhsEq:rhsTagDefs
+        Value -> rhsEq
+    (fpop, rt) = hornTypeToFP rhsType
+    inputLen = length inputs
+    rhsEq = FT.eVar @String "rl" `fpop`  FT.eVar @String "rr"
+    rhsTagDefs =
+      [ let isLeft = t == LeftRun
+        in FT.eVar @String (if isLeft then "rl" else "rl")
+           `FT.EEq`
+           FT.POr [ FT.eVar ("it" ++ show (if isLeft then n2 else n2 + 1))
+                  | n2 <- take inputLen [0,2..]
+                  ]
+      | t <- [LeftRun, RightRun]
+      ]
+    lhsExprs =
+      [ FT.eVar ("it" ++ show n2) `FT.PIff` FT.eVar ("it" ++ show (n2+1))
+      | (_, n2) <- zip inputs [0,2..]
+      ] ++
+      [ FT.eVar ("iv" ++ show n2) `FT.EEq` FT.eVar ("iv" ++ show (n2+1))
+      | (_, n2) <- zip valEqInputs [0,2..]
+      ]
+    mkRhsSymbol r = symbol $ getFixpointName True $ mkVar rhsName rhsType r
+    mkLhsSymbol v t r = symbol $ getFixpointName True $ mkVar v t r
+    mkVar v t r = setThreadId m $ HVar0 v (moduleName m) t r
+    bt = FT.boolSort
+    it = FT.intSort
+{- HLINT ignore mkSimpleModuleQualifierHelper -}
+
+hornTypeToFP :: HornVarType -> (FT.Expr -> FT.Expr -> FT.Expr, FT.Sort)
+hornTypeToFP t =
+  case t of
+    Value -> (FT.EEq, FT.intSort)
+    Tag   -> (FT.PIff, FT.boolSort)
+
+
+-- -----------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+
+
 addSummaryQualifiers :: FD r => Module Int -> Sem r ()
-addSummaryQualifiers Module{..} = do
+addSummaryQualifiers m@Module{..} = do
   mSummary <- asks (HM.lookup moduleName)
   let inputLists = filter (not . HS.null) . nub . concatMap (HM.elems . portDependencies)
                    $ mSummary
@@ -288,44 +372,38 @@ addSummaryQualifiers Module{..} = do
         inputList = toList ls
         ps = powerset inputSeq
     in do trace "powerset" ps
-          (flip SQ.traverseWithIndex) ps $ \n2 vs -> do
+          flip SQ.traverseWithIndex ps $ \n2 vs ->
             addQualifier $
-              mkSummaryQualifierHelper ("Tag" <> show n2 <> qualifierName)
-              inputList (toList vs) Tag
+            mkSummaryQualifierHelper m ("Tag" <> show n2 <> qualifierName) inputList (toList vs) Tag
           addQualifier $
-            mkSummaryQualifierHelper ("Value" <> qualifierName)
-            inputList inputList Value
+            mkSummaryQualifierHelper m ("Value" <> qualifierName) inputList inputList Value
 
 -- | given a list of input ports i1, i2, ... creates a qualifier of the form:
 -- ((TL_i1 <=> TR_i1) && (TL_i2 <=> TR_i2) && ...) ==> TL_$1 <=> TR_$1)
-mkSummaryQualifierHelper :: String -> [Id] -> [Id] -> HornVarType ->  FT.Qualifier
-mkSummaryQualifierHelper qualifierName inputs valEqInputs rhsType =
+mkSummaryQualifierHelper :: Module Int -> String -> [Id] -> [Id] -> HornVarType ->  FT.Qualifier
+mkSummaryQualifierHelper m qualifierName inputs valEqInputs rhsType =
   FT.mkQual
   (FT.symbol qualifierName)
   ([ FT.QP vSymbol FT.PatNone FT.FInt
-   , FT.QP (symbol "rl") (FT.PatPrefix (mkRhsSymbol rhsType LeftRun) 1)  rt
-   , FT.QP (symbol "rr") (FT.PatPrefix (mkRhsSymbol rhsType RightRun) 1) rt
+   , FT.QP (symbol "rl") (FT.PatPrefix (mkRhsSymbol rhsType LeftRun) 0)  rt
+   , FT.QP (symbol "rr") (FT.PatPrefix (mkRhsSymbol rhsType RightRun) 0) rt
    ] ++
-   concat [ [ FT.QP (FT.symbol $ "it" ++ show n2)     (FT.PatPrefix (mkLhsSymbolT i LeftRun) n2)  bt
-            , FT.QP (FT.symbol $ "it" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbolT i RightRun) n2) bt
+   concat [ [ FT.QP (FT.symbol $ "it" ++ show n2)     (FT.PatPrefix (mkLhsSymbolT i LeftRun) 1)  bt
+            , FT.QP (FT.symbol $ "it" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbolT i RightRun) 1) bt
             ]
           | (i, n2) <- zip inputs [0,2..]
           ] ++
-   concat [ [ FT.QP (FT.symbol $ "iv" ++ show n2)     (FT.PatPrefix (mkLhsSymbolV i LeftRun) n2)  it
-            , FT.QP (FT.symbol $ "iv" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbolV i RightRun) n2) it
+   concat [ [ FT.QP (FT.symbol $ "iv" ++ show n2)     (FT.PatPrefix (mkLhsSymbolV i LeftRun) 1)  it
+            , FT.QP (FT.symbol $ "iv" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbolV i RightRun) 1) it
             ]
           | (i, n2) <- zip valEqInputs [0,2..]
           ]
   )
-  (FT.PAnd rhsExprs `FT.PImp` (FT.eVar @String "rl" `fpop`  FT.eVar @String "rr"))
+  (FT.PAnd lhsExprs `FT.PImp` (FT.eVar @String "rl" `fpop`  FT.eVar @String "rr"))
   (FT.dummyPos "")
   where
-    (fpop, rt) =
-      case rhsType of
-        Value -> (FT.EEq, it)
-        Tag   -> (FT.PIff, bt)
-
-    rhsExprs =
+    (fpop, rt) = hornTypeToFP rhsType
+    lhsExprs =
       [ FT.eVar ("it" ++ show n2) `FT.PIff` FT.eVar ("it" ++ show (n2+1))
       | (_, n2) <- zip inputs [0,2..]
       ] ++
@@ -336,7 +414,7 @@ mkSummaryQualifierHelper qualifierName inputs valEqInputs rhsType =
     mkLhsSymbolT = mkLhsSymbol Tag
     mkLhsSymbolV = mkLhsSymbol Value
     mkLhsSymbol t v rn = symbol . getFixpointVarPrefix  True $ mkVar v t rn
-    mkVar v = HVar0 v "" -- module name is never used in the patterns
+    mkVar v = HVar0 v (moduleName m)
     bt = FT.boolSort
     it = FT.intSort
 
@@ -345,6 +423,12 @@ powerset SQ.Empty            = SQ.Empty
 powerset (a SQ.:<| SQ.Empty) = mempty |:> SQ.singleton a
 powerset (a SQ.:<| as)       = let ps = powerset as
                                in ps <> ((a SQ.:<|) <$> ps)
+
+
+-- -----------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+
 
 -- | Creates the fixpoint qualifier based on the description given in the
 -- annotation file
@@ -441,6 +525,11 @@ defaultQualifiers =
     ]
     (FT.PIff (FT.eVar @Id "x") FT.PFalse)
     (FT.dummyPos "")
+
+
+-- -----------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 
 
 {-|
@@ -567,15 +656,15 @@ toFInfo =
 -- varno <> type prefix <> varname <> modulename <> threadno
 getFixpointName, getFixpointVarPrefix, getFixpointTypePrefix :: Bool -> HornExpr -> Id
 getFixpointName isParam v@HVar{..} =
-  getFixpointVarPrefix isParam v <> modulename <> "_" <> threadno
+  getFixpointVarPrefix isParam v <> threadno
   where
-    modulename = "M_" <> hVarModule
     threadno = "T" <> T.pack (show hThreadId)
 getFixpointName _ _ = error "must be called with a variable"
 
 getFixpointVarPrefix isParam v@HVar{..} =
-  getFixpointTypePrefix isParam v <> varname <> "_"
+  getFixpointTypePrefix isParam v <> varname <> "_" <>  modulename <> "_"
   where
+    modulename = "M_" <> hVarModule
     varname = "V_" <> hVarName
 getFixpointVarPrefix _ _ = error "must be called with a variable"
 

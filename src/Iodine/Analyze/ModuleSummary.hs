@@ -119,7 +119,7 @@ createModuleSummary m@Module{..} = do
   -- all of its submodules can be summarized
   submodulesCanBeSummarized <-
     fmap and $
-    forM moduleInstances $ \ModuleInstance{..} ->
+    for moduleInstances $ \ModuleInstance{..} ->
     isCombinatorial <$> gets (mapLookup 2 moduleInstanceType)
   let isComb = not hasClock && submodulesCanBeSummarized
 
