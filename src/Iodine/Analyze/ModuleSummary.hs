@@ -27,6 +27,7 @@ import qualified Data.Graph.Inductive as G
 import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import qualified Data.Sequence as SQ
 import           Data.Traversable
@@ -63,7 +64,10 @@ data ModuleSummary =
                   variableDependencies :: VarDepGraph,
 
                   -- | variable name -> node id
-                  variableDependencyNodeMap  :: HM.HashMap Id Int
+                  variableDependencyNodeMap  :: HM.HashMap Id Int,
+
+                  -- | node id -> variable name
+                  invVariableDependencyNodeMap :: IM.IntMap Id
                   }
   deriving (Show)
 
@@ -125,18 +129,22 @@ createModuleSummary m@Module{..} = do
 
   return $
     ModuleSummary
-    { portDependencies          = portDeps
-    , isCombinatorial           = isComb
-    , threadDependencies        = dgState ^. threadGraph
-    , threadReadMap             = dgState ^. varReads
-    , threadWriteMap            = dgState ^. varUpdates
-    , variableDependencies      = varDepGraph
-    , variableDependencyNodeMap = varDepMap
+    { portDependencies             = portDeps
+    , isCombinatorial              = isComb
+    , threadDependencies           = dgState ^. threadGraph
+    , threadReadMap                = dgState ^. varReads
+    , threadWriteMap               = dgState ^. varUpdates
+    , variableDependencies         = varDepGraph
+    , variableDependencyNodeMap    = varDepMap
+    , invVariableDependencyNodeMap = IM.fromList $
+                                     swap <$> HM.toList varDepMap
     }
   where
     isReachable g toNode fromNode =
       let ns = GQ.reachable fromNode g
       in toNode `elem` ns
+
+    swap (a,b) = (b,a)
 
     inputs, outputs :: L Id
     (inputs, outputs) =

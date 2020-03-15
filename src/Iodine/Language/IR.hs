@@ -20,12 +20,13 @@ module Iodine.Language.IR
   , Thread (..)
   , GetVariables (..)
   , GetData (..)
-  , moduleInputs
-  , moduleOutputs
-  , isStar
+  , isAB
   , isInput
+  , isStar
   , isVariable
+  , moduleInputs
   , moduleInstanceReadsAndWrites
+  , moduleOutputs
   )
 where
 
@@ -396,9 +397,15 @@ moduleInstanceReadsAndWrites m mClks mi = run $ execState (mempty, mempty) $ do
 
 
 -- | is the given thread an always block with the star event?
-isStar :: Eq a => AlwaysBlock a -> Bool
-isStar ab = abEvent ab == Star
+isStar :: AlwaysBlock a -> Bool
+isStar ab = case abEvent ab of
+              Star -> True
+              _    -> False
 
 isVariable :: Expr a -> Bool
 isVariable Variable{} = True
 isVariable _ = False
+
+isAB :: Thread a -> Bool
+isAB (AB _) = True
+isAB (MI _) = False

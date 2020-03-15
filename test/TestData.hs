@@ -140,6 +140,7 @@ negative = mkCollection "negative" $ go <$> names
             , "neg-test-2-v0"
             , "neg-test-2"
             , "neg-test-5"
+            , "neg-test-6"
             , "tp"
             , "neg-test-11"
             , "secverilog-neg-01"

@@ -70,6 +70,16 @@ dependencyGraph Module{..} = execState initialState $ do
   for_ variables (getNode . variableName)
   for_ alwaysBlocks dependencyGraphActAB
   for_ moduleInstances dependencyGraphActMI
+  vrs :: HM.HashMap Id Ints <- gets (view varReads)
+  HM.traverseWithKey
+    (\readVar readThreads -> do
+        writeThreads <- lookupThreads readVar varUpdates
+        for_ writeThreads
+          (\writeThread ->
+              for_ (IS.toList readThreads) $ \readThread ->
+              modify (threadGraph %~ G.insEdge (writeThread, readThread, ()))
+          )
+    ) vrs
   where
     initialState =
       DependencyGraphSt
@@ -95,16 +105,10 @@ dependencyGraphActMI mi@ModuleInstance{..} = do
     <$> asks (HM.! moduleInstanceType)
     <*> getClocks moduleInstanceType
     <*> return mi
-  for_ miReads $ \readVar -> do
+  for_ miReads $ \readVar ->
     modify (varReads %~ addToSet readVar miThreadId)
-    lookupThreads readVar varUpdates
-      >>= traverse_ (\writtenThread ->
-                       modify (threadGraph %~ G.insEdge (writtenThread, miThreadId, ())))
-  for_ miWrites $ \writtenVar -> do
+  for_ miWrites $ \writtenVar ->
     modify (varUpdates %~ addToSet writtenVar miThreadId)
-    lookupThreads writtenVar varReads
-      >>= traverse_ (\readThread ->
-                       modify (threadGraph %~ G.insEdge (miThreadId, readThread, ())))
 
 lookupThreads :: Member (State DependencyGraphSt) r
               => Id
@@ -118,17 +122,6 @@ dependencyGraphActAB :: Member (State DependencyGraphSt) r
 dependencyGraphActAB ab = do
   modify (threadGraph %~ G.insNode (getData ab, ()))
   runReader (getData ab) $ handleStmt (abStmt ab)
-  gets (HM.toList . (^. varUpdates))
-    >>= traverse_ (
-    \(writtenVar, writtenThreads) -> do
-      mReadThreads <- gets (HM.lookup writtenVar . (^. varReads))
-      case mReadThreads of
-        Nothing -> return ()
-        Just readThreads ->
-          for_ (IS.toList writtenThreads) $ \wt ->
-          for_ (IS.toList readThreads) $ \rt ->
-          modify (threadGraph %~ (G.insEdge (wt, rt, ()) . G.insNode (rt, ()) . G.insNode (wt, ())))
-    )
 
 type FD r = Members '[State DependencyGraphSt, Reader Int] r
 
@@ -152,11 +145,14 @@ handleStmt Assignment{..} =
       for_ rhsVars $ \rhsVar -> modify (varReads %~ addToSet rhsVar tid)
     _ -> error "assignment lhs is non-variable"
 handleStmt IfStmt{..} = do
-  currentSt <- get
-  newPathVars <- getNodes (getVariables ifStmtCondition)
+  oldPathVars <- gets (view pathVars)
+  let condVars = getVariables ifStmtCondition
+  tid <- ask
+  for_ condVars $ \condVar -> modify (varReads %~ addToSet condVar tid)
+  newPathVars <- getNodes condVars
   modify $ pathVars %~ IS.union newPathVars
   traverse_ handleStmt [ifStmtThen, ifStmtElse]
-  modify $ pathVars .~ (currentSt ^. pathVars)
+  modify $ pathVars .~ oldPathVars
 
 type DGSt r = Members '[State DependencyGraphSt] r
 

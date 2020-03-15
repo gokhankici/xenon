@@ -1,9 +1,10 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StrictData      #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 
 module Iodine.Transform.VCGen
@@ -35,7 +36,6 @@ import           Data.Hashable
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import           Data.List (nub)
-import           Data.Maybe
 import qualified Data.Sequence as SQ
 import           Data.Traversable
 import           Polysemy
@@ -181,72 +181,72 @@ alwaysBlockClauses ab =
   $ (SQ.singleton <$> initialize ab)
   <||> (maybeToMonoid <$> tagSet ab)
   <||> (maybeToMonoid <$> srcTagReset ab)
-  ||>  next ab
+  ||> next ab
   <||> sinkCheck t
   <||> assertEqCheck t
   where t = AB ab
 
 
 -- -------------------------------------------------------------------------------------------------
-initialize, initializeTop, initializeSub :: FDS r => AlwaysBlock Int -> Sem r H
+initialize :: FDS r => AlwaysBlock Int -> Sem r H
 -- -------------------------------------------------------------------------------------------------
 initialize ab = do
-  top <- isTopModule
-  if top
-    then initializeTop ab
-    else initializeSub ab
+  currentModule <- ask
+  let currentModuleName = moduleName currentModule
 
-initializeTop ab = do
-  Module{..} <- ask
-  -- untag everything
-  zeroTagSubs <- foldMap (fmap (first sti) . mkZeroTags moduleName) <$> asks (^. currentVariables)
-  -- init_eq and always_eq are initially set to the same values
-  initEqVars <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
-  let initialCond = sti $ HAnd $
-                    fmap mkEqual (foldl' (valEquals moduleName) mempty initEqVars)
-  subs <-
-    if   isStar ab
-    then fmap (second sti) . toSubs moduleName <$> getNextVars ab
-    else return zeroTagSubs
-  let extraConds = if   isStar ab
-                   then fmap mkEqual zeroTagSubs |> sti (transitionRelation $ abStmt ab)
-                   else mempty
+  tagEqVars0 <- getHornVariables ab
+  valEqVars0 <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
+
+  isTop <- isTopModule
+  srcs <- moduleInputs currentModule <$> getClocks currentModuleName
+  let (tagEqVars, valEqVars) =
+        if   isTop
+        then (tagEqVars0, valEqVars0)
+        else ( tagEqVars0 `HS.difference` srcs
+             , valEqVars0 `HS.difference` srcs
+             )
+
+  let tagSubs = sti2 <$> foldl' (mkZeroTags currentModuleName) mempty tagEqVars
+      valSubs = sti2 <$> foldl' (valEquals currentModuleName) mempty valEqVars
+
+  (cond, subs) <-
+    if isStar ab
+    then do nxt <- HM.map (+1) <$> getNextVars ab
+            let tr = sti $ uvi $ transitionRelation (abStmt ab)
+                cond1 = uvi . mkEqual <$> tagSubs
+                cond2 = uvi . mkEqual <$> valSubs
+                cond3 =
+                  foldl'
+                  (\es v ->
+                     case HM.lookup v nxt of
+                       Nothing -> es
+                       Just n  ->
+                         es
+                         |> mkEqual ( sti $ HVarVL v currentModuleName n
+                                    , sti $ HVarVR v currentModuleName n)
+                  ) mempty valEqVars
+                nxt' = if isTop
+                       then nxt
+                       else HM.filterWithKey (\v _ -> v `notElem` srcs) nxt
+                subs = sti2 <$> toSubs currentModuleName nxt'
+            return (HAnd (cond1 <> cond2 <> cond3 |> tr), subs)
+    else return (HBool True, tagSubs <> valSubs)
+
   return $
     Horn { hornHead   = makeKVar ab subs
-         , hornBody   = HAnd $ initialCond <| extraConds
+         , hornBody   = cond
          , hornType   = Init
          , hornStmtId = getThreadId ab
          , hornData   = ()
          }
  where
    sti = setThreadId ab
-   mkZeroTags m v =
-     (HVarTL0 v m, HBool False) |:> (HVarTR0 v m, HBool False)
+   sti2 = bimap sti sti
+   uvi = updateVarIndex (+ 1)
+   mkZeroTags m subs v =
+     subs |> (HVarTL0 v m, HBool False) |> (HVarTR0 v m, HBool False)
    valEquals m subs v =
      subs |> (HVarVL0 v m, HVarVR0 v m)
-
-initializeSub ab = do
-  currentModule <- ask
-  let currentModuleName = moduleName currentModule
-  mClks <- getClocks currentModuleName
-  vars <- asks (^. currentVariables)
-  let srcs    = moduleInputs currentModule mClks
-      nonSrcs = vars `HS.difference` srcs
-      sti = setThreadId ab
-  initEqVars <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
-  let initialCond = sti <$> foldl' (valEquals currentModuleName) mempty (initEqVars `HS.difference` srcs)
-  let nonSrcSubs = foldMap (mkZeroTags currentModuleName) nonSrcs
-  return $
-    Horn { hornHead   = makeKVar ab nonSrcSubs
-         , hornBody   = HAnd initialCond
-         , hornType   = Init
-         , hornStmtId = getThreadId ab
-         , hornData   = ()
-         }
- where
-   mkZeroTags m v =
-     (HVarTL0 v m, HBool False) |:> (HVarTR0 v m, HBool False)
-   valEquals m eqs v = eqs |> mkEqual (HVarVL0 v m, HVarVR0 v m)
 
 
 combinatorialModuleInit :: FDM r => Sem r H
@@ -463,7 +463,9 @@ interferenceCheck (AB ab) = do
   Module{..} <- ask
   ModuleSummary{..} <- asks (hmGet 1 moduleName)
   trace "threadDependencies" threadDependencies
-  unless (null $ G.pre threadDependencies $ getThreadId ab) $
+  let tid = getThreadId ab
+      threadDeps = filter (/= tid) $ G.pre threadDependencies tid
+  unless (null threadDeps) $
     interferenceCheckWR ab
 
 -- | return the interference check
@@ -722,38 +724,99 @@ withAB t act = do
 
 
 computeThreadStM :: G r => Module Int -> TI -> Sem r ThreadSt
-computeThreadStM m t = do
-  as  <- getAnnotations (moduleName m)
-  wvs <- getUpdatedVariables t
-  return $ computeThreadSt as m t wvs
-
-
-computeThreadSt :: Annotations -> Module Int -> TI -> Ids -> ThreadSt
-computeThreadSt as Module{..} thread wvs =
-  ThreadSt
-  { _currentVariables     = vs
-  , _currentSources       = filterAs sources
-  , _currentSinks         = filterAs sinks
-  , _currentInitialEquals = HS.union extraInitEquals $ filterAs initialEquals
-  , _currentAlwaysEquals  = filterAs alwaysEquals
-  , _currentAssertEquals  = filterAs assertEquals
-  , _currentWrittenVariables = wvs
-  }
+computeThreadStM m@Module{..} thread = do
+  ms@ModuleSummary{..} <- asks (HM.! moduleName)
+  as <- getAnnotations moduleName
+  let allInitialEquals = HS.union (as ^. initialEquals) (as ^. alwaysEquals)
+  let filterAs l = HS.intersection (as ^. l) vs
+  wvs <- getUpdatedVariables thread
+  let shouldAddWire w =
+        let (dependsOnInput, requiredRegs) =
+              computeRegistersWrittenBy m ms inputs w
+            -- assume the wire is initial_eq if
+            -- 1. the wire does not depend on module inputs
+            -- 2. it's not a module instance output
+            -- 3. all registers that it depends on are initial_eq
+            cond1 = not dependsOnInput
+            cond2 = ( not (null requiredRegs) ||
+                      IS.null ((threadWriteMap HM.! w) `IS.intersection` miThreadIds))
+            cond3 = all (`elem` allInitialEquals) requiredRegs
+        in cond1 && cond2 && cond3
+  extraInitEquals <-
+    case thread of
+      AB ab | not (isStar ab) ->
+                mfoldM (\w ->
+                          if shouldAddWire w
+                          then do trace "added initial_eq wire:" w
+                                  return $ HS.singleton w
+                          else return mempty) currentWires
+      _ -> return mempty
+  return $
+    ThreadSt
+    { _currentVariables     = vs
+    , _currentSources       = filterAs sources
+    , _currentSinks         = filterAs sinks
+    , _currentInitialEquals = (filterAs initialEquals `HS.difference` inputs)
+                              <> extraInitEquals
+    , _currentAlwaysEquals  = filterAs alwaysEquals
+    , _currentAssertEquals  = filterAs assertEquals
+    , _currentWrittenVariables = wvs
+    }
   where
+    miThreadIds = IS.fromList $ getData <$> toList moduleInstances
     vs = getVariables thread
-    filterAs l = HS.intersection (as ^. l) vs
-    extraInitEquals =
+    inputs =
       foldl'
-      (\vars -> \case
-          w@Wire{..} ->
-            if   isNothing $ Input w `SQ.elemIndexL` ports
-            then HS.insert variableName vars
-            else vars
-          Register{..} ->
-            vars)
-      mempty
-      variables
+      (\acc -> \case
+          Input{..} -> HS.insert (variableName portVariable) acc
+          Output{} -> acc
+      ) mempty ports
+    currentWires =
+      foldl'
+      (\ws -> \case
+          Wire{..} ->
+            if   variableName `elem` vs && variableName `notElem` inputs
+            then ws SQ.|> variableName
+            else ws
+          Register{} -> ws
+      ) mempty variables
 
+-- | return the registers that write to the given wire
+computeRegistersWrittenBy :: Module Int -> ModuleSummary -> Ids -> Id -> (Bool, Ids)
+computeRegistersWrittenBy Module{..} ModuleSummary{..} inputs wireName =
+  worklist (HS.singleton wireName) mempty (SQ.singleton wireName)
+  where
+    -- worklist :: wires that added to the worklist
+    --          -> current set of registers
+    --          -> worklist of wires
+    --          -> registers
+    worklist addedWires rs = \case
+      SQ.Empty    -> (False, rs)
+      w SQ.:<| ws ->
+        let writtenNodes =
+              G.pre variableDependencies (variableDependencyNodeMap HM.! w)
+            (rs', foundWires) =
+              foldl'
+              (\acc n ->
+                  let v = invVariableDependencyNodeMap IM.! n
+                  in if v `elem` allRegisters
+                     then acc & _1 %~ HS.insert v
+                     else if w `elem` addedWires
+                          then acc
+                          else acc & _2 %~ HS.insert v
+              )
+              (rs, mempty)
+              writtenNodes
+            addedWires' = addedWires <> foundWires
+            ws' = ws <> toSequence foundWires
+        in if any (`elem` inputs) foundWires
+           then (True, mempty)
+           else worklist addedWires' rs' ws'
+
+    allRegisters =
+      foldl' (\rs -> \case
+                 Register{..} -> HS.insert variableName rs
+                 Wire{} -> rs) mempty variables
 
 getUpdatedVariables :: G r => TI -> Sem r Ids
 getUpdatedVariables = \case
@@ -836,7 +899,7 @@ updateTagsKeepValues n b =
   foldl'
   (\(es, ss) (v, m) ->
      let es' = es
-               <> (mkEqual <$> mkValueSubs v m n 0)
+               -- <> (mkEqual <$> mkValueSubs v m n 0)
                |> mkEqual (HVarTL v m n, HBool b)
                |> mkEqual (HVarTR v m n, HBool b)
          ss' = ss <> mkTagSubs v m 0 n
