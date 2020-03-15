@@ -84,6 +84,8 @@ simple = mkCollection "simple" $ ts ++ [t']
       , "nb-test-01"
       , "tr-submodule-01"
       , "submodule-02"
+      , "submodule-03"
+      , "submodule-04"
       ]
 
 
@@ -143,6 +145,8 @@ negative = mkCollection "negative" $ go <$> names
             , "secverilog-neg-01"
             , "secverilog-neg-02"
             , "neg-submodule-02"
+            , "neg-submodule-03"
+            , "neg-submodule-04"
             ]
 
 
