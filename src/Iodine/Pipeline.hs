@@ -13,14 +13,12 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
+import           Iodine.Transform.Query
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
+import           Iodine.Transform.VariableRename
 import           Iodine.Types
 
--- import           Iodine.Transform.HornQuery
-import           Iodine.Transform.Query
-
--- import           Data.ByteString.Builder
 import           Data.Foldable
 import           Data.Function
 import qualified Data.HashMap.Strict as HM
@@ -46,10 +44,10 @@ pipeline
   -> Sem r (L (Module ()))      -- ^ ir parser
   -> Sem r FInfo                -- ^ fixpoint query to run
 pipeline af irReader = do
-  ir <- assignThreadIds <$> irReader
+  (af', ir) <- variableRename af . assignThreadIds <$> irReader
   let irMap = mkModuleMap ir
 
-  runReader af $ do
+  runReader af' $ do
     sanityCheck
       & runReader ir
       & runReader irMap

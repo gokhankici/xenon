@@ -20,6 +20,7 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
 import           Iodine.Transform.VCGen
+import           Iodine.Transform.VariableRename (nonInputPrefix)
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -388,13 +389,14 @@ mkSummaryQualifierHelper m qualifierName inputs valEqInputs rhsType =
    , FT.QP (symbol "rl") (FT.PatPrefix (mkRhsSymbol rhsType LeftRun) 0)  rt
    , FT.QP (symbol "rr") (FT.PatPrefix (mkRhsSymbol rhsType RightRun) 0) rt
    ] ++
-   concat [ [ FT.QP (FT.symbol $ "it" ++ show n2)     (FT.PatPrefix (mkLhsSymbolT i LeftRun) 1)  bt
-            , FT.QP (FT.symbol $ "it" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbolT i RightRun) 1) bt
+   -- $1 is used to match from the same thread
+   concat [ [ FT.QP (FT.symbol $ "it" ++ show n2)     (FT.PatPrefix (mkLhsSymbol i Tag LeftRun) 1)  bt
+            , FT.QP (FT.symbol $ "it" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbol i Tag RightRun) 1) bt
             ]
           | (i, n2) <- zip inputs [0,2..]
           ] ++
-   concat [ [ FT.QP (FT.symbol $ "iv" ++ show n2)     (FT.PatPrefix (mkLhsSymbolV i LeftRun) 1)  it
-            , FT.QP (FT.symbol $ "iv" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbolV i RightRun) 1) it
+   concat [ [ FT.QP (FT.symbol $ "iv" ++ show n2)     (FT.PatPrefix (mkLhsSymbol i Value LeftRun) 1)  it
+            , FT.QP (FT.symbol $ "iv" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbol i Value RightRun) 1) it
             ]
           | (i, n2) <- zip valEqInputs [0,2..]
           ]
@@ -410,10 +412,10 @@ mkSummaryQualifierHelper m qualifierName inputs valEqInputs rhsType =
       [ FT.eVar ("iv" ++ show n2) `FT.EEq` FT.eVar ("iv" ++ show (n2+1))
       | (_, n2) <- zip valEqInputs [0,2..]
       ]
-    mkRhsSymbol t r = symbol . getFixpointTypePrefix True $ mkVar "" t r
-    mkLhsSymbolT = mkLhsSymbol Tag
-    mkLhsSymbolV = mkLhsSymbol Value
-    mkLhsSymbol t v rn = symbol . getFixpointVarPrefix  True $ mkVar v t rn
+    mkRhsSymbol t r = symbol $ getFixpointNonInputVarPrefix t r
+    mkLhsSymbol v t r = symbol $
+                        getFixpointVarPrefix True $
+                        mkVar v t r
     mkVar v = HVar0 v (moduleName m)
     bt = FT.boolSort
     it = FT.intSort
@@ -654,28 +656,26 @@ toFInfo =
 
 -- | get the bind name used for the variable in the query
 -- varno <> type prefix <> varname <> modulename <> threadno
-getFixpointName, getFixpointVarPrefix, getFixpointTypePrefix :: Bool -> HornExpr -> Id
-getFixpointName isParam v@HVar{..} =
+getFixpointName, getFixpointVarPrefix, getFixpointTypePrefix  :: Bool -> HornExpr -> Id
+getFixpointName isParam v =
   getFixpointVarPrefix isParam v <> threadno
   where
-    threadno = "T" <> T.pack (show hThreadId)
-getFixpointName _ _ = error "must be called with a variable"
-
-getFixpointVarPrefix isParam v@HVar{..} =
+    threadno = "T" <> T.pack (show $ hThreadId v)
+getFixpointVarPrefix isParam v =
   getFixpointTypePrefix isParam v <> varname <> "_" <>  modulename <> "_"
   where
-    modulename = "M_" <> hVarModule
-    varname = "V_" <> hVarName
-getFixpointVarPrefix _ _ = error "must be called with a variable"
-
-getFixpointTypePrefix isParam HVar {..} =
+    modulename = "M_" <> hVarModule v
+    varname = "V_" <> hVarName v
+getFixpointTypePrefix isParam v =
   varno <> prefix
   where
-    varno = if isParam || hVarIndex == 0
+    varno = if isParam || hVarIndex v == 0
             then ""
-            else "N" <> T.pack (show hVarIndex) <> "_"
-    prefix = getVarPrefix hVarType hVarRun
-getFixpointTypePrefix _ _ = error "must be called with a variable"
+            else "N" <> T.pack (show $ hVarIndex v) <> "_"
+    prefix = getVarPrefix (hVarType v) (hVarRun v)
+
+getFixpointNonInputVarPrefix :: HornVarType -> HornVarRun -> Id
+getFixpointNonInputVarPrefix t r = getVarPrefix t r <> "V_" <> nonInputPrefix
 
 getVarPrefix :: HornVarType -> HornVarRun -> Id
 getVarPrefix hVarType hVarRun =

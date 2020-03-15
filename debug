@@ -3,24 +3,29 @@
 cd "${0:A:h}"
 
 # PROFILE="--profile"
+# FIXED="yes"
 
 # TEST="examples/verilog/stall.v"
 # TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-9.v"
-# TEST="test/verilog/pos/submodule-02.v"
+TEST="test/verilog/pos/submodule-02.v"
 # TEST="test/verilog/neg/neg-test-2-v0.v"
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
 # TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
-TEST="benchmarks/yarvi/shared/yarvi.v"
+# TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="benchmarks/fpu/verilog/fpu.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
 
 TEST_FILE="${TEST_DIR}/${TEST_NAME}.v"
-# TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
-TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
+
+if [ -z "${FIXED}" ]; then
+	TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
+else
+	TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
+fi
 
 ./iodine --build ${PROFILE} && \
 	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --trace
