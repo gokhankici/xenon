@@ -7,6 +7,7 @@
 module Iodine.Analyze.ModuleSummary
   (
     createModuleSummaries
+  , getAllDependencies
   -- , tryToSummarize
   , ModuleSummary(..)
   , SummaryMap
@@ -213,3 +214,27 @@ mapLookup n k m =
                       , "key:" ++ show k
                       ]
     Just a  -> a
+
+
+type GAD r = Members '[ Reader ModuleSummary
+                      , Reader (IM.IntMap (Thread Int))
+                      ] r
+
+-- | returns the transitive closure of the id of the threads that update the
+-- given thread
+getAllDependencies :: GAD r => Thread Int -> Sem r IS.IntSet
+getAllDependencies thread =
+  execState mempty $
+  asks ((`G.pre` getData thread) . threadDependencies)
+  >>= traverse_ getAllDependencies'
+
+
+getAllDependencies' :: (GAD r, Members '[State IS.IntSet] r) => Int -> Sem r ()
+getAllDependencies' fromThreadId = do
+  threadInSet <- gets (IS.member fromThreadId)
+  unless threadInSet $ do
+    modify (IS.insert fromThreadId)
+    fromThread <- asks (IM.! fromThreadId)
+    unless (isAB fromThread) $
+      asks ((`G.pre` fromThreadId) . threadDependencies)
+      >>= traverse_ getAllDependencies'

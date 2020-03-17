@@ -130,7 +130,7 @@ updateThreadId f = \case
                         }
   HApp{..}    -> HApp{ hAppArgs = go <$> hAppArgs, .. }
   HNot e      -> HNot $ go e
-  KVar{..}    -> KVar{ hKVarSubs = bimap go go <$> hKVarSubs, .. }
+  KVar{..}    -> KVar{ hKVarSubs = second go <$> hKVarSubs, .. }
   HConstant c -> HConstant c
   HInt n      -> HInt n
   HBool b     -> HBool b

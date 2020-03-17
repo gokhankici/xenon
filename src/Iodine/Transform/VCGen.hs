@@ -45,19 +45,17 @@ import qualified Polysemy.Output as PO
 import           Polysemy.Reader
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
-import Text.Printf
 
 -- | State relevant to statements
 data ThreadSt =
   ThreadSt { _currentVariables        :: Ids -- ^ all vars in this block
            , _currentWrittenVariables :: Ids
-
            -- the rest is the filtered version of the Annotations type
-           , _currentSources       :: Ids
-           , _currentSinks         :: Ids
-           , _currentInitialEquals :: Ids
-           , _currentAlwaysEquals  :: Ids
-           , _currentAssertEquals  :: Ids
+           , _currentSources          :: Ids
+           , _currentSinks            :: Ids
+           , _currentInitialEquals    :: Ids
+           , _currentAlwaysEquals     :: Ids
+           , _currentAssertEquals     :: Ids
 
            }
   deriving (Show)
@@ -262,7 +260,7 @@ combinatorialModuleInit = do
              _ -> error "unreachable"
       abTR = sti $ updateVarIndex (+ 1) $
              transitionRelation (abStmt ab)
-  miExprs <- for moduleInstances instantiateModule
+  miExprs <- for moduleInstances instantiateMI
   abNext <- HM.map (+ 1) <$> getNextVars ab
   moduleAlwaysEqs <- moduleAlwaysEquals 1 abNext
   let moduleSubs = second sti <$> toSubs moduleName abNext
@@ -475,13 +473,15 @@ interferenceCheck (AB readAB) = do
       HS.intersection
       <$> asks (view currentWrittenVariables . (IM.! writeTid))
       <*> asks (view currentVariables . (IM.! readTid))
-    unless (HS.null overlappingVars) $
-      case writeThread of
+    when (HS.null overlappingVars) $ do
+      trace "overlapping variables" (toList overlappingVars)
+      throw "overlapping variables should not be empty here"
+    ( case writeThread of
         AB writeAB ->
           interferenceCheckAB writeAB readAB overlappingVars
         MI writeMI ->
           interferenceCheckMI writeMI readAB overlappingVars
-      >>= \hornClause -> modify (SQ.|> hornClause)
+      ) >>= \hornClause -> modify (SQ.|> hornClause)
 
 
 interferenceCheckMI :: FDM r
@@ -489,12 +489,49 @@ interferenceCheckMI :: FDM r
                     -> AlwaysBlock Int    -- ^ always block being updated (reader)
                     -> Ids                -- ^ the variables being updated
                     -> Sem r H
-interferenceCheckMI writeMI readAB overlappingVars =
-  throw $ printf
-  "unsupported interferenceCheck\nwriteAB\n%s\nreadAB\n%s\noverlapping variables\n%s"
-  (show writeMI)
-  (show readAB)
-  (show $ toList overlappingVars)
+interferenceCheckMI writeMI readAB overlappingVars = do
+  m@Module{..} <- ask
+  moduleSummary :: ModuleSummary <- asks (HM.! moduleName)
+  depThreadIds <-
+    IS.delete (getData readAB)
+    <$> getAllDependencies (MI writeMI) & runReader moduleSummary
+  depThreadInstances <-
+    for (toSeq depThreadIds) $ \depThreadId -> do
+    depThread <- asks (IM.! depThreadId)
+    case depThread of
+      AB depAB -> instantiateAB depAB overlappingVars
+      MI depMI -> instantiateMI depMI
+  readInstance <- instantiateAB readAB overlappingVars
+  writeInstance <- instantiateMI writeMI
+  let writeNext = foldl' (\nxt v -> HM.insert v 1 nxt) mempty overlappingVars
+  (readBodyExpr, readHornHead) <-
+    interferenceReaderExpr readAB overlappingVars writeNext
+  -- if we're in the top module, we need constant time assumptions for the
+  -- source variables
+  isTop <- isTopModule
+  topModuleExprs <-
+    if isTop
+    then do let mkTagEq v =
+                  setThreadId m $
+                  mkEqual
+                  ( HVarTL v moduleName 1
+                  , HVarTR v moduleName 1
+                  )
+            foldl' (\acc v -> acc |> mkTagEq v)  mempty
+              <$> getSources moduleName
+    else return mempty
+  return $
+    Horn { hornHead   = readHornHead
+         , hornBody   = HAnd $
+                        topModuleExprs <>
+                        (depThreadInstances |> readInstance |> writeInstance)
+                        <> readBodyExpr
+         , hornType   = Interference
+         , hornStmtId = getThreadId readAB
+         , hornData   = ()
+         }
+  where
+    toSeq = IS.foldl' (|>) SQ.empty
 
 
 -- | return the interference check
@@ -505,16 +542,34 @@ interferenceCheckAB :: FDM r
                     -> Sem r H
 interferenceCheckAB writeAB readAB overlappingVars= do
   currentModule <- ask @(Module Int)
+  writeInstance <- instantiateAB writeAB mempty
+  let sti     = setThreadId currentModule
+      uvi1    = updateVarIndex (+ 1)
+      writeTR = uvi1 $ sti $ transitionRelation (abStmt writeAB)
+  writeNext <- HM.map (+ 1) <$> getNextVars writeAB
+  (body, hd) <- interferenceReaderExpr readAB overlappingVars writeNext
+  return $
+    Horn { hornHead   = hd
+         , hornBody   = HAnd $ writeInstance <| writeTR <| body
+         , hornType   = Interference
+         , hornStmtId = getThreadId readAB
+         , hornData   = ()
+         }
+
+interferenceReaderExpr :: FDM r
+                       => AlwaysBlock Int              -- ^ always block being updated (reader)
+                       -> Ids                          -- ^ the variables being updated
+                       -> Substitutions                -- ^ substitution map of the write thread
+                       -> Sem r (L HornExpr, HornExpr) -- ^ body & head expression
+interferenceReaderExpr readAB overlappingVars writeNext = do
+  currentModule <- ask @(Module Int)
   let currentModuleName = moduleName currentModule
       sti = setThreadId currentModule
-      uvi1 = updateVarIndex (+ 1)
-  writeNext <- HM.map (+ 1) <$> getNextVars writeAB
-  originalReadNext <- getNextVars readAB
-  let writeTR = uvi1 $ sti $ transitionRelation (abStmt writeAB)
-  readHornVars <- getHornVariables readAB
-  (body, readNext) <-
+  readNext <- getNextVars readAB
+  (body, subNext) <-
     if isStar readAB
     then do
+      readHornVars <- getHornVariables readAB
       let maxWriteN = maximum writeNext
           uviN = updateVarIndex (+ maxWriteN)
           pullVarsToN =
@@ -529,35 +584,22 @@ interferenceCheckAB writeAB readAB overlappingVars= do
                     Nothing -> extraSubs 1
             )
             readHornVars
-      let readNext = HM.map (+ maxWriteN) originalReadNext
       let readTR = uviN $ sti $ transitionRelation (abStmt readAB)
-      return ( writeTR <| (pullVarsToN |> readTR)
-             , readNext
+      return ( pullVarsToN |> readTR
+             , HM.map (+ maxWriteN) readNext
              )
     else
-      return ( SQ.singleton writeTR
-             , HM.mapWithKey (\v _ -> fromMaybe 1 $ HM.lookup v writeNext) originalReadNext
+      return ( mempty
+             , HM.mapWithKey (\v _ -> fromMaybe 1 $ HM.lookup v writeNext) readNext
              )
-  let subs =  second sti <$> toSubs currentModuleName readNext
 
-  writeHornVars <- getHornVariables writeAB
-  let mkInstance    = fmap (second sti) . foldMap (\v -> mkAllSubs v currentModuleName 0 1)
-      readInstance  = makeKVar readAB $ mkInstance $ readHornVars `HS.difference` overlappingVars
-      writeInstance = makeKVar writeAB $ mkInstance writeHornVars
-  moduleAlwaysEqs <- moduleAlwaysEquals 1 readNext
-  return $
-    Horn { hornHead   = makeKVar readAB subs
-         , hornBody   = HAnd $
-                        readInstance
-                        <| writeInstance
-                        <| moduleAlwaysEqs
-                        <> body
-         , hornType   = Interference
-         , hornStmtId = threadId
-         , hornData   = ()
-         }
-  where
-    threadId = getThreadId readAB
+  readInstance <- instantiateAB readAB overlappingVars
+  moduleAlwaysEqs <- moduleAlwaysEquals 1 subNext
+  let subs =  second sti <$> toSubs currentModuleName subNext
+
+  return ( readInstance <| moduleAlwaysEqs <> body
+         , makeKVar readAB subs
+         )
 
 moduleAlwaysEquals :: FDM r => Int -> Substitutions -> Sem r (L HornExpr)
 moduleAlwaysEquals varIndex nxt = do
@@ -575,15 +617,24 @@ moduleAlwaysEquals varIndex nxt = do
   return $ foldMap mkAEs (annots ^. alwaysEquals)
 
 
--- | Instantiate all threads with variable index = 1 and thread index equal to
--- the current module's id. If an always block is given, the variables read by it
--- won't be used to instantiate it.
+-- | Instantiate the always block with variable index = 1 and thread index equal
+-- to the current module's id. The given set of variables are excluded from the
+-- instantiation.
+instantiateAB :: FDM r => AlwaysBlock Int -> Ids -> Sem r HornExpr
+instantiateAB ab excludedVars = do
+  m@Module{..} <- ask
+  let sti = setThreadId m
+      mkInstance = fmap (second sti) . foldMap (\v -> mkAllSubs v moduleName 0 1)
+  makeKVar ab . mkInstance . (`HS.difference` excludedVars) <$> getHornVariables ab
 
 
 -- | instantiate the given module instance with variable index = 1 and thread
 -- index equal to the current module's
-instantiateModule :: FDM r => ModuleInstance Int -> Sem r HornExpr
-instantiateModule ModuleInstance{..} = do
+instantiateMI :: FDM r => ModuleInstance Int -> Sem r HornExpr
+instantiateMI mi = instantiateMI' mi 1
+
+instantiateMI' :: FDM r => ModuleInstance Int -> Int -> Sem r HornExpr
+instantiateMI' ModuleInstance{..} varIndex = do
   currentModule <- ask
   let currentModuleName = moduleName currentModule
   targetModule <- asks (hmGet 2 moduleInstanceType)
@@ -595,14 +646,14 @@ instantiateModule ModuleInstance{..} = do
         (t, f) <- (Value, val) |:> (Tag, tag)
         r <- LeftRun |:> RightRun
         return ( HVar0 i targetModuleName t r
-               , updateVarIndex (const 1) $
+               , updateVarIndex (const varIndex) $
                  f r $ hmGet 3 i moduleInstancePorts
                )
       mkOutputSubs o = do
         (t, r) <- allTagRuns
         let e = hmGet 4 o moduleInstancePorts
             rhs = if isVariable e
-                  then HVar (varName e) currentModuleName 1 t r 0
+                  then HVar (varName e) currentModuleName varIndex t r 0
                   else error "output port expresssion of a module instance should be a variable"
         return ( HVar0 o targetModuleName t r
                , rhs
@@ -635,16 +686,11 @@ summaryConstraint = do
 instantiateAllThreads :: FDM r => Sem r HornExpr
 instantiateAllThreads = do
   currentModule <- ask
-  let fixThreadId = setThreadId currentModule
-  abInvs <-
-    for (alwaysBlocks currentModule) $ \ ab -> do
-    hornParams <- getHornVariables ab
-    let mkSub v = second fixThreadId
-                  <$> mkAllSubs v (moduleName currentModule) 0 1
-        subs = foldMap mkSub hornParams
-    return $ makeKVar ab subs
-  miInvs <- traverse instantiateModule (moduleInstances currentModule)
-  return $ HAnd $ abInvs <> miInvs
+  instances <-
+    mappend
+    <$> for (alwaysBlocks currentModule) (`instantiateAB` mempty)
+    <*> traverse instantiateMI (moduleInstances currentModule)
+  return $ HAnd instances
 
 -- debuggingConstraints :: FDM r => Sem r Horns
 -- debuggingConstraints = do
