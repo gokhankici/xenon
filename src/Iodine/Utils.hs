@@ -13,11 +13,13 @@ import           Control.Applicative
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
-import           Data.Hashable
+import qualified Data.Graph.Inductive as G
 import qualified Data.HashSet as HS
+import           Data.Hashable
 import qualified Data.Sequence as SQ
 import           Polysemy
 import           Polysemy.Error
+import qualified Polysemy.Trace as PT
 
 combine :: (Monad f, Monoid m, Traversable t) => (a -> f m) -> t a -> f m
 combine act as = fold <$> traverse act as
@@ -99,3 +101,14 @@ toSequence = foldl' (|>) mempty
 twoPairs :: L a -> L (a, a)
 twoPairs SQ.Empty      = mempty
 twoPairs (a SQ.:<| as) = ((a, ) <$> as) <> twoPairs as
+
+trace :: (Members '[PT.Trace] r, Show a) => String -> a -> Sem r ()
+trace msg a = do
+  PT.trace msg
+  PT.trace $ show a
+
+insEdge :: (Eq b, G.DynGraph gr) => G.LEdge b -> gr a b -> gr a b
+insEdge e g =
+  if G.hasLEdge g e
+  then g
+  else G.insEdge e g

@@ -14,7 +14,7 @@ def add_quotes(s):
         return '"{}"'.format(s)
 
 def run_tests(test_args, stack_args=[]):
-    cmd = ["stack"] + stack_args + ["test", PACKAGE_NAME]
+    cmd = ["stack"] + stack_args + ["test", "--fast", PACKAGE_NAME]
 
     if test_args:
         args = " ".join([add_quotes(a) for a in test_args])

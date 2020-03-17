@@ -80,8 +80,8 @@ createModuleSummaries :: Members '[ Reader AnnotationFile
                                   , PT.Trace
                                   , Error ] r
                       => ModuleMap -> Sem r SummaryMap
-createModuleSummaries moduleMap = do
-  trace "ordered modules" (moduleName <$> orderedModules)
+createModuleSummaries moduleMap =
+  -- trace "ordered modules" (moduleName <$> orderedModules)
   for_ orderedModules (\m@Module{..} ->
                           createModuleSummary m >>= (modify . HM.insert moduleName))
     & runReader moduleMap
@@ -103,7 +103,10 @@ createModuleSummary m@Module{..} = do
   dgState <- dependencyGraphFromModule m
   let varDepGraph = dgState ^. depGraph
       varDepMap   = dgState ^. varMap
-  trace "createModuleSummary-module" moduleName
+  -- trace "createModuleSummary-module" moduleName
+  trace
+    ("thread dependencies of module #" ++ show (getData m))
+    (G.edges $ dgState ^. threadGraph)
   let lookupNode v = mapLookup 1 v varDepMap
   clks <- getClocks moduleName
   let hasClock = not $ HS.null clks
@@ -184,10 +187,10 @@ dependencyGraphFromModule m@Module{..} = do
         toNode <- getNode toVar
         return (fromNode, toNode, Explicit Blocking)
       return $ es <> es'
-    trace "thread graph" $ dgState ^. threadGraph
+    -- trace "thread graph" $ dgState ^. threadGraph
     return $
       dgState
-      & over depGraph (\g -> foldr' G.insEdge g extraEdges)
+      & over depGraph (\g -> foldr' insEdge g extraEdges)
       & set varMap nodeMap'
 
 getNode :: Members '[State (HM.HashMap Id Int), State Int] r => Id -> Sem r Int
@@ -210,6 +213,3 @@ mapLookup n k m =
                       , "key:" ++ show k
                       ]
     Just a  -> a
-
-trace :: (Members '[PT.Trace] r, Show a) => String -> a -> Sem r ()
-trace msg a = PT.trace msg >> PT.trace (show a)

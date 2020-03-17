@@ -23,6 +23,7 @@ where
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
+import           Iodine.Utils
 
 import           Control.Lens
 import           Data.Foldable
@@ -37,7 +38,7 @@ import           Polysemy.Reader
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
-data VarDepEdgeType = Implicit | Explicit AssignmentType deriving (Show)
+data VarDepEdgeType = Implicit | Explicit AssignmentType deriving (Show, Eq)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 
@@ -77,7 +78,7 @@ dependencyGraph Module{..} = execState initialState $ do
         for_ writeThreads
           (\writeThread ->
               for_ (IS.toList readThreads) $ \readThread ->
-              modify (threadGraph %~ G.insEdge (writeThread, readThread, ()))
+              modify (threadGraph %~ insEdge (writeThread, readThread, ()))
           )
     ) vrs
   where
@@ -160,7 +161,7 @@ addNode :: DGSt r => (Int, Int, VarDepEdgeType) -> Sem r ()
 addNode edge@(fromNode, toNode, _) = do
   for_ [fromNode, toNode] $ \n ->
     modify $ depGraph %~ G.insNode (n, ())
-  modify $ depGraph %~ G.insEdge edge
+  modify $ depGraph %~ insEdge edge
 
 
 getNodes :: DGSt r => HS.HashSet Id -> Sem r IS.IntSet

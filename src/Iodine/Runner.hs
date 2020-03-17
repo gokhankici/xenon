@@ -144,18 +144,13 @@ checkIR (IodineArgs{..}, af)
     computeFInfo :: IO FInfo
     computeFInfo = do
       irFileContents <- readIRFile
-      -- (bsBuilder, mFInfo) <- pipeline af
       mFInfo <- pipeline af
         (parse (fileName, irFileContents)) -- ir reader
         & handleTrace
         & errorToIOFinal
         & runOutputSem (embed . hPutStrLn stderr)
-        -- & runOutputMonoid (id @Builder)
         & embedToFinal
         & runFinal
-      -- unless noSave $ do
-      --   putStrLn $ "saving smt file to " ++ smtFile
-      --   B.writeFile smtFile (toLazyByteString bsBuilder)
       case mFInfo of
         Right finfo -> return finfo
         Left e      -> errorHandle e
@@ -191,4 +186,4 @@ checkIR (IodineArgs{..}, af)
 -- -----------------------------------------------------------------------------
 
 errorHandle :: IodineException -> IO a
-errorHandle e = E.throwIO e
+errorHandle = E.throwIO

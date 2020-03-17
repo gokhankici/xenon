@@ -14,17 +14,11 @@
           "IF_instr"
         ],
         "initial_eq": [
-          "EX_ALUOp",
-          "EX_MemRead",
-          "EX_extend",
-          "EX_rt",
-          "ID_instr",
-          "IF_instr",
-          "MEM_ALUOut",
           "Stall",
-          "WB_ALUOut",
-          "a",
-          "b"
+          "IF_instr",
+          "ID_instr",
+          "EX_MemRead",
+          "EX_rt"
         ]
       },
       "clock": "clk"
@@ -41,21 +35,6 @@
           "MemtoReg",
           "RegDst",
           "RegWrite"
-        ]
-      }
-    },
-    "alu_ctl_stub": {
-      "annotations": {
-        "initial_eq": [
-          "ALUOperation"
-        ]
-      }
-    },
-    "alu_stub": {
-      "annotations": {
-        "initial_eq": [
-          "result",
-          "zero"
         ]
       }
     }

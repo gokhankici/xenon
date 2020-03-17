@@ -31,7 +31,6 @@ import           Polysemy
 import           Polysemy.Error
 import           Polysemy.Reader
 import           Polysemy.State
-import           Polysemy.Trace
 
 
 -- #############################################################################
@@ -61,6 +60,19 @@ data StmtSt =
 makeLenses ''St
 makeLenses ''StmtSt
 
+type FD r  = Members '[ State St ] r
+type FDM r = Members '[ State St
+                      , Reader ModuleName
+                      ] r
+type FDS r = Members '[ State St
+                      , Reader ModuleName
+                      , State StmtSt
+                      ] r
+type FDR r = Members '[ State St
+                      , Reader StmtSt
+                      ] r
+
+newtype ModuleName = ModuleName { getModuleName :: Id }
 
 -- #############################################################################
 
@@ -75,12 +87,13 @@ assigned only in one of the branches of an if statement, the missing assignment
 is added to the corresponding branch. This way the substitutions that implement
 the transition relation in the kvars become simple.
 -}
-normalize :: Members '[Trace, Error IodineException] r
+normalize :: Members '[Error IodineException] r
           => L (Module Int) -> Sem r NormalizeOutput
-normalize modules = traverse normalizeModule modules <* trace "SSA DONE!" & runNormalize
+normalize modules = traverse normalizeModule modules & runNormalize
 
 -- | Run normalize on all the statements inside the given module.
-normalizeModule :: FD r => Module Int -> Sem r (Module Int)
+normalizeModule :: (FD r, Members '[Error IodineException] r)
+                => Module Int -> Sem r (Module Int)
 normalizeModule Module {..} = runReader (ModuleName moduleName) $ do
   unless (SQ.null gateStmts) $
     throw $ IE Normalize "gateStmts should be empty here"
@@ -278,13 +291,6 @@ normalizeExpr = \case
 
 
 -- #############################################################################
-
-type FD r   = Members '[State St, Trace, Error IodineException] r
-type FDR r  = (FD r, Members '[Reader StmtSt] r)
-type FDM r  = (FD r, Members '[Reader ModuleName] r)
-type FDS r  = (FDM r, Members '[State StmtSt] r)
-
-newtype ModuleName = ModuleName { getModuleName :: Id }
 
 initialSt :: St
 initialSt = St 0 0 mempty

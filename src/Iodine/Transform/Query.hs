@@ -328,7 +328,7 @@ mkSimpleModuleQualifierHelper m qualifierName inputs valEqInputs rhsName rhsType
     rhsTagDefs =
       [ let isLeft = t == LeftRun
         in FT.eVar @String (if isLeft then "rl" else "rl")
-           `FT.EEq`
+           `fpop`
            FT.POr [ FT.eVar ("it" ++ show (if isLeft then n2 else n2 + 1))
                   | n2 <- take inputLen [0,2..]
                   ]
@@ -365,14 +365,14 @@ addSummaryQualifiers m@Module{..} = do
   mSummary <- asks (HM.lookup moduleName)
   let inputLists = filter (not . HS.null) . nub . concatMap (HM.elems . portDependencies)
                    $ mSummary
-  trace "mSummary" mSummary
-  trace "inputLists" inputLists
+  -- trace "mSummary" mSummary
+  -- trace "inputLists" inputLists
   for_ (zip inputLists [0..]) $ \(ls, n) ->
     let qualifierName = "SummaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n
         inputSeq  = toSequence ls
         inputList = toList ls
         ps = powerset inputSeq
-    in do trace "powerset" ps
+    in do -- trace "powerset" ps
           flip SQ.traverseWithIndex ps $ \n2 vs ->
             addQualifier $
             mkSummaryQualifierHelper m ("Tag" <> show n2 <> qualifierName) inputList (toList vs) Tag
@@ -727,7 +727,3 @@ mkKVar n = FT.KV . FT.symbol $ "inv" <> show n
 -- | variable used in refinements
 vSymbol :: FT.Symbol
 vSymbol = symbol "v"
-
-trace :: (Member PT.Trace r, Show a)
-      => String -> a -> Sem r ()
-trace msg a = PT.trace msg >> PT.trace (show a)
