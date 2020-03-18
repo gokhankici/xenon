@@ -8,7 +8,6 @@ module Iodine.Analyze.ModuleSummary
   (
     createModuleSummaries
   , getAllDependencies
-  -- , tryToSummarize
   , ModuleSummary(..)
   , SummaryMap
   )

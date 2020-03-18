@@ -168,7 +168,7 @@ main = do
         else va
 
   -- hack: set the required first two positional arguments to empty list
-  va <- updateDef . invalidate <$> IA.parseArgs ("" : "" : opts ^. iodineArgs)
+  va <- updateDef . invalidate <$> IA.parseArgsWithError ("" : "" : opts ^. iodineArgs)
 
   catch (removeFile outputFile) (\(_ :: IOError) -> return ())
 

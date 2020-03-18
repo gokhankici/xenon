@@ -1,12 +1,21 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# OPTIONS_GHC -fno-cse #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 
-module Iodine.IodineArgs (IodineArgs(..), parseArgs) where
+module Iodine.IodineArgs
+  ( IodineArgs(..)
+  , defaultIodineArgs
+  , parseArgs
+  , parseArgsWithError
+  ) where
 
-import System.Console.CmdArgs.Implicit
-import System.Environment
-import Text.Printf
+import Control.Monad
+import System.Console.CmdArgs.Explicit
+import System.Console.CmdArgs.Text
+import System.Console.CmdArgs.Verbosity
+import System.Exit
+import Data.List
+
+-- import System.Environment
 
 -- -----------------------------------------------------------------------------
 -- Argument Parsing
@@ -44,60 +53,102 @@ data IodineArgs =
              , vcgen       :: Bool
              , noSave      :: Bool
              , noFPOutput  :: Bool
-             , enableTrace :: Bool
              , abduction   :: Bool
              , verbose     :: Bool
              , moduleName  :: String
              }
-  deriving (Show, Data, Typeable)
+  deriving (Show)
 
-verylogArgs :: IodineArgs
-verylogArgs = IodineArgs { fileName    = def &= argPos 0 -- &= typFile
-                         , annotFile   = def &= argPos 1 -- &= typFile
-                         , iverilogDir = "iverilog-parser"
-                                         &= typDir
-                                         &= explicit &= name "iverilog-dir"
-                                         &= help "path of the iverilog-parser directory"
-                         , printIR     = def
-                                         &= explicit &= name "print-ir"
-                                         &= help "just run the verilog parser"
-                         , vcgen       = def
-                                         &= explicit &= name "vcgen"
-                                         &= help "just generate the .fq file"
-                         , noSave      = def
-                                         &= explicit &= name "no-save"
-                                         &= help "do not save the fq file"
-                         , noFPOutput  = def
-                                         &= explicit &= name "no-fp-output"
-                                         &= help "disable the output from fixpoint"
-                         , enableTrace = def
-                                         &= explicit &= name "trace"
-                                         &= help "enable the debug trace"
-                         , abduction   = def
-                                         &= explicit &= name "abduction"
-                                         &= help "run abduction algorithm"
-                         , verbose     = def
-                                         &= explicit &= name "verbose"
-                                         &= help "enable verbose output"
-                         , moduleName  = def
-                                         &= explicit &= name "top-module"
-                                         &= help "name of the top module"
-                                         &= ignore
-                         }
-              &= program programName
-              &= summary summaryText
-              &= details detailsText
-              &= helpArg [explicit, name "h", name "help"]
+defaultIodineArgs :: IodineArgs
+defaultIodineArgs =
+  IodineArgs { fileName    = ""
+             , annotFile   = ""
+             , iverilogDir = "iverilog-parser"
+             , printIR     = False
+             , vcgen       = False
+             , noSave      = False
+             , noFPOutput  = False
+             , abduction   = False
+             , verbose     = False
+             , moduleName  = ""
+             }
+
+programName :: String
+programName = "iodine"
+
+iodineMode :: Mode IodineArgs
+iodineMode =
+  iodineModeWithoutPositional
+  { modeArgs = (parsePositionalArgs, Nothing) }
   where
-    programName = "iodine"
-    summaryText = printf "%s v2.0, (C) Rami Gokhan Kici 2020" programName :: String
-    detailsText = [ "Verifies whether the given Verilog file runs in constant time."
-                  , ""
-                  , "First argument is the path the to the verilog file."
-                  , "Second argument is a JSON file that contains the annotations."
-                  ]
+    iodineModeWithoutPositional =
+      mode programName defaultIodineArgs "" undefined parseFlags
 
+iodineHelpText :: [String]
+iodineHelpText =
+  [ programName ++ " v2.0, (C) Rami Gokhan Kici 2020"
+  , ""
+  , "Verifies whether the given Verilog file runs in constant time under the given assumptions."
+  , ""
+  , "First positional argument is the verilog file to analyze."
+  , "Second positional argument is the JSON file that contains the annotations."
+  ]
 
--- | Parses the command line arguments (e.g. from 'getArgs') into 'IodineArgs'.
-parseArgs :: [String] -> IO IodineArgs
-parseArgs as = withArgs as $ cmdArgs verylogArgs
+parsePositionalArgs :: [Arg IodineArgs]
+parsePositionalArgs =
+  [ Arg { argValue   = \f ia -> Right ia { fileName = f }
+        , argType    = "VERILOG-FILE"
+        , argRequire = True
+        }
+  , Arg { argValue   = \f ia -> Right ia { annotFile = f }
+        , argType    = "ANNOTATION-FILE"
+        , argRequire = True
+        }
+  ]
+
+parseFlags :: [Flag IodineArgs]
+parseFlags =
+  [ flagReq ["iverilog-dir"]
+    (\d ia -> Right ia { iverilogDir = d })
+    "DIR"
+    "path of the iverilog-parser directory"
+  , flagNone ["print-ir"]
+    (\ia -> ia { printIR = True })
+    "just run the verilog parser"
+  , flagNone ["vcgen"]
+    (\ia -> ia { vcgen = True })
+    "just generate the .fq file"
+  , flagNone ["no-save"]
+    (\ia -> ia { noSave = True })
+    "do not save the fq file"
+  , flagNone ["no-fp-output"]
+    (\ia -> ia { noFPOutput = True })
+    "disable the output from fixpoint"
+  , flagNone ["abduction"]
+    (\ia -> ia { abduction = True })
+    "run abduction algorithm"
+  ]
+  ++ flagsVerbosity (\v ia -> ia { verbose = v == Loud })
+
+parseArgs :: [String] -> Either String IodineArgs
+parseArgs = process iodineMode
+
+isHelpNeeded :: [String] -> (Bool, [String])
+isHelpNeeded args = if null args then (True, []) else (not $ null helpArgs, rest)
+  where
+    (helpArgs, rest) = partition (`elem` ["-h", "--help"]) args
+
+parseArgsWithError :: [String] -> IO IodineArgs
+parseArgsWithError args = do
+  let (isHelp, args') = isHelpNeeded args
+  when isHelp printHelp
+  processValueIO iodineMode args'
+
+printHelp :: IO ()
+printHelp = do
+  let hf = HelpFormatDefault
+      tf = defaultWrap
+  putStrLn $
+    showText tf $
+    helpText iodineHelpText hf iodineMode
+  exitSuccess

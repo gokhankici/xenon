@@ -29,4 +29,4 @@ else
 fi
 
 ./iodine --build ${PROFILE} && \
-	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --trace
+	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose

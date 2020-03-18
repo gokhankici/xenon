@@ -5,7 +5,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 
-module Iodine.Runner (run , main) where
+module Iodine.Runner
+  ( generateIR
+  , run
+  , main
+  , readIRFile
+  ) where
 
 import           Iodine.IodineArgs
 import           Iodine.Language.Annotation
@@ -44,7 +49,7 @@ main :: IO ()
 -- | Parses the command line arguments automatically, and runs the tool.
 -- If the program is not constant time, the process exists with a non-zero return code.
 main = do
-  safe <- getArgs >>= parseArgs >>= run
+  safe <- getArgs >>= parseArgsWithError >>= run
   unless safe exitFailure
 
 -- -----------------------------------------------------------------------------
@@ -123,7 +128,7 @@ checkIR :: (IodineArgs, AnnotationFile) -> IO Bool
 -- -----------------------------------------------------------------------------
 checkIR (IodineArgs{..}, af)
   | printIR = do
-      irFileContents <- readIRFile
+      irFileContents <- readIRFile fileName
       putStrLn irFileContents
       result <- parse (fileName, irFileContents)
                 & errorToIOFinal
@@ -143,7 +148,7 @@ checkIR (IodineArgs{..}, af)
   where
     computeFInfo :: IO FInfo
     computeFInfo = do
-      irFileContents <- readIRFile
+      irFileContents <- readIRFile fileName
       mFInfo <- pipeline af
         (parse (fileName, irFileContents)) -- ir reader
         & handleTrace
@@ -155,15 +160,8 @@ checkIR (IodineArgs{..}, af)
         Right finfo -> return finfo
         Left e      -> errorHandle e
 
-    readIRFile :: IO String
-    readIRFile = do
-      fileContents <- TIO.readFile fileName
-      return $ case parseProlog fileName fileContents of
-        Right ms -> unlines $ show <$> ms
-        Left msg -> error msg
-
     handleTrace :: Member (Embed IO) r => Sem (Trace ': r) a -> Sem r a
-    handleTrace = if enableTrace then traceToIO else ignoreTrace
+    handleTrace = if verbose then traceToIO else ignoreTrace
 
     config :: FC.Config
     config = FC.defConfig { FC.eliminate = FC.Some
@@ -181,9 +179,17 @@ checkIR (IodineArgs{..}, af)
       in dir </> ".liquid" </> (base <.> "fqout")
 
 
+readIRFile :: String -> IO String
+readIRFile fileName = do
+  fileContents <- TIO.readFile fileName
+  return $ case parseProlog fileName fileContents of
+    Right ms -> unlines $ show <$> ms
+    Left msg -> error msg
+
 -- -----------------------------------------------------------------------------
 -- Common Functions
 -- -----------------------------------------------------------------------------
 
 errorHandle :: IodineException -> IO a
 errorHandle = E.throwIO
+

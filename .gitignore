@@ -56,3 +56,5 @@ cplex.json
 /run_all
 /old_src/
 /TAGS
+
+/debug-output*
