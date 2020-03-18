@@ -25,6 +25,7 @@ module Iodine.Language.IR
   , isStar
   , isVariable
   , moduleInputs
+  , moduleAllInputs
   , moduleInstanceReadsAndWrites
   , moduleOutputs
   )
@@ -366,6 +367,9 @@ moduleInputs, moduleOutputs :: Module a -> Ids -> Ids
       in if isInput p == check && notClk
          then acc <> liftToMonoid v
          else acc
+
+moduleAllInputs :: Module a -> Ids
+moduleAllInputs m = moduleInputs m mempty
 
 -- | given a module, module's clocks and an instance of it, returns the
 -- variables that are read and written by the instance.

@@ -1,4 +1,6 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
+-- {-# OPTIONS_GHC -Wno-unused-top-binds #-}
+-- {-# OPTIONS_GHC -Wno-unused-matches #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -45,6 +47,7 @@ import qualified Polysemy.Output as PO
 import           Polysemy.Reader
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
+import           Text.Printf
 
 -- | State relevant to statements
 data ThreadSt =
@@ -207,9 +210,11 @@ initialize ab = do
              , valEqVars0 `HS.difference` srcs
              )
 
-  trace ("initialize tag & val equalities #" ++ show (getData ab)) (toList tagEqVars, toList valEqVars)
   let tagSubs = sti2 <$> foldl' (mkZeroTags currentModuleName) mempty tagEqVars
       valSubs = sti2 <$> foldl' (valEquals currentModuleName) mempty valEqVars
+
+  hornVars <- getHornVariables ab
+  trace "non initial_eq vals" (getData ab, toList $ hornVars `HS.difference` valEqVars)
 
   (cond, subs) <-
     if isStar ab
@@ -476,13 +481,14 @@ interferenceCheck (AB readAB) = do
     when (HS.null overlappingVars) $ do
       trace "overlapping variables" (toList overlappingVars)
       throw "overlapping variables should not be empty here"
-    ( case writeThread of
-        AB writeAB ->
-          interferenceCheckAB writeAB readAB overlappingVars
-        MI writeMI ->
-          interferenceCheckMI writeMI readAB overlappingVars
-      ) >>= \hornClause -> modify (SQ.|> hornClause)
+    case writeThread of
+      AB writeAB ->
+        interferenceCheckAB writeAB readAB overlappingVars >>= addHorn
+      MI writeMI ->
+        interferenceCheckMI writeMI readAB overlappingVars >>= addHorn
 
+addHorn :: Members '[State Horns] r => H -> Sem r ()
+addHorn h = modify (SQ.|> h)
 
 interferenceCheckMI :: FDM r
                     => ModuleInstance Int -- ^ instance that does the update (writer)
@@ -495,6 +501,7 @@ interferenceCheckMI writeMI readAB overlappingVars = do
   depThreadIds <-
     IS.delete (getData readAB)
     <$> getAllDependencies (MI writeMI) & runReader moduleSummary
+  trace "interferenceCheckMI" (IS.toList depThreadIds, getData writeMI, getData readAB, toList overlappingVars)
   depThreadInstances <-
     for (toSeq depThreadIds) $ \depThreadId -> do
     depThread <- asks (IM.! depThreadId)
@@ -541,6 +548,7 @@ interferenceCheckAB :: FDM r
                     -> Ids             -- ^ the variables being updated
                     -> Sem r H
 interferenceCheckAB writeAB readAB overlappingVars= do
+  trace "interferenceCheckAB" (getData writeAB, getData readAB, toList overlappingVars)
   currentModule <- ask @(Module Int)
   writeInstance <- instantiateAB writeAB mempty
   let sti     = setThreadId currentModule
@@ -654,7 +662,9 @@ instantiateMI' ModuleInstance{..} varIndex = do
         let e = hmGet 4 o moduleInstancePorts
             rhs = if isVariable e
                   then HVar (varName e) currentModuleName varIndex t r 0
-                  else error "output port expresssion of a module instance should be a variable"
+                  else error $
+                       "output port expresssion of a module instance should be a variable"
+                       ++ show ModuleInstance{..}
         return ( HVar0 o targetModuleName t r
                , rhs
                )
@@ -802,30 +812,23 @@ withAB t act = do
 
 computeThreadStM :: G r => Module Int -> TI -> Sem r ThreadSt
 computeThreadStM m@Module{..} thread = do
-  ms@ModuleSummary{..} <- asks (HM.! moduleName)
   as <- getAnnotations moduleName
-  let allInitialEquals = HS.union (as ^. initialEquals) (as ^. alwaysEquals)
   let filterAs l = HS.intersection (as ^. l) vs
   wvs <- getUpdatedVariables thread
-  let shouldAddWire w =
-        let (dependsOnInput, requiredRegs) =
-              computeRegistersWrittenBy m ms inputs w
-            -- assume the wire is initial_eq if
-            -- 1. the wire does not depend on module inputs
-            -- 2. it's not a module instance output
-            -- 3. all registers that it depends on are initial_eq
-            cond1 = not dependsOnInput
-            cond2 = ( not (null requiredRegs) ||
-                      IS.null ((threadWriteMap HM.! w) `IS.intersection` miThreadIds))
-            cond3 = all (`elem` allInitialEquals) requiredRegs
-        in cond1 && cond2 && cond3
-  let extraInitEquals =
-        case thread of
-          AB ab | not (isStar ab) ->
-                  foldMap (\w -> if shouldAddWire w then HS.singleton w else mempty) currentWires
-          _ -> mempty
+  extraInitEquals <-
+    case thread of
+      AB _ ->
+        mfoldM (\w -> do check <- autoInitialEqualWire m w
+                         for_ check (traceAutoInitialEqualFailure moduleName w)
+                         return $
+                           if isNothing check
+                           then liftToMonoid w
+                           else mempty) currentWires
+      _ -> return mempty
   unless (HS.null extraInitEquals) $
-    trace ("extraInitequals #" ++ show tid) (sort $ toList extraInitEquals)
+    trace
+    ("automatically added initial_equal annotations for wires of #" ++ show (getData thread))
+    (sort $ toList extraInitEquals)
   let currentIEs =
         (filterAs initialEquals `HS.difference` inputs)
         <> extraInitEquals
@@ -841,15 +844,8 @@ computeThreadStM m@Module{..} thread = do
     , _currentWrittenVariables = wvs
     }
   where
-    tid = getData thread
-    miThreadIds = IS.fromList $ getData <$> toList moduleInstances
     vs = getVariables thread
-    inputs =
-      foldl'
-      (\acc -> \case
-          Input{..} -> HS.insert (variableName portVariable) acc
-          Output{} -> acc
-      ) mempty ports
+    inputs = moduleAllInputs m
     currentWires =
       foldl'
       (\ws -> \case
@@ -860,17 +856,89 @@ computeThreadStM m@Module{..} thread = do
           Register{} -> ws
       ) mempty variables
 
--- | return the registers that write to the given wire
-computeRegistersWrittenBy :: Module Int -> ModuleSummary -> Ids -> Id -> (Bool, Ids)
-computeRegistersWrittenBy Module{..} ModuleSummary{..} inputs wireName =
-  worklist (HS.singleton wireName) mempty (SQ.singleton wireName)
+
+data AutoInitialEqualFailure =
+    DependsOnInputs         Ids
+  | WrittenByModuleInstance IS.IntSet
+  | MissingRegisters        Ids
+
+-- | check whether we should assume automatically that the wire is initially
+-- equal (through the annotations of other variables)
+autoInitialEqualWireSimple :: G r => Module Int -> Id -> Sem r (Maybe AutoInitialEqualFailure)
+autoInitialEqualWireSimple m@Module{..} v = do
+  as <- getAnnotations moduleName
+  let allInitialEquals = HS.union (as ^. initialEquals) (as ^. alwaysEquals)
+  if Wire v `elem` variables
+    then do
+    let w = v
+    ms@ModuleSummary{..} <- asks (HM.! moduleName)
+    let (inputDeps, requiredRegs) =
+          computeRegistersReadBy m ms inputs w
+        -- assume the wire is initial_eq if
+        -- 1. the wire does not depend on module inputs
+        -- 2. it's not a module instance output
+        -- 3. all registers that it depends on are initial_eq
+    let cond1 = HS.null inputDeps
+        writtenMIs = (threadWriteMap HM.! w) `IS.intersection` miThreadIds
+        cond2 = not (null requiredRegs) || IS.null writtenMIs
+        missingRegs = requiredRegs `HS.difference` allInitialEquals
+        cond3 = HS.null missingRegs
+        result = if | not cond1 -> Just $ DependsOnInputs inputDeps
+                    | not cond2 -> Just $ WrittenByModuleInstance writtenMIs
+                    | not cond3 -> Just $ MissingRegisters missingRegs
+                    | otherwise -> Nothing
+    return result
+    else return $ if v `elem` allInitialEquals
+                  then Nothing
+                  else Just $ MissingRegisters $ HS.singleton v
   where
-    -- worklist :: wires that added to the worklist
+    inputs = moduleAllInputs m
+    miThreadIds = IS.fromList $ getData <$> toList moduleInstances
+
+-- | like before, but we try to resolve the module instance case
+autoInitialEqualWire :: G r => Module Int -> Id -> Sem r (Maybe AutoInitialEqualFailure)
+autoInitialEqualWire m w = do
+  res <- autoInitialEqualWireSimple m w
+  case res of
+    Just (WrittenByModuleInstance miIds)
+      | IS.size miIds == 1 -> do
+          let miId = IS.findMin miIds
+              ModuleInstance{..} = find' ((== miId) . getData) (moduleInstances m)
+              eqVarName v = \case
+                Variable{..} -> varName == v
+                _ -> False
+              miPortVar =
+                fst $
+                find' (eqVarName w . snd) $
+                HM.toList moduleInstancePorts
+          miModule <- asks (HM.! moduleInstanceType)
+          autoInitialEqualWire miModule miPortVar
+    _ -> return res
+
+traceAutoInitialEqualFailure :: G r => Id -> Id -> AutoInitialEqualFailure -> Sem r ()
+traceAutoInitialEqualFailure m w = \case
+  DependsOnInputs inputDeps ->
+    PT.trace $ printf "not initial_eq(%s, %s) because wire depends on input(s) %s\n"
+    w m (show $ toList inputDeps)
+  WrittenByModuleInstance writtenMIs ->
+    PT.trace $ printf "not initial_eq(%s, %s) because wire written by module instance(s) %s\n"
+    w m (show $ IS.toList writtenMIs)
+  MissingRegisters missingRegs ->
+    PT.trace $ printf "not initial_eq(%s, %s) because these registers are not initial_eq: %s\n"
+    w m (show $ toList missingRegs)
+
+-- | return the registers that write to the given wire
+computeRegistersReadBy :: Module Int -> ModuleSummary -> Ids -> Id -> (Ids, Ids)
+computeRegistersReadBy Module{..} ModuleSummary{..} inputs wireName =
+  worklist mempty (HS.singleton wireName) mempty (SQ.singleton wireName)
+  where
+    -- worklist :: input dependencies of the wire
+    --          -> wires that added to the worklist
     --          -> current set of registers
     --          -> worklist of wires
     --          -> registers
-    worklist addedWires rs = \case
-      SQ.Empty    -> (False, rs)
+    worklist inputDeps addedWires rs = \case
+      SQ.Empty    -> (mempty, rs)
       w SQ.:<| ws ->
         let writtenNodes =
               G.pre variableDependencies (variableDependencyNodeMap HM.! w)
@@ -888,9 +956,13 @@ computeRegistersWrittenBy Module{..} ModuleSummary{..} inputs wireName =
               writtenNodes
             addedWires' = addedWires <> foundWires
             ws' = ws <> toSequence foundWires
-        in if any (`elem` inputs) foundWires
-           then (True, mempty)
-           else worklist addedWires' rs' ws'
+            inputDeps' =
+              foldl' (\is v ->
+                        if v `elem` inputs
+                        then HS.insert v is
+                        else is
+                     ) inputDeps foundWires
+        in worklist inputDeps' addedWires' rs' ws'
 
     allRegisters =
       foldl' (\rs -> \case

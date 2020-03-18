@@ -16,6 +16,7 @@ import           Data.Foldable
 import qualified Data.Graph.Inductive as G
 import qualified Data.HashSet as HS
 import           Data.Hashable
+import           Data.Maybe
 import qualified Data.Sequence as SQ
 import           Polysemy
 import           Polysemy.Error
@@ -106,9 +107,13 @@ trace :: (Members '[PT.Trace] r, Show a) => String -> a -> Sem r ()
 trace msg a = do
   PT.trace msg
   PT.trace $ show a
+  PT.trace ""
 
 insEdge :: (Eq b, G.DynGraph gr) => G.LEdge b -> gr a b -> gr a b
 insEdge e g =
   if G.hasLEdge g e
   then g
   else G.insEdge e g
+
+find' :: Foldable t => (a -> Bool) -> t a -> a
+find' q as = fromJust $ find q as

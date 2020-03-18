@@ -105,9 +105,9 @@ createModuleSummary m@Module{..} = do
   let varDepGraph = dgState ^. depGraph
       varDepMap   = dgState ^. varMap
   -- trace "createModuleSummary-module" moduleName
-  trace
-    ("thread dependencies of module #" ++ show (getData m))
-    (G.edges $ dgState ^. threadGraph)
+  -- trace
+  --   ("thread dependencies of module #" ++ show (getData m))
+  --   (G.edges $ dgState ^. threadGraph)
   let lookupNode v = mapLookup 1 v varDepMap
   clks <- getClocks moduleName
   let hasClock = not $ HS.null clks
