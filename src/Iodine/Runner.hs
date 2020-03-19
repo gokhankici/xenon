@@ -136,7 +136,7 @@ checkIR (IodineArgs{..}, af)
       case result of
         Right parsedIR -> forM_ parsedIR print >> return True
         Left e         -> errorHandle e
-  | vcgen = computeFInfo >> return True
+  | onlyVCGen = computeFInfo >> return True
   | otherwise = do
       finfo <- computeFInfo
       result <- F.solve config finfo

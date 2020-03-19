@@ -135,11 +135,11 @@ handleStmt Assignment{..} =
       lhsNode <- getNode varName
       let rhsVars = getVariables assignmentRhs
       rhsNodes <- getNodes rhsVars
-      for_ (IS.toList rhsNodes) $ \rhsNode ->
-        addNode (rhsNode, lhsNode, Explicit assignmentType)
+      for_ (IS.toList rhsNodes) $ \rhsNode -> do
+        addEdge (rhsNode, lhsNode, Explicit assignmentType)
       pathNodes <- gets (^. pathVars)
-      for_ (IS.toList pathNodes) $ \pathNode ->
-        addNode (pathNode, lhsNode, Implicit)
+      for_ (IS.toList pathNodes) $ \pathNode -> do
+        addEdge (pathNode, lhsNode, Implicit)
       -- update the thread map
       tid <- ask
       modify (varUpdates %~ addToSet varName tid)
@@ -157,16 +157,11 @@ handleStmt IfStmt{..} = do
 
 type DGSt r = Members '[State DependencyGraphSt] r
 
-addNode :: DGSt r => (Int, Int, VarDepEdgeType) -> Sem r ()
-addNode edge@(fromNode, toNode, _) = do
-  for_ [fromNode, toNode] $ \n ->
-    modify $ depGraph %~ G.insNode (n, ())
-  modify $ depGraph %~ insEdge edge
-
+addEdge :: DGSt r => (Int, Int, VarDepEdgeType) -> Sem r ()
+addEdge edge = modify $ depGraph %~ insEdge edge
 
 getNodes :: DGSt r => HS.HashSet Id -> Sem r IS.IntSet
 getNodes = fmap IS.fromList . traverse getNode . HS.toList
-
 
 getNode :: DGSt r => Id -> Sem r Int
 getNode v = do

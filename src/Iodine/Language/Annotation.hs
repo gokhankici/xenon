@@ -80,7 +80,8 @@ validateAnnotationFile af =
 
 
 instance FromJSON Annotations where
-  parseJSON = withObject "Annotations" $ \o -> do
+  parseJSON =
+    withObjectKeys "Annotations" objKeys $ \o -> do
     let allKeys   = HM.keysSet o
         validKeys = HS.fromList ["source", "sink", "initial_eq", "always_eq", "assert_eq"]
         keyDiff   = HS.difference allKeys validKeys
@@ -93,6 +94,8 @@ instance FromJSON Annotations where
       <*> o .:? "always_eq"  .!= mempty
       <*> o .:? "assert_eq"  .!= mempty
       <*> o .:? "tag_eq"     .!= mempty
+      where
+        objKeys = ["source", "sink", "initial_eq", "always_eq", "assert_eq", "tag_eq"]
 
 
 instance FromJSON Qualifier where
@@ -105,17 +108,28 @@ instance FromJSON Qualifier where
       _         -> typeMismatch ("unknown qualifier type: " ++ t) (toJSON t)
 
 instance FromJSON ModuleAnnotations where
-  parseJSON = withObject "ModuleAnnotation" $ \o ->
+  parseJSON = withObjectKeys "ModuleAnnotation" objKeys $ \o ->
     ModuleAnnotations
     <$> o .:? "annotations" .!= emptyAnnotations
     <*> o .:? "qualifiers"  .!= mempty
     <*> parseClock o "clock"
+    where
+      objKeys = ["annotations", "qualifiers", "clock", "blocklist"]
 
 instance FromJSON AnnotationFile where
-  parseJSON = withObject "AnnotationFile" $ \o ->
+  parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "blocklist"] $ \o ->
     AnnotationFile
     <$> o .:  "modules"
     <*> o .:  "top_module"
+
+withObjectKeys :: String -> [T.Text] -> (Object -> Parser a) -> Value -> Parser a
+withObjectKeys typ keys parser = withObject typ parser'
+  where
+    parser' o =
+      let extraKeys = HM.keysSet o `HS.difference` HS.fromList keys
+      in if HS.null extraKeys
+         then parser o
+         else fail $ "Unexpected keys " ++ show (HS.toList extraKeys) ++ " in object " ++ show o
 
 parseClock :: Object -> T.Text -> Parser (HS.HashSet Id)
 parseClock o k =

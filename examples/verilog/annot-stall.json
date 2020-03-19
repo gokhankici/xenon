@@ -17,6 +17,20 @@
         ]
       },
       "clock": "clk"
-    }
+    },
+    "decide_stall": {
+      "annotations": {
+        "initial_eq": [
+          "o"
+        ]
+      }
+	},
+    "alu": {
+      "annotations": {
+        "initial_eq": [
+          "o"
+        ]
+      }
+	}
   }
 }

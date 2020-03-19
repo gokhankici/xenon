@@ -18,7 +18,6 @@ import           Iodine.Analyze.ModuleDependency
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
-import           Iodine.Utils
 
 import           Control.Lens
 import           Control.Monad
@@ -164,45 +163,46 @@ dependencyGraphFromModule :: Members '[ State SummaryMap
                                       ] r
                           => Module Int
                           -> Sem r DependencyGraphSt
-dependencyGraphFromModule m@Module{..} = do
-  dgState <- dependencyGraph m
-  if   SQ.null moduleInstances
-    then return dgState
-    else do
-    let nodeMap = dgState ^. varMap
-        maxId   = maximum $ HM.elems nodeMap
-    unless (SQ.null gateStmts) (PE.throw $ IE Analysis "non null gate stmts")
-    (nodeMap', extraEdges) <-
-      runState nodeMap $ evalState maxId $
-      foldlM' SQ.empty moduleInstances $ \es ModuleInstance{..} -> do
-      ModuleSummary{..} <- gets (mapLookup 3 moduleInstanceType)
-      let assignedVars p = toSequence . getVariables $ mapLookup 4 p moduleInstancePorts
-          tmpEdges = do (o, is) <- toSequence $ HM.toList portDependencies
-                        i <- toSequence is
-                        fromVar <- assignedVars i
-                        toVar   <- assignedVars o
-                        return (fromVar, toVar)
-      es' <- for tmpEdges $ \(fromVar, toVar) -> do
-        fromNode <- getNode fromVar
-        toNode <- getNode toVar
-        return (fromNode, toNode, Explicit Blocking)
-      return $ es <> es'
-    -- trace "thread graph" $ dgState ^. threadGraph
-    return $
-      dgState
-      & over depGraph (\g -> foldr' insEdge g extraEdges)
-      & set varMap nodeMap'
+dependencyGraphFromModule m@Module{..} =
+  dependencyGraph m
+  -- dgState <- dependencyGraph m
+  -- if   SQ.null moduleInstances
+  --   then return dgState
+  --   else do
+  --   let nodeMap = dgState ^. varMap
+  --       maxId   = maximum $ HM.elems nodeMap
+  --   unless (SQ.null gateStmts) (PE.throw $ IE Analysis "non null gate stmts")
+  --   (nodeMap', extraEdges) <-
+  --     runState nodeMap $ evalState maxId $
+  --     foldlM' SQ.empty moduleInstances $ \es ModuleInstance{..} -> do
+  --     ModuleSummary{..} <- gets (mapLookup 3 moduleInstanceType)
+  --     let assignedVars p = toSequence . getVariables $ mapLookup 4 p moduleInstancePorts
+  --         tmpEdges = do (o, is) <- toSequence $ HM.toList portDependencies
+  --                       i <- toSequence is
+  --                       fromVar <- assignedVars i
+  --                       toVar   <- assignedVars o
+  --                       return (fromVar, toVar)
+  --     es' <- for tmpEdges $ \(fromVar, toVar) -> do
+  --       fromNode <- getNode fromVar
+  --       toNode <- getNode toVar
+  --       return (fromNode, toNode, Explicit Blocking)
+  --     return $ es <> es'
+  --   -- trace "thread graph" $ dgState ^. threadGraph
+  --   return $
+  --     dgState
+  --     & over depGraph (\g -> foldr' insEdge g extraEdges)
+  --     & set varMap nodeMap'
 
-getNode :: Members '[State (HM.HashMap Id Int), State Int] r => Id -> Sem r Int
-getNode nodeName = do
-  mNodeId <- gets (HM.lookup nodeName)
-  case mNodeId of
-    Nothing -> do
-      newId <- gets (+ 1)
-      modify (HM.insert nodeName newId)
-      put newId
-      return newId
-    Just n  -> return n
+-- getNode :: Members '[State (HM.HashMap Id Int), State Int] r => Id -> Sem r Int
+-- getNode nodeName = do
+--   mNodeId <- gets (HM.lookup nodeName)
+--   case mNodeId of
+--     Nothing -> do
+--       newId <- gets (+ 1)
+--       modify (HM.insert nodeName newId)
+--       put newId
+--       return newId
+--     Just n  -> return n
 
 mapLookup :: Show a => Int -> Id -> HM.HashMap Id a -> a
 mapLookup n k m =

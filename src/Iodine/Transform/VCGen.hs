@@ -15,6 +15,8 @@ module Iodine.Transform.VCGen
   , HornVariableMap
   , askHornVariables
   , isModuleSimple
+  , autoInitialEqualWire
+  , autoInitialEqualFailureMessage
   )
 where
 
@@ -501,7 +503,7 @@ interferenceCheckMI writeMI readAB overlappingVars = do
   depThreadIds <-
     IS.delete (getData readAB)
     <$> getAllDependencies (MI writeMI) & runReader moduleSummary
-  trace "interferenceCheckMI" (IS.toList depThreadIds, getData writeMI, getData readAB, toList overlappingVars)
+  -- trace "interferenceCheckMI" (IS.toList depThreadIds, getData writeMI, getData readAB, toList overlappingVars)
   depThreadInstances <-
     for (toSeq depThreadIds) $ \depThreadId -> do
     depThread <- asks (IM.! depThreadId)
@@ -548,7 +550,7 @@ interferenceCheckAB :: FDM r
                     -> Ids             -- ^ the variables being updated
                     -> Sem r H
 interferenceCheckAB writeAB readAB overlappingVars= do
-  trace "interferenceCheckAB" (getData writeAB, getData readAB, toList overlappingVars)
+  -- trace "interferenceCheckAB" (getData writeAB, getData readAB, toList overlappingVars)
   currentModule <- ask @(Module Int)
   writeInstance <- instantiateAB writeAB mempty
   let sti     = setThreadId currentModule
@@ -819,7 +821,8 @@ computeThreadStM m@Module{..} thread = do
     case thread of
       AB _ ->
         mfoldM (\w -> do check <- autoInitialEqualWire m w
-                         for_ check (traceAutoInitialEqualFailure moduleName w)
+                         for_ check
+                           (PT.trace . autoInitialEqualFailureMessage moduleName w)
                          return $
                            if isNothing check
                            then liftToMonoid w
@@ -861,6 +864,7 @@ data AutoInitialEqualFailure =
     DependsOnInputs         Ids
   | WrittenByModuleInstance IS.IntSet
   | MissingRegisters        Ids
+  deriving (Show)
 
 -- | check whether we should assume automatically that the wire is initially
 -- equal (through the annotations of other variables)
@@ -872,15 +876,14 @@ autoInitialEqualWireSimple m@Module{..} v = do
     then do
     let w = v
     ms@ModuleSummary{..} <- asks (HM.! moduleName)
-    let (inputDeps, requiredRegs) =
-          computeRegistersReadBy m ms inputs w
+    let (inputDeps, requiredRegs) = computeRegistersReadBy m ms inputs w
         -- assume the wire is initial_eq if
         -- 1. the wire does not depend on module inputs
         -- 2. it's not a module instance output
         -- 3. all registers that it depends on are initial_eq
     let cond1 = HS.null inputDeps
         writtenMIs = (threadWriteMap HM.! w) `IS.intersection` miThreadIds
-        cond2 = not (null requiredRegs) || IS.null writtenMIs
+        cond2 = IS.null writtenMIs
         missingRegs = requiredRegs `HS.difference` allInitialEquals
         cond3 = HS.null missingRegs
         result = if | not cond1 -> Just $ DependsOnInputs inputDeps
@@ -897,34 +900,46 @@ autoInitialEqualWireSimple m@Module{..} v = do
 
 -- | like before, but we try to resolve the module instance case
 autoInitialEqualWire :: G r => Module Int -> Id -> Sem r (Maybe AutoInitialEqualFailure)
-autoInitialEqualWire m w = do
-  res <- autoInitialEqualWireSimple m w
+autoInitialEqualWire m v = do
+  res <- autoInitialEqualWireSimple m v
   case res of
     Just (WrittenByModuleInstance miIds)
       | IS.size miIds == 1 -> do
           let miId = IS.findMin miIds
               ModuleInstance{..} = find' ((== miId) . getData) (moduleInstances m)
-              eqVarName v = \case
-                Variable{..} -> varName == v
+              eqVarName str = \case
+                Variable{..} -> varName == str
                 _ -> False
-              miPortVar =
-                fst $
-                find' (eqVarName w . snd) $
-                HM.toList moduleInstancePorts
+              miPorts = HM.toList moduleInstancePorts
+              miOutputLookup o = fst $ find' (eqVarName o . snd) miPorts
+              miInputLookup i  = snd $ find' ((== i) . fst) miPorts
           miModule <- asks (HM.! moduleInstanceType)
-          autoInitialEqualWire miModule miPortVar
+          res' <- autoInitialEqualWire miModule (miOutputLookup v)
+          case res' of
+            Nothing -> return Nothing
+            Just (DependsOnInputs miInputs) -> do
+              let inputVars = foldMap (getVariables . miInputLookup) miInputs
+              getFirstJust (autoInitialEqualWire m) (HS.toList inputVars)
+            _ -> return res'
     _ -> return res
+  where
+    getFirstJust act = \case
+      []   -> return Nothing
+      a:as -> do mb <- act a
+                 if isJust mb
+                   then return mb
+                   else getFirstJust act as
 
-traceAutoInitialEqualFailure :: G r => Id -> Id -> AutoInitialEqualFailure -> Sem r ()
-traceAutoInitialEqualFailure m w = \case
+autoInitialEqualFailureMessage :: Id -> Id -> AutoInitialEqualFailure -> String
+autoInitialEqualFailureMessage m w = \case
   DependsOnInputs inputDeps ->
-    PT.trace $ printf "not initial_eq(%s, %s) because wire depends on input(s) %s\n"
+    printf "not initial_eq(%s, %s) because wire depends on input(s) %s\n"
     w m (show $ toList inputDeps)
   WrittenByModuleInstance writtenMIs ->
-    PT.trace $ printf "not initial_eq(%s, %s) because wire written by module instance(s) %s\n"
+    printf "not initial_eq(%s, %s) because wire written by module instance(s) %s\n"
     w m (show $ IS.toList writtenMIs)
   MissingRegisters missingRegs ->
-    PT.trace $ printf "not initial_eq(%s, %s) because these registers are not initial_eq: %s\n"
+    printf "not initial_eq(%s, %s) because these registers are not initial_eq: %s\n"
     w m (show $ toList missingRegs)
 
 -- | return the registers that write to the given wire
@@ -938,30 +953,30 @@ computeRegistersReadBy Module{..} ModuleSummary{..} inputs wireName =
     --          -> worklist of wires
     --          -> registers
     worklist inputDeps addedWires rs = \case
-      SQ.Empty    -> (mempty, rs)
+      SQ.Empty    -> (inputDeps, rs)
       w SQ.:<| ws ->
         let writtenNodes =
               G.pre variableDependencies (variableDependencyNodeMap HM.! w)
-            (rs', foundWires) =
+            (rs', newWrittenWires) =
               foldl'
-              (\acc n ->
-                  let v = invVariableDependencyNodeMap IM.! n
-                  in if v `elem` allRegisters
-                     then acc & _1 %~ HS.insert v
-                     else if w `elem` addedWires
+              (\acc writtenNode ->
+                  let writtenVar =
+                        invVariableDependencyNodeMap IM.! writtenNode
+                  in if writtenVar `elem` allRegisters
+                     then acc & _1 %~ HS.insert writtenVar
+                     else if writtenVar `elem` addedWires
                           then acc
-                          else acc & _2 %~ HS.insert v
+                          else acc & _2 %~ HS.insert writtenVar
               )
               (rs, mempty)
               writtenNodes
-            addedWires' = addedWires <> foundWires
-            ws' = ws <> toSequence foundWires
-            inputDeps' =
-              foldl' (\is v ->
+            (inputDeps', ws') =
+              foldl' (\acc v ->
                         if v `elem` inputs
-                        then HS.insert v is
-                        else is
-                     ) inputDeps foundWires
+                        then acc & _1 %~ HS.insert v
+                        else acc & _2 %~ (SQ.|> v)
+                     ) (inputDeps, ws) newWrittenWires
+            addedWires' = addedWires <> newWrittenWires
         in worklist inputDeps' addedWires' rs' ws'
 
     allRegisters =

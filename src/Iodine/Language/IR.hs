@@ -327,6 +327,13 @@ instance Hashable a => Hashable (Event a) where
   hashWithSalt n (NegEdge e) = hashWithSalt n (2::Int, e)
   hashWithSalt n Star        = hashWithSalt n (3::Int)
 
+instance Show Variable where
+  show (Register r) = "reg(" ++ T.unpack r ++ ")"
+  show (Wire w)     = "wire(" ++ T.unpack w ++ ")"
+
+instance Show Port where
+  show (Input i)  = "input(" ++ show i ++ ")"
+  show (Output o) = "output(" ++ show o ++ ")"
 
 instance ShowIndex a => Show (Event a) where
   show = PP.render . doc

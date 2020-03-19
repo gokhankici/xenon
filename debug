@@ -3,6 +3,7 @@
 cd "${0:A:h}"
 
 # PROFILE="--profile"
+VCGEN="--vcgen"
 # FIXED="yes"
 
 # TEST="examples/verilog/stall.v"
@@ -29,4 +30,4 @@ else
 fi
 
 ./iodine --build ${PROFILE} && \
-	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose
+	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose ${VCGEN}

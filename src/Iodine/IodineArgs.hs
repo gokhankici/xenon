@@ -50,7 +50,7 @@ data IodineArgs =
              , annotFile   :: FilePath
              , iverilogDir :: FilePath
              , printIR     :: Bool
-             , vcgen       :: Bool
+             , onlyVCGen   :: Bool
              , noSave      :: Bool
              , noFPOutput  :: Bool
              , abduction   :: Bool
@@ -65,7 +65,7 @@ defaultIodineArgs =
              , annotFile   = ""
              , iverilogDir = "iverilog-parser"
              , printIR     = False
-             , vcgen       = False
+             , onlyVCGen   = False
              , noSave      = False
              , noFPOutput  = False
              , abduction   = False
@@ -116,7 +116,7 @@ parseFlags =
     (\ia -> ia { printIR = True })
     "just run the verilog parser"
   , flagNone ["vcgen"]
-    (\ia -> ia { vcgen = True })
+    (\ia -> ia { onlyVCGen = True })
     "just generate the .fq file"
   , flagNone ["no-save"]
     (\ia -> ia { noSave = True })
