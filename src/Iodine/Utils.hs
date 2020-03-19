@@ -98,6 +98,9 @@ catMaybes' = foldl' (\acc -> maybe acc (mappend acc . liftToMonoid)) mempty
 toSequence :: Foldable t => t a -> L a
 toSequence = foldl' (|>) mempty
 
+toHSet :: (Eq a, Hashable a, Foldable t) => t a -> HS.HashSet a
+toHSet = foldl' (\acc a -> HS.insert a acc) mempty
+
 -- | return combinations of the elements
 twoPairs :: L a -> L (a, a)
 twoPairs SQ.Empty      = mempty

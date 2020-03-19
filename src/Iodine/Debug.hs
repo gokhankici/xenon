@@ -140,9 +140,14 @@ getMissingInitialEquals m@Module{..} = do
   trace "missing registers" (HS.toList missingRegs)
   return missingRegs
 
-debug :: D r => Sem r ()
-debug = asks HM.elems >>= traverse_ getMissingInitialEquals
+debug2 :: D r => Sem r ()
+debug2 = asks HM.elems >>= traverse_ getMissingInitialEquals
 
+debug :: D r => Sem r ()
+debug = do
+  ModuleSummary{..} <- asks (! "mux3")
+  PT.trace $ show portDependencies
+  PT.trace $ show isCombinatorial
 
 type ModuleMap = HM.HashMap Id (Module Int)
 type G r  = Members '[Error IodineException, PT.Trace, Output String] r

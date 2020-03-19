@@ -18,6 +18,7 @@ import           Iodine.Analyze.ModuleDependency
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
+import           Iodine.Utils
 
 import           Control.Lens
 import           Control.Monad
@@ -127,7 +128,37 @@ createModuleSummary m@Module{..} = do
     fmap and $
     for moduleInstances $ \ModuleInstance{..} ->
     isCombinatorial <$> gets (mapLookup 2 moduleInstanceType)
-  let isComb = not hasClock && submodulesCanBeSummarized
+
+  allModuleInstanceOutputs <-
+    mfoldM
+    (\ModuleInstance{..} -> do
+        outputPorts <-
+          moduleOutputs
+          <$> asks (HM.! moduleInstanceType)
+          <*> getClocks moduleInstanceType
+        return $
+          HM.foldlWithKey'
+          (\acc p e ->
+             if p `elem` outputPorts
+             then acc <> getVariables e
+             else acc
+          ) mempty moduleInstancePorts
+    ) moduleInstances
+
+  let readBeforeWrittenVars =
+        case alwaysBlocks of
+          SQ.Empty           -> mempty
+          ab SQ.:<| SQ.Empty -> readBeforeWrittenTo (abStmt ab) allModuleInstanceOutputs
+                                `HS.difference` inputsSet
+          _                  -> error "unreachable"
+
+  unless hasClock $
+    trace ("readBeforeWrittenVars " ++ show moduleName) readBeforeWrittenVars
+
+  let isComb =
+        not hasClock &&
+        submodulesCanBeSummarized &&
+        HS.null readBeforeWrittenVars
 
   return $
     ModuleSummary
@@ -147,6 +178,9 @@ createModuleSummary m@Module{..} = do
       in toNode `elem` ns
 
     swap (a,b) = (b,a)
+
+    inputsSet :: Ids
+    inputsSet = toHSet inputs
 
     inputs, outputs :: L Id
     (inputs, outputs) =
@@ -237,3 +271,45 @@ getAllDependencies' fromThreadId = do
     unless (isAB fromThread) $
       asks ((`G.pre` fromThreadId) . threadDependencies)
       >>= traverse_ getAllDependencies'
+
+readBeforeWrittenTo :: Stmt Int -> Ids -> Ids
+readBeforeWrittenTo stmt initialWrittenVars = readBeforeWrittenSet
+  where
+    (_readSet, _writeSet, readBeforeWrittenSet) =
+      go stmt
+      & execState (mempty, initialWrittenVars, mempty)
+      & run
+
+    go :: Members '[State (Ids, Ids, Ids)] r => Stmt Int -> Sem r ()
+    go Block{..} = traverse_ go blockStmts
+    go Skip{}    = return ()
+
+    go Assignment{..} = do
+      newReadVars <- mappend (getVariables assignmentRhs) <$> gets (view _1)
+      writtenVars <- gets (view _2)
+      let writtenVar = varName assignmentLhs
+      when (writtenVar `notElem` writtenVars &&
+            writtenVar `elem` newReadVars) $
+        modify $ _3 %~ HS.insert writtenVar
+      modify $ _1 .~ newReadVars
+      modify $ _2 %~ HS.insert writtenVar
+
+    go IfStmt{..} = do
+      oldWrittenVars <- gets (view _2)
+      let newReadVars = getVariables ifStmtCondition
+      modify $ _3 %~ HS.union (newReadVars `HS.difference` oldWrittenVars)
+      readVars <- mappend newReadVars <$> gets (view _1)
+
+      modify $ _1 .~ readVars
+      go ifStmtThen
+      readVarsThen   <- gets (view _1)
+      writtenVarsThen <- gets (view _2)
+
+      modify $ _1 .~ readVars
+      modify $ _2 .~ oldWrittenVars
+      go ifStmtElse
+      readVarsElse    <- gets (view _1)
+      writtenVarsElse <- gets (view _2)
+
+      modify $ _1 .~ (readVarsThen `HS.intersection` readVarsElse)
+      modify $ _2 .~ (writtenVarsThen `HS.intersection` writtenVarsElse)
