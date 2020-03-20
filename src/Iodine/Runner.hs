@@ -29,6 +29,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Language.Fixpoint.Solver as F
 import qualified Language.Fixpoint.Types as FT
+import qualified Language.Fixpoint.Types.Constraints as FCons
 import qualified Language.Fixpoint.Types.Config as FC
 import           Polysemy hiding (run)
 import           Polysemy.Error
@@ -136,7 +137,8 @@ checkIR (IodineArgs{..}, af)
       case result of
         Right parsedIR -> forM_ parsedIR print >> return True
         Left e         -> errorHandle e
-  | onlyVCGen = computeFInfo >> return True
+  | onlyVCGen = do computeFInfo >>= FCons.saveQuery config
+                   exitSuccess
   | otherwise = do
       finfo <- computeFInfo
       result <- F.solve config finfo

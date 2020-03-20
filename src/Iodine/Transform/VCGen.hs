@@ -241,8 +241,16 @@ initialize ab = do
             return (HAnd (cond1 <> cond2 <> cond3 |> tr), subs)
     else return (HBool True, tagSubs <> valSubs)
 
+  -- for non-top module blocks, we do not assume that the sources are constant time
+  -- however, we should keep their variables in the kvars
+  let extraSubs =
+        if isTop
+        then mempty
+        else foldMap (\v -> sti2 <$> mkAllSubs v currentModuleName 0 1) srcs
+  let subs' = subs <> extraSubs
+
   return $
-    Horn { hornHead   = makeKVar ab subs
+    Horn { hornHead   = makeKVar ab subs'
          , hornBody   = cond
          , hornType   = Init
          , hornStmtId = getThreadId ab
@@ -373,24 +381,24 @@ next :: FDS r => AlwaysBlock Int -> Sem r H
 -- -------------------------------------------------------------------------------------------------
 next ab@AlwaysBlock{..} = do
   Module {..} <- ask
-  nextVars    <- getNextVars ab
-  aes         <- alwaysEqualEqualities thread
-  -- trace "equalities" aes
-  let subs  = second (setThreadId ab)
-              <$> toSubs moduleName nextVars
-  let threadKVar = makeEmptyKVar ab
+  initialSubs <-
+    foldMap (\v -> second sti <$> mkAllSubs v moduleName 0 1)
+    <$> getHornVariables ab
+  let threadKVar = makeKVar ab initialSubs
+  aes <- fmap (sti . uvi) <$> alwaysEqualEqualities (AB ab)
+  let tr = sti $ uvi $ transitionRelation abStmt
+  nextVars <- HM.map (+ 1) <$> getNextVars ab
+  let subs  = second sti <$> toSubs moduleName nextVars
   return $
     Horn { hornHead   = makeKVar ab subs
-         , hornBody   = setThreadId ab $ HAnd $
-                        (threadKVar <| aes) |>
-                        transitionRelation abStmt
+         , hornBody   = HAnd $ (threadKVar <| aes) |> tr
          , hornType   = Next
-         , hornStmtId = threadId
+         , hornStmtId = getThreadId ab
          , hornData   = ()
          }
   where
-    thread   = AB AlwaysBlock{..}
-    threadId = getThreadId ab
+    sti = setThreadId ab
+    uvi = updateVarIndex (+ 1)
 
 
 -- -------------------------------------------------------------------------------------------------
@@ -510,7 +518,6 @@ interferenceCheckMI writeMI readAB overlappingVars = do
     case depThread of
       AB depAB -> instantiateAB depAB overlappingVars
       MI depMI -> instantiateMI depMI
-  readInstance <- instantiateAB readAB overlappingVars
   writeInstance <- instantiateMI writeMI
   let writeNext = foldl' (\nxt v -> HM.insert v 1 nxt) mempty overlappingVars
   (readBodyExpr, readHornHead) <-
@@ -529,11 +536,23 @@ interferenceCheckMI writeMI readAB overlappingVars = do
             foldl' (\acc v -> acc |> mkTagEq v)  mempty
               <$> getSources moduleName
     else return mempty
+  alwaysEqualVariables <-
+    view alwaysEquals
+    <$> getAnnotations moduleName
+  let aeExprs =
+        foldl'
+        (\acc v ->
+           let e = setThreadId m $ mkEqual
+                   ( HVarVL v moduleName 1
+                   , HVarVR v moduleName 1
+                   )
+           in acc SQ.|> e
+        ) mempty alwaysEqualVariables
   return $
     Horn { hornHead   = readHornHead
          , hornBody   = HAnd $
-                        topModuleExprs <>
-                        (depThreadInstances |> readInstance |> writeInstance)
+                        topModuleExprs <> aeExprs <>
+                        (depThreadInstances |> writeInstance)
                         <> readBodyExpr
          , hornType   = Interference
          , hornStmtId = getThreadId readAB

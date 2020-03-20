@@ -103,7 +103,7 @@ abduction = mkCollection "abduction" ts
 --------------------------------------------------------------------------------
 mips :: TestTree
 --------------------------------------------------------------------------------
-mips = TestCollection "mips" [mipsModules, mipsStubs]
+mips = TestCollection "mips" [mipsModules, mipsNegatives, mipsStubs]
 
 mipsModules :: TestTree
 mipsModules = mkCollection "modules" $ go <$> names
@@ -116,6 +116,15 @@ mipsModules = mkCollection "modules" $ go <$> names
             , "alu_ctl"
             , "rom32"
             , "reg_file"
+            , "mux3_test_01"
+            , "mux3_test_02"
+            ]
+
+mipsNegatives :: TestTree
+mipsNegatives = mkCollection "neg" $ go <$> names
+  where
+    go name = TF name name $ mipsDir </> name <.> "v"
+    names = [ "neg-mux3_test_02"
             ]
 
 mipsStubs :: TestTree
@@ -148,6 +157,7 @@ negative = mkCollection "negative" $ go <$> names
             , "neg-submodule-02"
             , "neg-submodule-03"
             , "neg-submodule-04"
+            , "neg_mux3_test_02"
             ]
 
 

@@ -12,6 +12,7 @@ module Iodine.Transform.SanityCheck (sanityCheck) where
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
+import           Iodine.Utils
 
 import           Control.Lens
 import           Control.Monad
@@ -177,6 +178,10 @@ handleModuleInstance mi@ModuleInstance{..} = do
   currentModuleName <- asks moduleName
   targetModule <- asks (HM.! moduleInstanceType)
   targetModuleClocks <- getClocks moduleInstanceType
+  let mPorts  = toHSet $ variableName . portVariable <$> ports targetModule
+      miPorts = HM.keysSet moduleInstancePorts
+  when (mPorts /= miPorts) $
+    throw $ printf "Module instance is missing or have extra ports:\n%s" (show mi)
   let (_, miWrites) = moduleInstanceReadsAndWrites targetModule targetModuleClocks mi
   checkPrevious $ HS.map (, currentModuleName) miWrites
 

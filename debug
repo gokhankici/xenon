@@ -3,7 +3,7 @@
 cd "${0:A:h}"
 
 # PROFILE="--profile"
-VCGEN="--vcgen"
+# VCGEN="--vcgen"
 # FIXED="yes"
 
 # TEST="examples/verilog/stall.v"
@@ -17,6 +17,7 @@ TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
 # TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="benchmarks/fpu/verilog/fpu.v"
+# TEST="benchmarks/472-mips-pipelined/mux3_test.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"

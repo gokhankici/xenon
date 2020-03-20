@@ -1,0 +1,28 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "clk",
+          "sel1",
+          "sel2",
+          "in1",
+          "in2",
+          "in3"
+        ],
+        "sink": [
+          "out1",
+          "out2"
+        ],
+        "always_eq": [
+          "sel1"
+        ]
+      },
+      "clock": "clk"
+    },
+    "mux3": {
+      "annotations": {}
+    }
+  }
+}

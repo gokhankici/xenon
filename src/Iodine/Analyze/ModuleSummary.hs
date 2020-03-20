@@ -50,6 +50,11 @@ data ModuleSummary =
                   -- | whether the module is a combinational logic (i.e., does
                   isCombinatorial :: Bool,
 
+                  -- | if the module does not have a clock, this contains the
+                  -- registers that are being read before written (i.e., the
+                  -- internal state of the module). Otherwise, this is empty.
+                  readBeforeWrittenVars :: Ids,
+
                   -- | (t1, t2) \in E <=> thread t1 updates a variable that
                   -- thread t2 uses
                   threadDependencies :: TDGraph,
@@ -146,14 +151,14 @@ createModuleSummary m@Module{..} = do
     ) moduleInstances
 
   let readBeforeWrittenVars =
-        case alwaysBlocks of
-          SQ.Empty           -> mempty
-          ab SQ.:<| SQ.Empty -> readBeforeWrittenTo (abStmt ab) allModuleInstanceOutputs
-                                `HS.difference` inputsSet
-          _                  -> error "unreachable"
-
-  unless hasClock $
-    trace ("readBeforeWrittenVars " ++ show moduleName) readBeforeWrittenVars
+        if hasClock
+        then mempty
+        else case alwaysBlocks of
+               SQ.Empty           -> mempty
+               ab SQ.:<| SQ.Empty -> readBeforeWrittenTo (abStmt ab) allModuleInstanceOutputs
+                                     `HS.difference` inputsSet
+               _                  -> error "unreachable"
+  -- trace ("readBeforeWrittenVars " ++ show moduleName) readBeforeWrittenVars
 
   let isComb =
         not hasClock &&
@@ -164,6 +169,7 @@ createModuleSummary m@Module{..} = do
     ModuleSummary
     { portDependencies             = portDeps
     , isCombinatorial              = isComb
+    , readBeforeWrittenVars        = readBeforeWrittenVars
     , threadDependencies           = dgState ^. threadGraph
     , threadReadMap                = dgState ^. varReads
     , threadWriteMap               = dgState ^. varUpdates
