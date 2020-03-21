@@ -10,6 +10,7 @@ module Iodine.Analyze.ModuleSummary
   , getAllDependencies
   , ModuleSummary(..)
   , SummaryMap
+  , readBeforeWrittenTo
   )
 where
 
@@ -50,10 +51,10 @@ data ModuleSummary =
                   -- | whether the module is a combinational logic (i.e., does
                   isCombinatorial :: Bool,
 
-                  -- | if the module does not have a clock, this contains the
-                  -- registers that are being read before written (i.e., the
-                  -- internal state of the module). Otherwise, this is empty.
-                  readBeforeWrittenVars :: Ids,
+                  -- -- | if the module does not have a clock, this contains the
+                  -- -- registers that are being read before written (i.e., the
+                  -- -- internal state of the module). Otherwise, this is empty.
+                  -- readBeforeWrittenVars :: Ids,
 
                   -- | (t1, t2) \in E <=> thread t1 updates a variable that
                   -- thread t2 uses
@@ -155,7 +156,7 @@ createModuleSummary m@Module{..} = do
         then mempty
         else case alwaysBlocks of
                SQ.Empty           -> mempty
-               ab SQ.:<| SQ.Empty -> readBeforeWrittenTo (abStmt ab) allModuleInstanceOutputs
+               ab SQ.:<| SQ.Empty -> readBeforeWrittenTo ab allModuleInstanceOutputs
                                      `HS.difference` inputsSet
                _                  -> error "unreachable"
   -- trace ("readBeforeWrittenVars " ++ show moduleName) readBeforeWrittenVars
@@ -169,7 +170,7 @@ createModuleSummary m@Module{..} = do
     ModuleSummary
     { portDependencies             = portDeps
     , isCombinatorial              = isComb
-    , readBeforeWrittenVars        = readBeforeWrittenVars
+    -- , readBeforeWrittenVars        = readBeforeWrittenVars
     , threadDependencies           = dgState ^. threadGraph
     , threadReadMap                = dgState ^. varReads
     , threadWriteMap               = dgState ^. varUpdates
@@ -278,9 +279,15 @@ getAllDependencies' fromThreadId = do
       asks ((`G.pre` fromThreadId) . threadDependencies)
       >>= traverse_ getAllDependencies'
 
-readBeforeWrittenTo :: Stmt Int -> Ids -> Ids
-readBeforeWrittenTo stmt initialWrittenVars = readBeforeWrittenSet
+-- | returns the variables that are read from before written to in the given
+-- statement
+readBeforeWrittenTo :: AlwaysBlock Int -> Ids -> Ids
+readBeforeWrittenTo ab initialWrittenVars
+  | isStar ab = readBeforeWrittenSet
+  | otherwise = error "this function should be called with a star block"
   where
+    stmt = abStmt ab
+
     (_readSet, _writeSet, readBeforeWrittenSet) =
       go stmt
       & execState (mempty, initialWrittenVars, mempty)
@@ -292,9 +299,9 @@ readBeforeWrittenTo stmt initialWrittenVars = readBeforeWrittenSet
 
     go Assignment{..} = do
       newReadVars <- mappend (getVariables assignmentRhs) <$> gets (view _1)
-      writtenVars <- gets (view _2)
+      previouslyWrittenVars <- gets (view _2)
       let writtenVar = varName assignmentLhs
-      when (writtenVar `notElem` writtenVars &&
+      when (writtenVar `notElem` previouslyWrittenVars &&
             writtenVar `elem` newReadVars) $
         modify $ _3 %~ HS.insert writtenVar
       modify $ _1 .~ newReadVars
@@ -302,9 +309,8 @@ readBeforeWrittenTo stmt initialWrittenVars = readBeforeWrittenSet
 
     go IfStmt{..} = do
       oldWrittenVars <- gets (view _2)
-      let newReadVars = getVariables ifStmtCondition
-      modify $ _3 %~ HS.union (newReadVars `HS.difference` oldWrittenVars)
-      readVars <- mappend newReadVars <$> gets (view _1)
+      let condReadVars = getVariables ifStmtCondition
+      readVars <- mappend condReadVars <$> gets (view _1)
 
       modify $ _1 .~ readVars
       go ifStmtThen
@@ -317,5 +323,5 @@ readBeforeWrittenTo stmt initialWrittenVars = readBeforeWrittenSet
       readVarsElse    <- gets (view _1)
       writtenVarsElse <- gets (view _2)
 
-      modify $ _1 .~ (readVarsThen `HS.intersection` readVarsElse)
-      modify $ _2 .~ (writtenVarsThen `HS.intersection` writtenVarsElse)
+      modify $ _1 .~ (readVarsThen <> readVarsElse)
+      modify $ _2 .~ (writtenVarsThen <> writtenVarsElse)

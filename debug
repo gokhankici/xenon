@@ -6,18 +6,21 @@ cd "${0:A:h}"
 # VCGEN="--vcgen"
 # FIXED="yes"
 
+# TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
+# TEST="benchmarks/472-mips-pipelined/mem32_test_01.v"
+TEST="benchmarks/472-mips-pipelined/mem32_test_02.v"
+# TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
+# TEST="benchmarks/472-mips-pipelined/neg-mux3_test_02.v"
+# TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
+# TEST="benchmarks/fpu/verilog/fpu.v"
+# TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="examples/verilog/stall.v"
+# TEST="test/verilog/neg/neg-test-2.v"
+# TEST="test/verilog/pos/merge-02.v"
+# TEST="test/verilog/pos/merge03.v"
+# TEST="test/verilog/pos/submodule-02.v"
 # TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-9.v"
-# TEST="test/verilog/pos/merge-02.v"
-# TEST="test/verilog/pos/submodule-02.v"
-# TEST="test/verilog/neg/neg-test-2.v"
-# TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
-TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
-# TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
-# TEST="benchmarks/yarvi/shared/yarvi.v"
-# TEST="benchmarks/fpu/verilog/fpu.v"
-# TEST="benchmarks/472-mips-pipelined/mux3_test.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
@@ -31,4 +34,4 @@ else
 fi
 
 ./iodine --build ${PROFILE} && \
-	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose ${VCGEN}
+	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose ${VCGEN} $@

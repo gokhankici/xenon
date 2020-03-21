@@ -118,6 +118,7 @@ mipsModules = mkCollection "modules" $ go <$> names
             , "reg_file"
             , "mux3_test_01"
             , "mux3_test_02"
+            , "mem32_test_01"
             ]
 
 mipsNegatives :: TestTree
@@ -157,7 +158,6 @@ negative = mkCollection "negative" $ go <$> names
             , "neg-submodule-02"
             , "neg-submodule-03"
             , "neg-submodule-04"
-            , "neg_mux3_test_02"
             ]
 
 

@@ -108,7 +108,9 @@ constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ d
   for_ modules $ \m@Module{..} -> do
     generateWFConstraints m
     (getQualifiers moduleName >>= traverse_ generateQualifiers) & runReader m
-    addSummaryQualifiers m
+    topModuleName <- asks (view afTopModule)
+    unless (moduleName == topModuleName) $
+      addSummaryQualifiers m
     simpleCheck <- isModuleSimple m
     when simpleCheck $
       addSimpleModuleQualifiers m
@@ -365,38 +367,67 @@ addSummaryQualifiers m@Module{..} = do
   mSummary <- asks (HM.lookup moduleName)
   let inputLists = filter (not . HS.null) . nub . concatMap (HM.elems . portDependencies)
                    $ mSummary
-  -- trace "mSummary" mSummary
-  -- trace "inputLists" inputLists
-  for_ (zip inputLists [0..]) $ \(ls, n) ->
-    let qualifierName = "SummaryQualifier_" ++ T.unpack moduleName ++ "_" ++ show n
-        inputSeq  = toSequence ls
-        inputList = toList ls
-        ps = powerset inputSeq
-    in do -- trace "powerset" ps
-          flip SQ.traverseWithIndex ps $ \n2 vs ->
-            addQualifier $
-            mkSummaryQualifierHelper m ("Tag" <> show n2 <> qualifierName) inputList (toList vs) Tag
-          addQualifier $
-            mkSummaryQualifierHelper m ("Value" <> qualifierName) inputList inputList Value
+  for_ (zip inputLists [0..]) $ \(ls, n) -> do
+    let inputSeq  = toSequence ls
+    addSummaryQualifiersKVar m moduleName (show n) inputSeq
+    trace "addSummaryQualifiersKVar" (getThreadId m, inputSeq)
+  for_ alwaysBlocks $ \ab -> do
+    let readVariables = getReadOnlyVariables (abStmt ab)
+        readVariablesSeq = toSequence readVariables
+    trace "addSummaryQualifiersKVar" (getThreadId ab, readVariables)
+    flip SQ.traverseWithIndex (powerset readVariablesSeq) $ \n inputSeq ->
+      addSummaryQualifiersKVar ab moduleName (show n) inputSeq
+
+
+
+addSummaryQualifiersKVar :: (FD r, MakeKVar k)
+                         => k Int  -- ^ always block or module
+                         -> Id     -- ^ module name
+                         -> String -- ^ qualifier name suffix
+                         -> L Id   -- ^ input list
+                         -> Sem r ()
+addSummaryQualifiersKVar kv moduleName qualifierSuffix inputSeq = do
+  let inputList = toList inputSeq
+      ps = powerset inputSeq
+  flip SQ.traverseWithIndex ps $ \n vs -> do
+    let vsList = toList vs
+        name = "SummaryQualifier_"
+               <> T.unpack moduleName <> "_"
+               <> "T" <> show (getThreadId kv) <> "_"
+               <> show n
+    addQualifier $
+      mkSummaryQualifierHelper kv moduleName (name <> "_Tag_" <> qualifierSuffix)
+      inputList vsList Tag
+    addQualifier $
+      mkSummaryQualifierHelper kv moduleName (name <> "_Value_" <> qualifierSuffix)
+      inputList vsList Value
+  return ()
+
 
 -- | given a list of input ports i1, i2, ... creates a qualifier of the form:
 -- ((TL_i1 <=> TR_i1) && (TL_i2 <=> TR_i2) && ...) ==> TL_$1 <=> TR_$1)
-mkSummaryQualifierHelper :: Module Int -> String -> [Id] -> [Id] -> HornVarType ->  FT.Qualifier
-mkSummaryQualifierHelper m qualifierName inputs valEqInputs rhsType =
+mkSummaryQualifierHelper :: MakeKVar k
+                         => k Int       -- ^ always block or module
+                         -> Id          -- ^ module name
+                         -> String      -- ^ qualifier name
+                         -> [Id]        -- ^ inputs
+                         -> [Id]        -- ^ always_equal inputs
+                         -> HornVarType -- ^ type of the right hand side
+                         -> FT.Qualifier
+mkSummaryQualifierHelper kv moduleName qualifierName inputs valEqInputs rhsType =
   FT.mkQual
   (FT.symbol qualifierName)
   ([ FT.QP vSymbol FT.PatNone FT.FInt
    , FT.QP (symbol "rl") (FT.PatPrefix (mkRhsSymbol rhsType LeftRun) 0)  rt
    , FT.QP (symbol "rr") (FT.PatPrefix (mkRhsSymbol rhsType RightRun) 0) rt
    ] ++
-   -- $1 is used to match from the same thread
-   concat [ [ FT.QP (FT.symbol $ "it" ++ show n2)     (FT.PatPrefix (mkLhsSymbol i Tag LeftRun) 1)  bt
-            , FT.QP (FT.symbol $ "it" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbol i Tag RightRun) 1) bt
+   concat [ [ FT.QP (FT.symbol $ "it" ++ show n2)     (FT.PatExact $ mkLhsSymbol i Tag LeftRun)  bt
+            , FT.QP (FT.symbol $ "it" ++ show (n2+1)) (FT.PatExact $ mkLhsSymbol i Tag RightRun) bt
             ]
           | (i, n2) <- zip inputs [0,2..]
           ] ++
-   concat [ [ FT.QP (FT.symbol $ "iv" ++ show n2)     (FT.PatPrefix (mkLhsSymbol i Value LeftRun) 1)  it
-            , FT.QP (FT.symbol $ "iv" ++ show (n2+1)) (FT.PatPrefix (mkLhsSymbol i Value RightRun) 1) it
+   concat [ [ FT.QP (FT.symbol $ "iv" ++ show n2)     (FT.PatExact $ mkLhsSymbol i Value LeftRun)  it
+            , FT.QP (FT.symbol $ "iv" ++ show (n2+1)) (FT.PatExact $ mkLhsSymbol i Value RightRun) it
             ]
           | (i, n2) <- zip valEqInputs [0,2..]
           ]
@@ -412,11 +443,14 @@ mkSummaryQualifierHelper m qualifierName inputs valEqInputs rhsType =
       [ FT.eVar ("iv" ++ show n2) `FT.EEq` FT.eVar ("iv" ++ show (n2+1))
       | (_, n2) <- zip valEqInputs [0,2..]
       ]
-    mkRhsSymbol t r = symbol $ getFixpointNonInputVarPrefix t r
-    mkLhsSymbol v t r = symbol $
-                        getFixpointVarPrefix True $
-                        mkVar v t r
-    mkVar v = HVar0 v (moduleName m)
+    mkRhsSymbol t r =
+      symbol $ getFixpointNonInputVarPrefix t r
+    mkLhsSymbol v t r =
+      symbol $
+      getFixpointName True $
+      mkVar v t r
+    mkVar v t r =
+      setThreadId kv $ HVar0 v moduleName t r
     bt = FT.boolSort
     it = FT.intSort
 

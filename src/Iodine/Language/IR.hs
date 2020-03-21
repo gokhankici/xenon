@@ -28,6 +28,7 @@ module Iodine.Language.IR
   , moduleAllInputs
   , moduleInstanceReadsAndWrites
   , moduleOutputs
+  , getReadOnlyVariables
   )
 where
 
@@ -420,3 +421,28 @@ isVariable _ = False
 isAB :: Thread a -> Bool
 isAB (AB _) = True
 isAB (MI _) = False
+
+getReadOnlyVariables :: Stmt a -> Ids
+getReadOnlyVariables s =
+  let (readVars, writtenVars) = go s & execState (mempty, mempty) & run
+  in readVars `HS.difference` writtenVars
+  where
+    go :: Stmt a -> Sem '[State (Ids, Ids)] ()
+    go Block{..} = traverse_ go blockStmts
+    go Skip{}    = return ()
+    go Assignment{..} = do
+      modify $ _2 %~ HS.insert (varName assignmentLhs)
+      newReadVars <- HS.difference (getVariables assignmentRhs)
+                     <$> gets (view _2)
+      modify $ _1 %~ HS.union newReadVars
+    go IfStmt{..} = do
+      newReadVars <- HS.difference (getVariables ifStmtCondition)
+                     <$> gets (view _2)
+      modify $ _1 %~ HS.union newReadVars
+      st <- get
+      go ifStmtThen
+      (rThen, wThen) <- get
+      put st
+      go ifStmtElse
+      (rElse, wElse) <- get
+      put (rThen <> rElse, wThen <> wElse)

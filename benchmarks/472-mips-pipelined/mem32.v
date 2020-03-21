@@ -46,6 +46,8 @@ module mem32(clk, mem_read, mem_write, address, data_in, data_out);
 
    assign address_select = (address[31:7] == BASE_ADDRESS);  // address decoding
 
+   // ae(mem_read) && ae(address) && ct(mem_array)
+   // ==> ct(data_out)
    always @(*) begin 
       if (mem_read == 1'b1 && address_select == 1'b1) begin
          if ((address % 4) != 0) begin
@@ -59,6 +61,8 @@ module mem32(clk, mem_read, mem_write, address, data_in, data_out);
    end
 
    // for WRITE operations
+   // ae(mem_write) && ae(address_select) && ct(mem_offset) && ct(data_in)
+   // ==> ct(mem_array)
    always @(posedge clk) begin
       if (mem_write == 1'b1 && address_select == 1'b1) begin
          $display($time, " writing data: Mem[%h] <= %h", address,data_in);

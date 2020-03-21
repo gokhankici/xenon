@@ -138,10 +138,10 @@ vcgenMod m@Module {..} = do
   setHornVariables m $ getVariables m `HS.difference` mClks
 
   -- set each thread's horn variables
-  isTop <- isTopModule' m
+  -- isTop <- isTopModule' m
   for_ alwaysBlocks $ \ab ->
     setHornVariables ab $
-    getVariables ab <> if isTop then mempty else moduleInputs m mClks
+    getVariables ab -- <> if isTop then mempty else moduleInputs m mClks
 
   runReader m $ runReader threadMap $ do
     threadStMap :: IM.IntMap ThreadSt <-
@@ -187,7 +187,7 @@ alwaysBlockClauses ab =
   $ (SQ.singleton <$> initialize ab)
   <||> (maybeToMonoid <$> tagSet ab)
   <||> (maybeToMonoid <$> srcTagReset ab)
-  ||> next ab
+   ||> next ab
   <||> sinkCheck t
   <||> assertEqCheck t
   where t = AB ab
@@ -204,16 +204,33 @@ initialize ab = do
   valEqVars0 <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
 
   isTop <- isTopModule
+  -- these are both the module inputs and variables that are written by other
+  -- threads when generating an init clause for always blocks of submodules,
+  -- these variables should stay as free variables
   srcs <- moduleInputs currentModule <$> getClocks currentModuleName
-  let (tagEqVars, valEqVars) =
+  let readOnlyVars = getReadOnlyVariables stmt <> srcs
+  let (zeroTagVars, valEqVars, extraSubs) =
         if   isTop
-        then (tagEqVars0, valEqVars0)
-        else ( tagEqVars0 `HS.difference` srcs
-             , valEqVars0 `HS.difference` srcs
-             )
+        then (tagEqVars0, valEqVars0, mempty)
+        else
+          let ct = if   isStar ab
+                   then readBeforeWrittenTo ab mempty
+                   else tagEqVars0 `HS.difference` readOnlyVars
+              ie = valEqVars0 `HS.difference` srcs
+              es = if isStar ab
+                   then foldMap
+                        (\v -> sti2 <$> mkAllSubs v currentModuleName 0 1)
+                        readOnlyVars
+                   else mempty
+          in (ct, ie, es)
 
-  let tagSubs = sti2 <$> foldl' (mkZeroTags currentModuleName) mempty tagEqVars
+  let tagSubs = sti2 <$> foldl' (mkZeroTags currentModuleName) mempty zeroTagVars
       valSubs = sti2 <$> foldl' (valEquals currentModuleName) mempty valEqVars
+
+  trace "initialize" (currentModuleName, getThreadId ab, isTop, isStar ab)
+  trace "initialize" stmt
+  trace "initialize - zero" (toList zeroTagVars)
+  trace "initialize - valeq" (toList valEqVars)
 
   hornVars <- getHornVariables ab
   trace "non initial_eq vals" (getData ab, toList $ hornVars `HS.difference` valEqVars)
@@ -236,17 +253,13 @@ initialize ab = do
                   ) mempty valEqVars
                 nxt' = if isTop
                        then nxt
-                       else HM.filterWithKey (\v _ -> v `notElem` srcs) nxt
+                       else HM.filterWithKey (\v _ -> v `notElem` readOnlyVars) nxt
                 subs = sti2 <$> toSubs currentModuleName nxt'
             return (HAnd (cond1 <> cond2 <> cond3 |> tr), subs)
     else return (HBool True, tagSubs <> valSubs)
 
   -- for non-top module blocks, we do not assume that the sources are constant time
   -- however, we should keep their variables in the kvars
-  let extraSubs =
-        if isTop
-        then mempty
-        else foldMap (\v -> sti2 <$> mkAllSubs v currentModuleName 0 1) srcs
   let subs' = subs <> extraSubs
 
   return $
@@ -257,6 +270,7 @@ initialize ab = do
          , hornData   = ()
          }
  where
+   stmt = abStmt ab
    sti = setThreadId ab
    sti2 = bimap sti sti
    uvi = updateVarIndex (+ 1)
@@ -469,9 +483,12 @@ assertEqCheck (AB ab) = do
 -- -------------------------------------------------------------------------------------------------
 interferenceChecks :: FDM r => L TI -> Sem r Horns
 -- -------------------------------------------------------------------------------------------------
-interferenceChecks abmis =
-  traverse_ interferenceCheck abmis
-  & execState @Horns mempty
+interferenceChecks abmis = do
+  isTop <- isTopModule
+  if isTop
+    then traverse_ interferenceCheck abmis
+         & execState @Horns mempty
+    else return mempty
 
 interferenceCheck :: (FDM r, Members '[State Horns] r)
                   => TI -> Sem r ()
