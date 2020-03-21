@@ -1,0 +1,27 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "clk",
+          "addr",
+          "mread",
+          "mwrite",
+          "din"
+        ],
+        "sink": [
+          "out"
+        ],
+        "always_eq": [
+          "addr",
+          "mread"
+        ]
+      },
+      "clock": "clk"
+    },
+    "mem32": {
+      "clock": "clk"
+    }
+  }
+}

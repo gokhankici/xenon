@@ -54,12 +54,12 @@ runTestTree ta va = \case
     if   ta ^. dryRun
     then printf "sb && ./iodine %s %s\n" verilogFile af :: IO ()
     else
-      let act = (withSilence $ R.run va') `shouldReturn` (testType == Succ)
+      let act = withSilence (R.run va') `shouldReturn` (testType == Succ)
       in  catch (act <* appendTestName "passed")
           (\(e :: SomeException) -> appendTestName "failed" >> throw e)
     where
       appendTestName r =
-        appendFile outputFile $ printf "%s %s %s\n" r moduleName af
+        appendFile outputFile $ printf "%s %s\n" r af
       withSilence = if ta ^. verbose then id else silence
       af  = case annotFile of
               Nothing -> let dir  = takeDirectory verilogFile

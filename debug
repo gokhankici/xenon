@@ -8,8 +8,7 @@ cd "${0:A:h}"
 
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
 # TEST="benchmarks/472-mips-pipelined/mem32_test_01.v"
-TEST="benchmarks/472-mips-pipelined/mem32_test_02.v"
-# TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
+TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/472-mips-pipelined/neg-mux3_test_02.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
 # TEST="benchmarks/fpu/verilog/fpu.v"
@@ -32,6 +31,8 @@ if [ -z "${FIXED}" ]; then
 else
 	TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
 fi
+
+# TEST_ANNOT="${TEST_DIR}/annot-neg-mem32_test_03.json"
 
 ./iodine --build ${PROFILE} && \
 	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose ${VCGEN} $@
