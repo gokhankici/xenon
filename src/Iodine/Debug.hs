@@ -217,15 +217,6 @@ mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
 mkModuleMap =
   foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty
 
-printGraph :: G.Gr a b -> (Int -> String) -> String
-printGraph g nodeLookup = unlines ls
-  where
-    ls = "digraph iodine {" : edges ++ nodes ++ ["}"]
-    edges = mkEdge <$> G.edges g
-    nodes = mkNode <$> G.nodes g
-    mkEdge (x,y) = printf "%d -> %d;" x y
-    mkNode n = printf "%d [label=\"%s\"];" n (nodeLookup n)
-
 (!) :: (Eq k, Hashable k, Show k)
     => HM.HashMap k v -> k -> v
 m ! k =

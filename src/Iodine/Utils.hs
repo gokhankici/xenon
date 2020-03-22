@@ -21,6 +21,7 @@ import qualified Data.Sequence as SQ
 import           Polysemy
 import           Polysemy.Error
 import qualified Polysemy.Trace as PT
+import           Text.Printf
 
 combine :: (Monad f, Monoid m, Traversable t) => (a -> f m) -> t a -> f m
 combine act as = fold <$> traverse act as
@@ -120,3 +121,12 @@ insEdge e g =
 
 find' :: Foldable t => (a -> Bool) -> t a -> a
 find' q as = fromJust $ find q as
+
+printGraph :: Show b => G.Gr a b -> (Int -> String) -> String
+printGraph g nodeLookup = unlines ls
+  where
+    ls = "digraph iodine {" : edges ++ nodes ++ ["}"]
+    edges = mkEdge <$> G.labEdges g
+    nodes = mkNode <$> G.nodes g
+    mkEdge (x,y,b) = printf "%d -> %d [label=\"%s\"];" x y (show b)
+    mkNode n = printf "%d [label=\"%s\"];" n (nodeLookup n)

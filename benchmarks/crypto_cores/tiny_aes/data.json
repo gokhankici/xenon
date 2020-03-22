@@ -1,0 +1,42 @@
+{
+  "aes_256": {
+    "indirect_inst": 1,
+    "direct_inst": 1
+  },
+  "expand_key_type_A_256": {
+    "indirect_inst": 6,
+    "direct_inst": 6
+  },
+  "expand_key_type_B_256": {
+    "indirect_inst": 7,
+    "direct_inst": 7
+  },
+  "final_round": {
+    "indirect_inst": 1,
+    "direct_inst": 1
+  },
+  "one_round": {
+    "indirect_inst": 13,
+    "direct_inst": 13
+  },
+  "S4": {
+    "indirect_inst": 17,
+    "direct_inst": 6
+  },
+  "table_lookup": {
+    "indirect_inst": 52,
+    "direct_inst": 4
+  },
+  "T": {
+    "indirect_inst": 208,
+    "direct_inst": 4
+  },
+  "S": {
+    "indirect_inst": 276,
+    "direct_inst": 5
+  },
+  "xS": {
+    "indirect_inst": 208,
+    "direct_inst": 1
+  }
+}

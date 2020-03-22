@@ -199,4 +199,5 @@ major = mkCollection "major" ts
          , TF "fpu-divider" $ b </> "fpu2" </> "divider" </> "divider.v"
          , TF "modexp"      $ c </> "RSA4096" </> "ModExp2" </> "ModExp.v"
          , T  "ctalu"       $ b </> "xcrypto-ref" </> "rtl" </> "coprocessor" </> "scarv_cop_palu.v"
+         , T  "aes"         $ c </> "tiny_aes" </> "trunk" </> "rtl" </> "aes_256.v"
          ]
