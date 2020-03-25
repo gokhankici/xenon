@@ -44,7 +44,7 @@ inline std::ostream &operator<<(std::ostream &out, const IRUFOp& op)
         case IRBinaryOp::AND:         return out << "and";
         case IRBinaryOp::ARITH_RS:    return out << "arith_rs";
         case IRBinaryOp::BITWISE_AND: return out << "bitwise_and";
-        case IRBinaryOp::BITWISE_OR:  return out << "bitwisE_or";
+        case IRBinaryOp::BITWISE_OR:  return out << "bitwise_or";
         case IRBinaryOp::CASE_EQ:     return out << "case_eq";
         case IRBinaryOp::CASE_NEQ:    return out << "case_neq";
         case IRBinaryOp::DIV:         return out << "div";

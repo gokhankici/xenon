@@ -20,6 +20,7 @@ module Iodine.Language.IR
   , Thread (..)
   , GetVariables (..)
   , GetData (..)
+  , UFOp (..)
   , isAB
   , isInput
   , isStar
@@ -69,7 +70,7 @@ data Expr a =
              , varModuleName :: Id
              , exprData      :: a
              }
-  | UF { ufName   :: Id
+  | UF { ufOp     :: UFOp
        , ufArgs   :: L (Expr a)
        , exprData :: a
        }
@@ -86,6 +87,41 @@ data Expr a =
            , exprData      :: a
            }
   deriving (Eq, Generic, Functor, Foldable, Traversable)
+
+data UFOp =
+    UF_abs
+  | UF_and
+  | UF_negate
+  | UF_negative
+  | UF_not
+  | UF_add
+  | UF_or
+  | UF_arith_rs
+  | UF_bitwise_and
+  | UF_bitwise_or
+  | UF_case_eq
+  | UF_case_neq
+  | UF_div
+  | UF_exp
+  | UF_ge
+  | UF_gt
+  | UF_le
+  | UF_logic_eq
+  | UF_logic_neq
+  | UF_lt
+  | UF_mod
+  | UF_mul
+  | UF_nand
+  | UF_nor
+  | UF_shl
+  | UF_shr
+  | UF_sub
+  | UF_xnor
+  | UF_xor
+  | UF_concat
+  | UF_write_to_index
+  | UF_call Id -- ^ call a function with the given name
+  deriving (Eq)
 
 data AssignmentType = Blocking | NonBlocking | Continuous
                     deriving (Generic, Eq, Show)
@@ -240,6 +276,41 @@ instance Doc Port where
   doc (Input p)  = PP.text "input " PP.<+> doc (variableName p) PP.<> PP.semi
   doc (Output p) = PP.text "output" PP.<+> doc (variableName p) PP.<> PP.semi
 
+instance Doc UFOp where
+  doc = PP.text . \case
+    UF_abs            -> "uf_abs"
+    UF_and            -> "uf_and"
+    UF_negate         -> "uf_negate"
+    UF_negative       -> "uf_negative"
+    UF_not            -> "uf_not"
+    UF_add            -> "uf_add"
+    UF_or             -> "uf_or"
+    UF_arith_rs       -> "uf_arith_rs"
+    UF_bitwise_and    -> "uf_bitwise_and"
+    UF_bitwise_or     -> "uf_bitwise_or"
+    UF_case_eq        -> "uf_case_eq"
+    UF_case_neq       -> "uf_case_neq"
+    UF_div            -> "uf_div"
+    UF_exp            -> "uf_exp"
+    UF_ge             -> "uf_ge"
+    UF_gt             -> "uf_gt"
+    UF_le             -> "uf_le"
+    UF_logic_eq       -> "uf_logic_eq"
+    UF_logic_neq      -> "uf_logic_neq"
+    UF_lt             -> "uf_lt"
+    UF_mod            -> "uf_mod"
+    UF_mul            -> "uf_mul"
+    UF_nand           -> "uf_nand"
+    UF_nor            -> "uf_nor"
+    UF_shl            -> "uf_shl"
+    UF_shr            -> "uf_shr"
+    UF_sub            -> "uf_sub"
+    UF_xnor           -> "uf_xnor"
+    UF_xor            -> "uf_xor"
+    UF_concat         -> "uf_concat"
+    UF_write_to_index -> "uf_write_to_index"
+    UF_call f         -> "uf_call_function_" <> T.unpack f
+
 instance ShowIndex a => Doc (Expr a) where
   doc (Constant c _)   = doc c
   doc (Variable v _ a) = doc v PP.<> docIndex a
@@ -343,6 +414,9 @@ instance ShowIndex a => Show (Event a) where
   show = PP.render . doc
 
 instance ShowIndex a => Show (Stmt a) where
+  show = PP.render . doc
+
+instance Show UFOp where
   show = PP.render . doc
 
 instance ShowIndex a => Show (Expr a) where

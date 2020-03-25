@@ -26,7 +26,6 @@ import           Control.Monad
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import qualified Data.Sequence as SQ
-import qualified Data.Text as T
 import           Polysemy
 import           Polysemy.Error
 import           Polysemy.Reader
@@ -268,11 +267,10 @@ normalizeExpr = \case
 
   Variable {..} -> Variable varName varModuleName <$> getLastBlocking varName
 
-  UF {..} -> do
-    args <- traverse normalizeExpr ufArgs
-    n    <- freshId FunId
-    let name = "uf_" <> ufName <> "_" <> T.pack (show n)
-    return $ UF name args n
+  UF {..} ->
+    UF ufOp
+    <$> traverse normalizeExpr ufArgs
+    <*> freshId FunId
 
   IfExpr {..} ->
     IfExpr

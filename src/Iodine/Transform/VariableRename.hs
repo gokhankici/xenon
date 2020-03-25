@@ -117,7 +117,7 @@ fixExpr Constant{..} = return $ Constant{..}
 fixExpr Variable{..} = do
   varName' <- fix varName
   return $ Variable{varName = varName', ..}
-fixExpr UF{..} = UF ufName <$> traverse fixExpr ufArgs <*> return exprData
+fixExpr UF{..} = UF ufOp <$> traverse fixExpr ufArgs <*> return exprData
 fixExpr IfExpr{..} =
   IfExpr
   <$> fixExpr ifExprCondition

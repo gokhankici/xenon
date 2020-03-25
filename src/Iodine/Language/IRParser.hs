@@ -64,7 +64,7 @@ parseExpr :: Parser (Expr ())
 parseExpr =
   parseConstantExpr <|>
   parseVarExpr <|>
-  parseTerm "uf" (UF <$> identifier <*> (comma *> list parseExpr) <*> parseData) <|>
+  parseTerm "uf" (UF <$> parseUFOp <*> (comma *> list parseExpr) <*> parseData) <|>
   parseTerm "ite_expr" (IfExpr
                         <$> parseExpr
                         <*> (comma *> parseExpr)
@@ -75,6 +75,48 @@ parseExpr =
                       <$> parseExpr
                       <*> (comma *> list parseExpr)
                       <*> parseData)
+
+parseUFOp :: Parser UFOp
+parseUFOp = do
+  f <- identifier
+  return $
+    case f of
+      "abs"            -> UF_abs
+      "and"            -> UF_and
+      "negate"         -> UF_negate
+      "negative"       -> UF_negative
+      "not"            -> UF_not
+      "add"            -> UF_add
+      "or"             -> UF_or
+      "arith_rs"       -> UF_arith_rs
+      "bitwise_and"    -> UF_bitwise_and
+      "bitwise_or"     -> UF_bitwise_or
+      "case_eq"        -> UF_case_eq
+      "case_neq"       -> UF_case_neq
+      "div"            -> UF_div
+      "exp"            -> UF_exp
+      "ge"             -> UF_ge
+      "gt"             -> UF_gt
+      "le"             -> UF_le
+      "logic_eq"       -> UF_logic_eq
+      "logic_neq"      -> UF_logic_neq
+      "lt"             -> UF_lt
+      "mod"            -> UF_mod
+      "mul"            -> UF_mul
+      "nand"           -> UF_nand
+      "nor"            -> UF_nor
+      "shl"            -> UF_shl
+      "shr"            -> UF_shr
+      "sub"            -> UF_sub
+      "xnor"           -> UF_xnor
+      "xor"            -> UF_xor
+      "concat"         -> UF_concat
+      "write_to_index" -> UF_write_to_index
+      _                ->
+        case T.stripPrefix "call_function_" f of
+          Just suffix -> UF_call suffix
+          Nothing     -> error $ "parseUFOp failed: " ++ T.unpack f
+
 
 parseConstantExpr :: Parser (Expr ())
 parseConstantExpr =

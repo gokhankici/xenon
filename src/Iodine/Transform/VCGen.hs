@@ -215,7 +215,7 @@ initialize ab = do
           let ct = if   isStar ab
                    then readBeforeWrittenTo ab mempty
                    else tagEqVars0 `HS.difference` readOnlyVars
-              ie = valEqVars0 `HS.difference` srcs
+              ie = valEqVars0 `HS.difference` readOnlyVars
               es = if isStar ab
                    then foldMap
                         (\v -> sti2 <$> mkAllSubs v currentModuleName 0 1)
@@ -227,7 +227,6 @@ initialize ab = do
       valSubs = sti2 <$> foldl' (valEquals currentModuleName) mempty valEqVars
 
   trace "initialize" (currentModuleName, getThreadId ab, isTop, isStar ab)
-  trace "initialize" stmt
   trace "initialize - zero" (toList zeroTagVars)
   trace "initialize - valeq" (toList valEqVars)
 

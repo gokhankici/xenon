@@ -263,6 +263,10 @@ instance Semigroup QualifierDependencies where
 instance Monoid QualifierDependencies where
   mempty = QualifierDependencies mempty mempty
 
+instance Show QualifierDependencies where
+  show qd = "{ explicit: " ++ show (toList $ qd ^. explicitVars) ++
+            ", implicit: " ++ show (toList $ qd ^. implicitVars) ++
+            "}"
 
 allPredecessors :: Int
                 -> G.Gr a b

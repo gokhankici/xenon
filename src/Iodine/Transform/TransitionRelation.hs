@@ -75,7 +75,9 @@ val r = \case
                         , hVarRun    = r
                         , hThreadId  = 0
                         }
-  UF {..}     -> ufVal r ufName HornInt ufArgs
+  UF {..}     ->
+    let ufName = T.pack $ show ufOp <> show exprData
+    in ufVal r ufName HornInt ufArgs
   IfExpr {..} -> ufVal r name HornInt (ifExprCondition |:> ifExprThen |> ifExprElse)
     where name = mkUFName exprData
   Str {..}    -> notSupported

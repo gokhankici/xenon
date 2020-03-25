@@ -176,12 +176,10 @@ majorStubs :: TestTree
 majorStubs = mkCollection "major-stub" ts
   where
     b  = benchmarkDir
-    d  = b </> "crypto_cores" </> "sha_core" </> "trunk" </> "rtl"
-    ts = [ UnitTest { testName    = "sha_stub_3"
-                    , verilogFile = d </> "sha256_stub_3.v"
-                    , annotFile   = Just $ d </> "annot-sha256_stub_3.json"
-                    , testType    = Succ
-                    }
+    shaDir = b </> "crypto_cores" </> "sha_core" </> "trunk" </> "rtl"
+    aluDir = b </> "xcrypto-ref" </> "rtl" </> "coprocessor"
+    ts = [ T "sha_stub_3" $ shaDir </> "sha256_stub_3.v"
+         , T "mult_test"  $ aluDir </> "mult_test.v"
          ]
 
 

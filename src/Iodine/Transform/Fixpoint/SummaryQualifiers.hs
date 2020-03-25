@@ -204,6 +204,7 @@ addSummaryQualifiersAB moduleName ab = do
     & execState mempty
   abVars <- getUpdatedVariables (AB ab)
   for_ (filter ((`elem` abVars) . fst) $ HM.toList sqvs) $ \(v, qds) -> do
+    trace "addSummaryQualifiersAB" (getThreadId ab, v, qds)
     let evs    = qds ^. explicitVars
         ivs    = qds ^. implicitVars
         allEqs = HS.toList (evs <> ivs)
@@ -213,7 +214,7 @@ addSummaryQualifiersAB moduleName ab = do
              , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Tag2")
                allEqs valEqs v Tag
              , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Value")
-               mempty allEqs v Tag
+               mempty allEqs v Value
              ]
     for_ qs addQualifier
   where
