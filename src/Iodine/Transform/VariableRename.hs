@@ -13,6 +13,7 @@ module Iodine.Transform.VariableRename
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
+import           Iodine.Utils
 
 import           Control.Lens
 import           Control.Monad
@@ -53,7 +54,7 @@ handleAnnotationFile af = do
 
 handleModuleAnnotations :: FD a r => Id -> ModuleAnnotations -> Sem r ModuleAnnotations
 handleModuleAnnotations moduleName ModuleAnnotations{..} = do
-  inputs <- asks ((HM.! moduleName) . getModuleInputs)
+  inputs <- asks (hmGet 1 moduleName . getModuleInputs)
   runReader inputs $
     ModuleAnnotations
     <$> handleAnnotations _moduleAnnotations
@@ -77,7 +78,7 @@ handleQualifier (QPairs vs)     = QPairs <$> traverse fix vs
 
 handleModule :: FD a r => Module a -> Sem r (Module a)
 handleModule Module{..} = do
-  inputs <- asks ((HM.! moduleName) . getModuleInputs)
+  inputs <- asks (hmGet 2 moduleName . getModuleInputs)
   moduleInstances' <- traverse (fixMI moduleName) moduleInstances
   runReader inputs $
     Module moduleName
@@ -144,8 +145,8 @@ fixEvent Star        = return Star
 
 fixMI :: FD a r => Id -> ModuleInstance a -> Sem r (ModuleInstance a)
 fixMI currentModuleName ModuleInstance{..} = do
-  currentInputs <- asks ((HM.! currentModuleName) . getModuleInputs)
-  targetInputs <- asks ((HM.! moduleInstanceType) . getModuleInputs)
+  currentInputs <- asks (hmGet 3 currentModuleName . getModuleInputs)
+  targetInputs <- asks (hmGet 4 moduleInstanceType . getModuleInputs)
   ports' <-
     foldM
     (\ports (p, e) -> do

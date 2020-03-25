@@ -11,9 +11,9 @@ module Iodine.Pipeline (pipeline) where
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
+import           Iodine.Transform.Fixpoint.Query
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
-import           Iodine.Transform.Query
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
 import           Iodine.Transform.VariableRename

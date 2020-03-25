@@ -60,8 +60,8 @@ data ModuleSummary =
                   -- thread t2 uses
                   threadDependencies :: TDGraph,
 
-                  -- | maps variables to threads that read it
-                  threadReadMap :: HM.HashMap Id IS.IntSet,
+                  -- -- | maps variables to threads that read it
+                  -- threadReadMap :: HM.HashMap Id IS.IntSet,
 
                   -- | maps variables to threads that update it
                   threadWriteMap :: HM.HashMap Id IS.IntSet,
@@ -172,7 +172,7 @@ createModuleSummary m@Module{..} = do
     , isCombinatorial              = isComb
     -- , readBeforeWrittenVars        = readBeforeWrittenVars
     , threadDependencies           = dgState ^. threadGraph
-    , threadReadMap                = dgState ^. varReads
+    -- , threadReadMap                = dgState ^. varReads
     , threadWriteMap               = dgState ^. varUpdates
     , variableDependencies         = varDepGraph
     , variableDependencyNodeMap    = varDepMap

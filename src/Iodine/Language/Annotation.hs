@@ -117,7 +117,7 @@ instance FromJSON ModuleAnnotations where
       objKeys = ["annotations", "qualifiers", "clock", "blocklist"]
 
 instance FromJSON AnnotationFile where
-  parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "blocklist"] $ \o ->
+  parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "history", "blocklist"] $ \o ->
     AnnotationFile
     <$> o .:  "modules"
     <*> o .:  "top_module"
@@ -129,7 +129,7 @@ withObjectKeys typ keys parser = withObject typ parser'
       let extraKeys = HM.keysSet o `HS.difference` HS.fromList keys
       in if HS.null extraKeys
          then parser o
-         else fail $ "Unexpected keys " ++ show (HS.toList extraKeys) ++ " in object " ++ show o
+         else fail $ "Unexpected keys " ++ show (HS.toList extraKeys) ++ " in object " ++ show (encode o)
 
 parseClock :: Object -> T.Text -> Parser (HS.HashSet Id)
 parseClock o k =

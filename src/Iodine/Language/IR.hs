@@ -29,9 +29,11 @@ module Iodine.Language.IR
   , moduleInstanceReadsAndWrites
   , moduleOutputs
   , getReadOnlyVariables
+  , getUpdatedVariables
   )
 where
 
+import           Iodine.Language.Annotation
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -45,6 +47,7 @@ import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics hiding (moduleName)
 import           Polysemy
+import           Polysemy.Reader
 import           Polysemy.State
 import qualified Text.PrettyPrint as PP
 
@@ -446,3 +449,25 @@ getReadOnlyVariables s =
       go ifStmtElse
       (rElse, wElse) <- get
       put (rThen <> rElse, wThen <> wElse)
+
+
+getUpdatedVariables :: Members '[ Reader (HM.HashMap Id (Module Int))
+                                , Reader AnnotationFile
+                                ] r
+                    => Thread Int
+                    -> Sem r Ids
+getUpdatedVariables = \case
+  AB ab -> go $ abStmt ab
+  MI mi@ModuleInstance{..} -> do
+    (_, writtenVars) <-
+      moduleInstanceReadsAndWrites
+      <$> asks (HM.! moduleInstanceType)
+      <*> getClocks moduleInstanceType
+      <*> return mi
+    return writtenVars
+  where
+    go = \case
+      Block {..}      -> mfoldM go blockStmts
+      Assignment {..} -> return . HS.singleton $ varName assignmentLhs
+      IfStmt {..}     -> mfoldM go [ifStmtThen, ifStmtElse]
+      Skip {..}       -> return mempty

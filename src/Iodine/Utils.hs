@@ -14,6 +14,7 @@ import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
+import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.Hashable
 import           Data.Maybe
@@ -100,7 +101,7 @@ toSequence :: Foldable t => t a -> L a
 toSequence = foldl' (|>) mempty
 
 toHSet :: (Eq a, Hashable a, Foldable t) => t a -> HS.HashSet a
-toHSet = foldl' (\acc a -> HS.insert a acc) mempty
+toHSet = foldl' (flip HS.insert) mempty
 
 -- | return combinations of the elements
 twoPairs :: L a -> L (a, a)
@@ -130,3 +131,18 @@ printGraph g nodeLookup = unlines ls
     nodes = mkNode <$> G.nodes g
     mkEdge (x,y,b) = printf "%d -> %d [label=\"%s\"];" x y (show b)
     mkNode n = printf "%d [label=\"%s\"];" n (nodeLookup n)
+
+hmGet :: (Show k, Show v, Eq k, Hashable k)
+      => Int -> k -> HM.HashMap k v -> v
+hmGet n k m =
+  case HM.lookup k m of
+    Nothing ->
+      error $ unlines [ "hashmap"
+                      , show m
+                      , "key " ++ show k
+                      , "no " ++ show n
+                      ]
+    Just v -> v
+
+hmGetEmpty :: (Eq k, Hashable k, Monoid v) => k -> HM.HashMap k v -> v
+hmGetEmpty k m = fromMaybe mempty $ HM.lookup k m

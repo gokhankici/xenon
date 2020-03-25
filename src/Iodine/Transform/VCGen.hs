@@ -36,7 +36,6 @@ import           Data.Foldable
 import qualified Data.Graph.Inductive as G
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
-import           Data.Hashable
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import           Data.List
@@ -232,8 +231,8 @@ initialize ab = do
   trace "initialize - zero" (toList zeroTagVars)
   trace "initialize - valeq" (toList valEqVars)
 
-  hornVars <- getHornVariables ab
-  trace "non initial_eq vals" (getData ab, toList $ hornVars `HS.difference` valEqVars)
+  -- hornVars <- getHornVariables ab
+  -- trace "non initial_eq vals" (getData ab, toList $ hornVars `HS.difference` valEqVars)
 
   (cond, subs) <-
     if isStar ab
@@ -524,7 +523,7 @@ interferenceCheckMI :: FDM r
                     -> Sem r H
 interferenceCheckMI writeMI readAB overlappingVars = do
   m@Module{..} <- ask
-  moduleSummary :: ModuleSummary <- asks (HM.! moduleName)
+  moduleSummary :: ModuleSummary <- asks (hmGet 9 moduleName)
   depThreadIds <-
     IS.delete (getData readAB)
     <$> getAllDependencies (MI writeMI) & runReader moduleSummary
@@ -911,14 +910,14 @@ autoInitialEqualWireSimple m@Module{..} v = do
   if Wire v `elem` variables
     then do
     let w = v
-    ms@ModuleSummary{..} <- asks (HM.! moduleName)
+    ms@ModuleSummary{..} <- asks (hmGet 10 moduleName)
     let (inputDeps, requiredRegs) = computeRegistersReadBy m ms inputs w
         -- assume the wire is initial_eq if
         -- 1. the wire does not depend on module inputs
         -- 2. it's not a module instance output
         -- 3. all registers that it depends on are initial_eq
     let cond1 = HS.null inputDeps
-        writtenMIs = (threadWriteMap HM.! w) `IS.intersection` miThreadIds
+        writtenMIs = hmGetEmpty w threadWriteMap `IS.intersection` miThreadIds
         cond2 = IS.null writtenMIs
         missingRegs = requiredRegs `HS.difference` allInitialEquals
         cond3 = HS.null missingRegs
@@ -949,7 +948,7 @@ autoInitialEqualWire m v = do
               miPorts = HM.toList moduleInstancePorts
               miOutputLookup o = fst $ find' (eqVarName o . snd) miPorts
               miInputLookup i  = snd $ find' ((== i) . fst) miPorts
-          miModule <- asks (HM.! moduleInstanceType)
+          miModule <- asks (hmGet 12 moduleInstanceType)
           res' <- autoInitialEqualWire miModule (miOutputLookup v)
           case res' of
             Nothing -> return Nothing
@@ -992,7 +991,7 @@ computeRegistersReadBy Module{..} ModuleSummary{..} inputs wireName =
       SQ.Empty    -> (inputDeps, rs)
       w SQ.:<| ws ->
         let writtenNodes =
-              G.pre variableDependencies (variableDependencyNodeMap HM.! w)
+              G.pre variableDependencies (hmGet 13 w variableDependencyNodeMap)
             (rs', newWrittenWires) =
               foldl'
               (\acc writtenNode ->
@@ -1019,23 +1018,6 @@ computeRegistersReadBy Module{..} ModuleSummary{..} inputs wireName =
       foldl' (\rs -> \case
                  Register{..} -> HS.insert variableName rs
                  Wire{} -> rs) mempty variables
-
-getUpdatedVariables :: G r => TI -> Sem r Ids
-getUpdatedVariables = \case
-  AB ab -> go $ abStmt ab
-  MI mi@ModuleInstance{..} -> do
-    (_, writtenVars) <-
-      moduleInstanceReadsAndWrites
-      <$> asks (hmGet 5 moduleInstanceType)
-      <*> getClocks moduleInstanceType
-      <*> return mi
-    return writtenVars
-  where
-    go = \case
-      Block {..}      -> mfoldM go blockStmts
-      Assignment {..} -> return . HS.singleton $ varName assignmentLhs
-      IfStmt {..}     -> mfoldM go [ifStmtThen, ifStmtElse]
-      Skip {..}       -> return mempty
 
 
 toSubs :: Id                    -- ^ module name
@@ -1113,15 +1095,3 @@ throw = PE.throw . IE VCGen
 
 getCurrentClocks :: FDM r => Sem r Ids
 getCurrentClocks = asks moduleName >>= getClocks
-
-hmGet :: (Show k, Show v, Eq k, Hashable k)
-      => Int -> k -> HM.HashMap k v -> v
-hmGet n k m =
-  case HM.lookup k m of
-    Nothing ->
-      error $ unlines [ "hashmap"
-                      , show m
-                      , "key " ++ show k
-                      , "no " ++ show n
-                      ]
-    Just v -> v

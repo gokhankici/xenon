@@ -17,7 +17,7 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IRParser
 import           Iodine.Language.PrologParser
 import           Iodine.Pipeline
-import           Iodine.Transform.Query (FInfo)
+import           Iodine.Transform.Fixpoint.Query (FInfo)
 import           Iodine.Types
 
 import qualified Control.Exception as E
