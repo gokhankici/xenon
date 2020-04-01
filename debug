@@ -11,9 +11,9 @@ cd "${0:A:h}"
 # TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/472-mips-pipelined/neg-mux3_test_02.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
-# TEST="benchmarks/crypto_cores/tiny_aes/trunk/rtl/aes_256.v"
+TEST="benchmarks/crypto_cores/tiny_aes/trunk/rtl/aes_256.v"
 # TEST="benchmarks/fpu/verilog/fpu.v"
-TEST="benchmarks/xcrypto-ref/rtl/coprocessor/mult_test.v"
+# TEST="benchmarks/xcrypto-ref/rtl/coprocessor/mult_test.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/scarv_cop_palu.v"
 # TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="examples/verilog/stall.v"
@@ -23,7 +23,7 @@ TEST="benchmarks/xcrypto-ref/rtl/coprocessor/mult_test.v"
 # TEST="test/verilog/pos/nb-test-01.v"
 # TEST="test/verilog/pos/submodule-02.v"
 # TEST="test/verilog/pos/tr-submodule-01.v"
-# TEST="test/verilog/pos/tr-test-9.v"
+# TEST="test/verilog/pos/tr-test-12.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
@@ -31,9 +31,9 @@ TEST_NAME="${TEST:t:r}"
 TEST_FILE="${TEST_DIR}/${TEST_NAME}.v"
 
 if [ -z "${FIXED}" ]; then
-	TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
+        TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
 else
-	TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
+        TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
 fi
 
 # TEST_ANNOT="${TEST_DIR}/annot-neg-mem32_test_03.json"
@@ -41,4 +41,4 @@ fi
 # nvim "${TEST_ANNOT}"; exit 0
 
 ./iodine --build ${PROFILE} && \
-	./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose ${VCGEN} $@
+        ./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose ${VCGEN} $@

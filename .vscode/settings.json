@@ -1,5 +1,9 @@
 {
     "files.watcherExclude": {
         "**/.stack-work/**": true
-    }
+    },
+    "ghcSimple.replCommand": "stack --no-terminal --color never repl --no-load iodine:lib iodine:test:iodine-test",
+    "ghcSimple.replScope": "workspace",
+    "ghcSimple.feature.rangeType": false,
+    "ghcSimple.feature.inlineRepl": false
 }

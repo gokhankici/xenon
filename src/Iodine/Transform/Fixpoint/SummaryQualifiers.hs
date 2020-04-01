@@ -13,6 +13,7 @@ module Iodine.Transform.Fixpoint.SummaryQualifiers
 
 import           Iodine.Analyze.DependencyGraph
 import           Iodine.Analyze.ModuleSummary
+import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Horn
@@ -34,6 +35,7 @@ import qualified Language.Fixpoint.Types as FT
 import           Polysemy
 import           Polysemy.Reader
 import           Polysemy.State
+import qualified Polysemy.Trace as PT
 
 -- -----------------------------------------------------------------------------
 -- Summaries for combinatorial modules
@@ -127,14 +129,21 @@ addSummaryQualifiersM m@Module{..} = do
   valEqMap <- summaryQualifierVariablesM m
   for_ (HM.toList portDeps) $ \(o, is) -> do
     let inputList = HS.toList is
-        valEqList = toList $ valEqMap HM.! o
-        name   = namePrefix <> "_" <> T.unpack o
-        qs     = [ mkSummaryQualifierHelper m moduleName (name <> "_Tag")
-                   inputList valEqList o Tag
-                 , mkSummaryQualifierHelper m moduleName (name <> "_Value")
-                   mempty inputList o Value
-                 ]
-    for_ qs addQualifier
+        valEqSeq  = toSequence $ valEqMap HM.! o
+        name      = namePrefix <> "_" <> T.unpack o
+    -- addQualifier $
+    --   mkSummaryQualifierHelper m moduleName (name <> "_Tag")
+    --   inputList valEqList o Tag
+    flip SQ.traverseWithIndex (powerset valEqSeq) $ \n vsSeq -> do
+      let valEqList = toList vsSeq
+          name'     = name <> "_Tag" <> show n
+      addQualifier $
+        mkSummaryQualifierHelper m moduleName name'
+        inputList valEqList o Tag
+
+    addQualifier $
+      mkSummaryQualifierHelper m moduleName (name <> "_Value")
+      mempty inputList o Value
   where
     namePrefix =
       "SummaryQualifierM_"
@@ -200,10 +209,9 @@ summaryQualifierVariablesM Module{..} = do
 addSummaryQualifiersAB :: FD r => Id -> AlwaysBlock Int -> Sem r ()
 addSummaryQualifiersAB moduleName ab = do
   sqvs <-
-    summaryQualifierVariablesAB moduleName
+    summaryQualifierVariablesAB moduleName ab
     & execState mempty
-  abVars <- getUpdatedVariables (AB ab)
-  for_ (filter ((`elem` abVars) . fst) $ HM.toList sqvs) $ \(v, qds) -> do
+  for_ (HM.toList sqvs) $ \(v, qds) -> do
     trace "addSummaryQualifiersAB" (getThreadId ab, v, qds)
     let evs    = qds ^. explicitVars
         ivs    = qds ^. implicitVars
@@ -213,6 +221,8 @@ addSummaryQualifiersAB moduleName ab = do
                allEqs mempty v Tag
              , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Tag2")
                allEqs valEqs v Tag
+             , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Tag3")
+               allEqs allEqs v Tag
              , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Value")
                mempty allEqs v Value
              ]
@@ -227,24 +237,57 @@ addSummaryQualifiersAB moduleName ab = do
 type QDM = HM.HashMap Id QualifierDependencies
 
 summaryQualifierVariablesAB :: Members '[ Reader SummaryMap
+                                        , Reader (HM.HashMap Id (Module Int))
+                                        , Reader AnnotationFile
                                         , State QDM
+                                        , PT.Trace
                                         ] r
                             => Id -- ^ module name
+                            -> AlwaysBlock Int
                             -> Sem r ()
-summaryQualifierVariablesAB moduleName = do
+summaryQualifierVariablesAB moduleName ab = do
   ModuleSummary{..} <- asks (hmGet 2 moduleName)
+  abVars <- getUpdatedVariables (AB ab)
+  let toNode v = variableDependencyNodeMap HM.! v
+      abNodes = toNode <$> HS.toList abVars
   let toVar n = invVariableDependencyNodeMap IM.! n
-  for_ (G.nodes variableDependencies) $ \v -> do
-    let vName = toVar v
-    for_ (G.lpre variableDependencies v) $ \(u, l) -> do
-      let uName = toVar u
-          addParent =
-            case l of
-              Implicit   -> implicitVars %~ HS.insert uName
-              Explicit _ -> explicitVars %~ HS.insert uName
-      unless (v == u) $ do
-        oldQD <- fromMaybe mempty <$> gets (^.at vName)
-        modify (at vName ?~ addParent oldQD)
+      addParent l uName =
+        case l of
+          Implicit   -> implicitVars %~ HS.insert uName
+          Explicit _ -> explicitVars %~ HS.insert uName
+  if isStar ab
+    then
+    for_ abNodes $ \v -> do
+      let vName = toVar v
+      for_ (G.lpre variableDependencies v) $ \(u, l) -> do
+        let uName = toVar u
+        unless (v == u) $ do
+          oldQD <- fromMaybe mempty <$> gets (^.at vName)
+          modify (at vName ?~ addParent l uName oldQD)
+    else do
+    let (g, _toSCCNodeMap) = sccGraph variableDependencies
+        toVars n = case fst $ G.match n g of
+                     Just (_, _, is, _) -> IS.toList is
+                     Nothing -> error "unreachable"
+    for_ (G.topsort g) $ \sccV ->
+      for_ (toVars sccV) $ \v -> do
+        let vName = toVar v
+        for_ (G.lpre g sccV) $ \(sccU, l) ->
+          for_ (toVars sccU) $ \u -> do
+          -- if variableDependencies `G.hasLEdge` (u, v, l)
+          let uName = toVar u
+          mUQD <- gets (^.at uName)
+          oldQD <- fromMaybe mempty <$> gets (^.at vName)
+          case (mUQD, l) of
+            (Nothing, _) ->
+              modify (at vName ?~ addParent l uName oldQD)
+            (Just uQD, Implicit) -> do
+              let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
+                  newQD = oldQD & implicitVars %~ mappend uQDVars
+              modify (at vName ?~ newQD)
+            (Just uQD, Explicit _) ->
+              modify (at vName ?~ oldQD <> uQD)
+    modify (HM.filterWithKey (\k _ -> k `elem` abVars))
 
 
 -- | given a list of input ports i1, i2, ... creates a qualifier of the form:
@@ -299,3 +342,32 @@ mkSummaryQualifierHelper kv moduleName qualifierName inputs valEqInputs output r
       setThreadId kv $ HVar0 v moduleName t r
     bt = FT.boolSort
     it = FT.intSort
+
+-- | Creates a scc graph where the each node corresponds to a strongly connected
+-- component of the original graph. There's an edge between scc_i & scc_j if
+-- there was an edge (u,v) in the original graph where (u \in scc_i) and (v \in
+-- scc_j). The new graph does not contain any loop, including self loops. In the
+-- new graph, node labels are the set of nodes that form the corresponding scc.
+sccGraph :: Eq b
+         => G.Gr a b
+         -> (G.Gr IS.IntSet b, IM.IntMap Int)
+sccGraph g = (g2, toSCCNodeMap)
+  where
+    g2 =
+      foldl'
+      (\acc_g (n1, n2, b) ->
+         let n1' = toSCCNode n1
+             n2' = toSCCNode n2
+         in if n1' /= n2'
+            then insEdge (n1', n2', b) acc_g
+            else acc_g)
+      g1 (G.labEdges g)
+    toSCCNode = (toSCCNodeMap IM.!)
+    (g1, toSCCNodeMap) =
+      foldl' update (G.empty, IM.empty) (G.scc g)
+    update (acc_g, acc_m) = \case
+      scc@(sccNode:_) ->
+        let g'  = G.insNode (sccNode, IS.fromList scc) acc_g
+            m'  = foldl' (\m n -> IM.insert n sccNode m) acc_m scc
+        in (g', m')
+      [] -> error "unreachable"

@@ -6,7 +6,10 @@
 {-# LANGUAGE GADTs #-}
 
 
-module Iodine.Pipeline (pipeline) where
+module Iodine.Pipeline
+  ( pipeline
+  , normalizeIR
+  ) where
 
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
@@ -27,7 +30,21 @@ import           Polysemy.Error
 import           Polysemy.Output
 import           Polysemy.Reader
 import           Polysemy.Trace
-import           Text.Printf
+
+normalizeIR
+  :: Members '[Error IodineException, Trace, Output String] r
+  => AnnotationFile             -- ^ annotation file
+  -> Sem r (L (Module ()))      -- ^ ir parser
+  -> Sem r (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
+normalizeIR af irReader = do
+  (af', ir) <- variableRename af . assignThreadIds <$> irReader
+  let irMap = mkModuleMap ir
+  normalizedOutput <- runReader af' $ do
+    sanityCheck
+      & runReader ir
+      & runReader irMap
+    (merge ir & runReader irMap) >>= normalize
+  return (af', normalizedOutput)
 
 
 {- |
@@ -44,36 +61,15 @@ pipeline
   -> Sem r (L (Module ()))      -- ^ ir parser
   -> Sem r FInfo                -- ^ fixpoint query to run
 pipeline af irReader = do
-  (af', ir) <- variableRename af . assignThreadIds <$> irReader
-  let irMap = mkModuleMap ir
-
+  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader
   runReader af' $ do
-    sanityCheck
-      & runReader ir
-      & runReader irMap
-
-    ssaOutput@(normalizedIR, _) <-
-      (merge ir & runReader irMap)
-      >>= normalize
-
-    traceResult "Normalized IR" normalizedIR
-
     let normalizedIRMap = mkModuleMap normalizedIR
     moduleSummaries <- createModuleSummaries normalizedIRMap
-
-    (vcgen ssaOutput >>= constructQuery normalizedIR)
+    (vcgen normalizedOutput >>= constructQuery normalizedIR)
       & runReader moduleSummaries
       & runReader normalizedIRMap
-  where
-    mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
-    mkModuleMap =
-      foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty
 
-traceResult :: (Member Trace r, Show a) => String -> L a -> Sem r ()
-traceResult t l = do
-  trace (printf "=== %s ===" t)
-  traverse_ (trace . toStr) l
-  trace sep
-  where
-    toStr a = show a ++ "\n"
-    sep = replicate 80 '-'
+
+mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
+mkModuleMap =
+  foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty

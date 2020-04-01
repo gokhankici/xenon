@@ -40,7 +40,7 @@ import qualified Polysemy.Trace as PT
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type SummaryMap  = HM.HashMap Id ModuleSummary
-type TDGraph     = G.Gr () () -- | thread dependency graph
+type TDGraph     = G.Gr () () -- ^ thread dependency graph
 type Error       = PE.Error IodineException
 
 data ModuleSummary =
@@ -282,9 +282,9 @@ getAllDependencies' fromThreadId = do
 -- | returns the variables that are read from before written to in the given
 -- statement
 readBeforeWrittenTo :: AlwaysBlock Int -> Ids -> Ids
-readBeforeWrittenTo ab initialWrittenVars
-  | isStar ab = readBeforeWrittenSet
-  | otherwise = error "this function should be called with a star block"
+readBeforeWrittenTo ab initialWrittenVars = readBeforeWrittenSet
+  -- -- | isStar ab = readBeforeWrittenSet
+  -- -- | otherwise = error "this function should be called with a star block"
   where
     stmt = abStmt ab
 

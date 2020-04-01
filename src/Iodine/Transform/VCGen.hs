@@ -137,10 +137,13 @@ vcgenMod m@Module {..} = do
   setHornVariables m $ getVariables m `HS.difference` mClks
 
   -- set each thread's horn variables
-  -- isTop <- isTopModule' m
-  for_ alwaysBlocks $ \ab ->
-    setHornVariables ab $
-    getVariables ab -- <> if isTop then mempty else moduleInputs m mClks
+  isTop <- isTopModule' m
+  for_ alwaysBlocks $ \ab -> do
+    let abVars = getVariables ab
+        hVars = if isTop || isStar ab
+                then abVars
+                else abVars <> moduleInputs m mClks
+    setHornVariables ab hVars
 
   runReader m $ runReader threadMap $ do
     threadStMap :: IM.IntMap ThreadSt <-
@@ -208,23 +211,28 @@ initialize ab = do
   -- these variables should stay as free variables
   srcs <- moduleInputs currentModule <$> getClocks currentModuleName
   let readOnlyVars = getReadOnlyVariables stmt <> srcs
+      readBeforeWrittenVars =
+        readBeforeWrittenTo ab mempty
   let (zeroTagVars, valEqVars, extraSubs) =
         if   isTop
         then (tagEqVars0, valEqVars0, mempty)
         else
           let ct = if   isStar ab
-                   then readBeforeWrittenTo ab mempty
+                   then readBeforeWrittenVars
                    else tagEqVars0 `HS.difference` readOnlyVars
               ie = valEqVars0 `HS.difference` readOnlyVars
-              es = if isStar ab
-                   then foldMap
-                        (\v -> sti2 <$> mkAllSubs v currentModuleName 0 1)
-                        readOnlyVars
-                   else mempty
+              es = foldMap
+                   (\v -> sti2 <$> mkAllSubs v currentModuleName 0 1)
+                   readOnlyVars
           in (ct, ie, es)
 
   let tagSubs = sti2 <$> foldl' (mkZeroTags currentModuleName) mempty zeroTagVars
       valSubs = sti2 <$> foldl' (valEquals currentModuleName) mempty valEqVars
+
+  let unsanitizedStateVars = readBeforeWrittenVars `HS.difference` valEqVars
+  unless (HS.null unsanitizedStateVars) $
+    PO.output $
+    "Variables read before written & not sanitized: " ++ show (toList unsanitizedStateVars)
 
   trace "initialize" (currentModuleName, getThreadId ab, isTop, isStar ab)
   trace "initialize - zero" (toList zeroTagVars)
@@ -389,9 +397,15 @@ srcTagReset ab = withTopModule $ do
       foldl' (\es (v, m) -> es <> (mkEqual <$> mkAllSubs v m n 0)) mempty
 
 -- -------------------------------------------------------------------------------------------------
-next :: FDS r => AlwaysBlock Int -> Sem r H
+next, nextCommon, nextSubClock :: FDS r => AlwaysBlock Int -> Sem r H
 -- -------------------------------------------------------------------------------------------------
-next ab@AlwaysBlock{..} = do
+next ab = do
+  isTop <- isTopModule
+  if isStar ab || isTop
+    then nextCommon ab
+    else nextSubClock ab
+
+nextCommon ab@AlwaysBlock{..} = do
   Module {..} <- ask
   initialSubs <-
     foldMap (\v -> second sti <$> mkAllSubs v moduleName 0 1)
@@ -412,6 +426,41 @@ next ab@AlwaysBlock{..} = do
     sti = setThreadId ab
     uvi = updateVarIndex (+ 1)
 
+nextSubClock ab@AlwaysBlock{..} = do
+  m@Module{..} <- ask
+  ms :: ModuleSummary <- asks (hmGet 9 moduleName)
+  depThreadIds <- IS.delete (getData ab) <$> getAllDependencies (AB ab) & runReader ms
+  -- srcs <- moduleInputs m <$> getClocks moduleName
+  -- hornVars <- getHornVariables ab
+  -- let abReadOnlyVars = getReadOnlyVariables abStmt
+  --     extraSrcs     = srcs `HS.difference` abReadOnlyVars
+      -- readOnlyVars  = abReadOnlyVars <> extraSrcs
+  --     writtenVars   = hornVars `HS.difference` readOnlyVars
+  -- trace "nextSubClock" (getThreadId ab, toList writtenVars)
+  depThreadInstances <-
+    for (IS.foldl' (|>) SQ.empty depThreadIds) $ \depThreadId -> do
+    depThread <- asks (IM.! depThreadId)
+    case depThread of
+      AB depAB -> instantiateAB depAB mempty
+      MI depMI -> instantiateMI depMI
+  let sti  = setThreadId m
+      uvi1 = updateVarIndex (+ 1)
+      tr   = uvi1 $ sti $ transitionRelation abStmt
+  abNext <- HM.map (+ 1) <$> getNextVars ab
+  (body, hd) <- interferenceReaderExpr ab mempty abNext
+  let subs = case hd of
+               KVar _ s -> s
+               _ -> error "unreachable"
+  -- let extraSrcSubs =
+  --       foldMap (\v -> second sti <$> mkAllSubs v moduleName 0 1) extraSrcs
+  return $
+    -- Horn { hornHead   = makeKVar ab $ extraSrcSubs <> subs
+    Horn { hornHead   = makeKVar ab subs
+         , hornBody   = HAnd $ depThreadInstances <> body |> tr
+         , hornType   = Next
+         , hornStmtId = getThreadId ab
+         , hornData   = ()
+         }
 
 -- -------------------------------------------------------------------------------------------------
 sinkCheck :: FDS r => TI -> Sem r Horns

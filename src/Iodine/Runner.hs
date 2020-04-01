@@ -24,13 +24,15 @@ import qualified Control.Exception as E
 import           Control.Lens (view)
 import           Control.Monad
 import qualified Data.ByteString.Lazy as B
+import           Data.Foldable
 import           Data.Function
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import qualified Language.Fixpoint.Misc as FM
 import qualified Language.Fixpoint.Solver as F
 import qualified Language.Fixpoint.Types as FT
-import qualified Language.Fixpoint.Types.Constraints as FCons
 import qualified Language.Fixpoint.Types.Config as FC
+import qualified Language.Fixpoint.Types.Constraints as FCons
 import           Polysemy hiding (run)
 import           Polysemy.Error
 import           Polysemy.Output
@@ -41,6 +43,7 @@ import           System.Exit
 import           System.FilePath
 import           System.IO
 import           System.Process
+import           Text.PrettyPrint.HughesPJ (render)
 -- import           Data.ByteString.Builder
 
 
@@ -130,19 +133,25 @@ checkIR :: (IodineArgs, AnnotationFile) -> IO Bool
 checkIR (IodineArgs{..}, af)
   | printIR = do
       irFileContents <- readIRFile fileName
-      putStrLn irFileContents
-      result <- parse (fileName, irFileContents)
-                & errorToIOFinal
-                & runFinal
-      case result of
-        Right parsedIR -> forM_ parsedIR print >> return True
-        Left e         -> errorHandle e
+      mNormalizedOutput <-
+        normalizeIR af (parse (fileName, irFileContents))
+        & handleTrace
+        & errorToIOFinal
+        & runOutputSem (embed . hPutStrLn stderr)
+        & embedToFinal
+        & runFinal
+      case mNormalizedOutput of
+        Right (_, (normalizedIR, _)) -> printList normalizedIR
+        Left e      -> errorHandle e
+      return True
   | onlyVCGen = do computeFInfo >>= FCons.saveQuery config
                    exitSuccess
   | otherwise = do
       finfo <- computeFInfo
       result <- F.solve config finfo
-      -- putStrLn $ show result
+      let stat = FT.resStatus result
+          statStr = render . FT.resultDoc
+      FM.colorStrLn (FT.colorResult stat) (statStr stat)
       let safe = FT.isSafe result
       unless noFPOutput $
         (readFile fqoutFile >>= putStrLn) `E.catch` (\(_ :: E.IOException) -> return ())
@@ -181,6 +190,15 @@ checkIR (IodineArgs{..}, af)
       in dir </> ".liquid" </> (base <.> "fqout")
 
 
+printList :: Show a => L a -> IO ()
+printList l = do
+  traverse_ (putStrLn . toStr) l
+  putStrLn  sep
+  where
+    toStr a = show a ++ "\n"
+    sep = replicate 80 '-'
+
+
 readIRFile :: String -> IO String
 readIRFile fileName = do
   fileContents <- TIO.readFile fileName
@@ -194,4 +212,3 @@ readIRFile fileName = do
 
 errorHandle :: IodineException -> IO a
 errorHandle = E.throwIO
-

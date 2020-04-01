@@ -85,6 +85,7 @@ simple = mkCollection "simple" $ ts ++ [t']
       , "submodule-02"
       , "submodule-03"
       , "submodule-04"
+      , "tr-test-12"
       ]
 
 
