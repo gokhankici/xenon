@@ -368,6 +368,7 @@ module S (clk, in, out);
     8'hfd: out <= 8'h54;
     8'hfe: out <= 8'hbb;
     8'hff: out <= 8'h16;
+    default: out <= 0; // unreachable
     endcase
 endmodule
 
@@ -635,5 +636,6 @@ module xS (clk, in, out);
     8'hfd: out <= 8'ha8;
     8'hfe: out <= 8'h6d;
     8'hff: out <= 8'h2c;
+    default: out <= 0; // unreachable
     endcase
 endmodule

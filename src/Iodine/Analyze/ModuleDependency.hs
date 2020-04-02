@@ -23,6 +23,7 @@ import           Data.Graph.Inductive.PatriciaTree (Gr)
 import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
+import           Data.Maybe
 import           Polysemy
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
@@ -46,12 +47,21 @@ makeLenses ''St
 Sort the given modules such that if a module m1 depends on m2, m2 appears
 earlier than m1 in the result.
 -}
-topsortModules :: Foldable t => t (Module a) -> L (Module a)
-topsortModules modules =
+topsortModules :: Foldable t => Id -> t (Module a) -> L (Module a)
+topsortModules topModuleName modules =
   foldl' (\ms n -> ms |> moduleNameMap HM.! (moduleNodes IM.! n)) mempty ts
   where
-    ts = GQ.topsort g
+    ts = GQ.topsort filteredG
+    topModuleNode =
+      fromJust $
+      IM.foldlWithKey'
+      (\acc n mn -> if mn == topModuleName then Just n else acc)
+      Nothing
+      moduleNodes
     (g, moduleNodes) = usedByGraph modules
+    filteredG = G.nfilter reachesTopModule g
+    reachesTopModule n =
+      topModuleNode `elem` G.reachable n g
     -- (_g, moduleNodes) = usedByGraph modules
     -- g = DT.trace (printGraph _g (T.unpack . (moduleNodes IM.!))) _g
     moduleNameMap =

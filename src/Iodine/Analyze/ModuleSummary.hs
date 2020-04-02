@@ -15,7 +15,6 @@ module Iodine.Analyze.ModuleSummary
 where
 
 import           Iodine.Analyze.DependencyGraph hiding (getNode)
-import           Iodine.Analyze.ModuleDependency
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
@@ -85,16 +84,16 @@ Create a summary for each given module
 createModuleSummaries :: Members '[ Reader AnnotationFile
                                   , PT.Trace
                                   , Error ] r
-                      => ModuleMap -> Sem r SummaryMap
-createModuleSummaries moduleMap =
+                      => L (Module Int) -- ^ modules (filtered & topologically sorted)
+                      -> ModuleMap      -- ^ same modules, in a hash map
+                      -> Sem r SummaryMap
+createModuleSummaries orderedModules moduleMap =
   -- trace "ordered modules" (moduleName <$> orderedModules)
   for_ orderedModules (\m@Module{..} ->
                           createModuleSummary m >>= (modify . HM.insert moduleName))
     & runReader moduleMap
     & runState @SummaryMap mempty
     & fmap fst
-  where
-    orderedModules = topsortModules moduleMap
 
 
 createModuleSummary :: Members '[ Reader AnnotationFile

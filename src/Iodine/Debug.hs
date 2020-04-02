@@ -13,8 +13,9 @@ module Iodine.Debug where
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.IodineArgs
 import           Iodine.Language.Annotation
-import           Iodine.Language.IR
+import           Iodine.Language.IR as IR
 import           Iodine.Language.IRParser
+import           Iodine.Pipeline (normalizeIR)
 import           Iodine.Runner (generateIR, readIRFile)
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
@@ -160,15 +161,11 @@ type D r = ( G r
 
 debugPipeline :: G r => AnnotationFile -> Sem r (L (Module ())) -> Sem r ()
 debugPipeline af irReader = do
-  (af', ir) <- variableRename af . assignThreadIds <$> irReader
-  let irMap = mkModuleMap ir
+  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader
   runReader af' $ do
-    ssaOutput@(normalizedIR, _) <-
-      (merge ir & runReader irMap)
-      >>= normalize
-    let normalizedIRMap = mkModuleMap normalizedIR
-    moduleSummaries <- createModuleSummaries normalizedIRMap
-    (vcgen ssaOutput >> debug)
+    let normalizedIRMap = mkMap IR.moduleName normalizedIR
+    moduleSummaries <- createModuleSummaries normalizedIR normalizedIRMap
+    (vcgen normalizedOutput >> debug)
       & runReader moduleSummaries
       & runReader normalizedIRMap
 
@@ -212,10 +209,6 @@ commonAnnotationFile verilogFile =
   parentDir </> ("annot-" ++ name -<.> "json")
   where
     (parentDir, name) = splitFileName verilogFile
-
-mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
-mkModuleMap =
-  foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty
 
 (!) :: (Eq k, Hashable k, Show k)
     => HM.HashMap k v -> k -> v

@@ -52,6 +52,7 @@ allTests =
   , mips
   , abduction
   , majorStubs
+  , aesStubs
   , major
   ]
 
@@ -181,6 +182,17 @@ majorStubs = mkCollection "major-stub" ts
     aluDir = b </> "xcrypto-ref" </> "rtl" </> "coprocessor"
     ts = [ T "sha_stub_3" $ shaDir </> "sha256_stub_3.v"
          , T "mult_test"  $ aluDir </> "mult_test.v"
+         ]
+
+
+--------------------------------------------------------------------------------
+aesStubs :: TestTree
+--------------------------------------------------------------------------------
+aesStubs = mkCollection "aes-stub" ts
+  where
+    d = benchmarkDir </> "crypto_cores" </> "tiny_aes" </> "trunk" </> "rtl"
+    ts = [ T "test1" $ d </> "test1.v"
+         , T "test2" $ d </> "test2.v"
          ]
 
 

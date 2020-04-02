@@ -91,7 +91,7 @@ module final_round (clk, state_in, key_in, state_out);
     //     S4_3 (clk, s2, {p20, p21, p22, p23}),
     //     S4_4 (clk, s3, {p30, p31, p32, p33});
 
-	wire [27:0] x,y,z,t;
+	wire [31:0] x,y,z,t;
 
 	assign p00 = x[ 7: 0];
 	assign p01 = x[15: 8];

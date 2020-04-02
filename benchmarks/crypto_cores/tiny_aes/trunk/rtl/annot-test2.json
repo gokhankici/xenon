@@ -1,0 +1,42 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "state_in",
+          "key"
+        ],
+        "sink": [
+          "out"
+        ]
+      },
+      "clock": "clk"
+    },
+    "one_round": {
+      "clock": "clk"
+    },
+    "table_lookup": {
+      "clock": "clk"
+    },
+    "T": {
+      "clock": "clk"
+    },
+    "S": {
+      "annotations": {
+        "initial_eq": [
+          "out"
+        ]
+      },
+      "clock": "clk"
+    },
+    "xS": {
+      "annotations": {
+        "initial_eq": [
+          "out"
+        ]
+      },
+      "clock": "clk"
+    }
+  }
+}

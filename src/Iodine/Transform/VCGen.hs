@@ -232,7 +232,8 @@ initialize ab = do
   let unsanitizedStateVars = readBeforeWrittenVars `HS.difference` valEqVars
   unless (HS.null unsanitizedStateVars) $
     PO.output $
-    "Variables read before written & not sanitized: " ++ show (toList unsanitizedStateVars)
+    "Variables read before written & not sanitized: "
+    ++ show (currentModuleName, toList unsanitizedStateVars)
 
   trace "initialize" (currentModuleName, getThreadId ab, isTop, isStar ab)
   trace "initialize - zero" (toList zeroTagVars)

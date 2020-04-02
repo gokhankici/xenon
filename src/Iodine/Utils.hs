@@ -146,3 +146,9 @@ hmGet n k m =
 
 hmGetEmpty :: (Eq k, Hashable k, Monoid v) => k -> HM.HashMap k v -> v
 hmGetEmpty k m = fromMaybe mempty $ HM.lookup k m
+
+mkMap :: (Foldable t, Hashable k, Eq k)
+      => (a -> k)
+      -> t a
+      -> HM.HashMap k a
+mkMap toKey = foldl' (\acc a -> HM.insert (toKey a) a acc) mempty

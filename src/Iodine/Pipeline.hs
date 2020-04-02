@@ -1,7 +1,5 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 
@@ -11,6 +9,7 @@ module Iodine.Pipeline
   , normalizeIR
   ) where
 
+import           Iodine.Analyze.ModuleDependency (topsortModules)
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
@@ -21,9 +20,9 @@ import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
 import           Iodine.Transform.VariableRename
 import           Iodine.Types
+import           Iodine.Utils
 
-import           Data.Foldable
-import           Data.Function
+import           Control.Lens
 import qualified Data.HashMap.Strict as HM
 import           Polysemy
 import           Polysemy.Error
@@ -37,8 +36,10 @@ normalizeIR
   -> Sem r (L (Module ()))      -- ^ ir parser
   -> Sem r (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
 normalizeIR af irReader = do
-  (af', ir) <- variableRename af . assignThreadIds <$> irReader
-  let irMap = mkModuleMap ir
+  (af', allIR) <- variableRename af . assignThreadIds <$> irReader
+  let topModuleName = af' ^. afTopModule
+      ir            = topsortModules topModuleName allIR
+      irMap         = mkModuleMap ir
   normalizedOutput <- runReader af' $ do
     sanityCheck
       & runReader ir
@@ -64,12 +65,11 @@ pipeline af irReader = do
   (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader
   runReader af' $ do
     let normalizedIRMap = mkModuleMap normalizedIR
-    moduleSummaries <- createModuleSummaries normalizedIRMap
+    moduleSummaries <- createModuleSummaries normalizedIR normalizedIRMap
     (vcgen normalizedOutput >>= constructQuery normalizedIR)
       & runReader moduleSummaries
       & runReader normalizedIRMap
 
 
 mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
-mkModuleMap =
-  foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty
+mkModuleMap = mkMap moduleName
