@@ -6,14 +6,16 @@ module Iodine.IodineArgs
   , defaultIodineArgs
   , parseArgs
   , parseArgsWithError
+  , defaultAnnotFile
   ) where
 
 import Control.Monad
+import Data.List
 import System.Console.CmdArgs.Explicit
 import System.Console.CmdArgs.Text
 import System.Console.CmdArgs.Verbosity
 import System.Exit
-import Data.List
+import System.FilePath
 
 -- import System.Environment
 
@@ -152,3 +154,10 @@ printHelp = do
     showText tf $
     helpText iodineHelpText hf iodineMode
   exitSuccess
+
+defaultAnnotFile :: FilePath -> FilePath
+defaultAnnotFile verilogFile =
+  let dir  = takeDirectory verilogFile
+      name = dropExtension $ takeBaseName verilogFile
+  in  dir </> "annot-" ++ name <.> "json"
+

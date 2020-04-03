@@ -450,7 +450,7 @@ moduleInputs, moduleOutputs :: Module a -> Ids -> Ids
       let v = variableName (portVariable p)
           notClk = v `notElem` mclks
       in if isInput p == check && notClk
-         then acc <> liftToMonoid v
+         then HS.insert v acc
          else acc
 
 moduleAllInputs :: Module a -> Ids

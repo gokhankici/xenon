@@ -23,19 +23,9 @@
       "clock": "clk"
     },
     "S": {
-      "annotations": {
-        "initial_eq": [
-          "out"
-        ]
-      },
       "clock": "clk"
     },
     "xS": {
-      "annotations": {
-        "initial_eq": [
-          "out"
-        ]
-      },
       "clock": "clk"
     }
   }

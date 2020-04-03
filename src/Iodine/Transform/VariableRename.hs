@@ -54,12 +54,15 @@ handleAnnotationFile af = do
 
 handleModuleAnnotations :: FD a r => Id -> ModuleAnnotations -> Sem r ModuleAnnotations
 handleModuleAnnotations moduleName ModuleAnnotations{..} = do
-  inputs <- asks (hmGet 1 moduleName . getModuleInputs)
-  runReader inputs $
-    ModuleAnnotations
-    <$> handleAnnotations _moduleAnnotations
-    <*> traverse handleQualifier _moduleQualifiers
-    <*> traverseSet fix _clocks
+  mInputs <- asks (HM.lookup moduleName . getModuleInputs)
+  case mInputs of
+    Nothing -> return ModuleAnnotations{..}
+    Just inputs ->
+      runReader inputs $
+      ModuleAnnotations
+      <$> handleAnnotations _moduleAnnotations
+      <*> traverse handleQualifier _moduleQualifiers
+      <*> traverseSet fix _clocks
 
 handleAnnotations :: FDM a r => Annotations -> Sem r Annotations
 handleAnnotations Annotations{..} =

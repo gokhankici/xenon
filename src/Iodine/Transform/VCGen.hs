@@ -1,6 +1,4 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
--- {-# OPTIONS_GHC -Wno-unused-top-binds #-}
--- {-# OPTIONS_GHC -Wno-unused-matches #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -15,11 +13,11 @@ module Iodine.Transform.VCGen
   , HornVariableMap
   , askHornVariables
   , isModuleSimple
-  , autoInitialEqualWire
-  , autoInitialEqualFailureMessage
+  , computeAllInitialEqualVars
   )
 where
 
+import           Iodine.Analyze.DependencyGraph (VarDepEdgeType)
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
@@ -48,7 +46,8 @@ import qualified Polysemy.Output as PO
 import           Polysemy.Reader
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
-import           Text.Printf
+-- import qualified Debug.Trace as DT
+-- import           Text.Printf
 
 -- | State relevant to statements
 data ThreadSt =
@@ -75,8 +74,12 @@ type G r = Members '[ Reader AnnotationFile
                     , PO.Output String
                     ] r
 
+type G' r = ( G r
+            , Members '[Reader InitialEqualVariables] r
+            )
+
 -- | vcgen state  = global effects + next var map
-type FD r  = ( G r
+type FD r  = ( G' r
              , Members '[ Reader NextVars
                         , State  HornVariableMap
                         ] r)
@@ -118,11 +121,13 @@ always have the same value.
 different always blocks are consistent under interference.
 -}
 vcgen :: G r => NormalizeOutput -> Sem r VCGenOutput
-vcgen (ssaIR, trNextVariables) =
-  combine vcgenMod ssaIR
-  & runReader (NextVars trNextVariables)
-  & runReader (moduleInstancesMap ssaIR)
-  & runState  (HornVariableMap mempty)
+vcgen (normalizedIR, trNextVariables) = do
+  ievs <- computeAllInitialEqualVars normalizedIR
+  combine vcgenMod normalizedIR
+    & runReader (InitialEqualVariables ievs)
+    & runReader (NextVars trNextVariables)
+    & runReader (moduleInstancesMap normalizedIR)
+    & runState  (HornVariableMap mempty)
 
 
 vcgenMod :: FD r => Module Int -> Sem r Horns
@@ -788,57 +793,23 @@ instantiateAllThreads = do
     <*> traverse instantiateMI (moduleInstances currentModule)
   return $ HAnd instances
 
--- debuggingConstraints :: FDM r => Sem r Horns
--- debuggingConstraints = do
---   currentModule <- ask
---   case SQ.filter ((== 3) . getData) (moduleInstances currentModule) of
---     mi SQ.:<| _ -> do
---       trace "mi" mi
---       targetModule <- asks (`hmGet` moduleInstanceType mi)
---       let tmName = moduleName targetModule
---       let sti = setThreadId targetModule
---       let srcEq = mkEqual $
---                   bimap sti sti
---                   ( HVar "in2" tmName 0 Tag LeftRun 0
---                   , HVar "in2" tmName 0 Tag RightRun 0
---                   )
---       let outEq = mkEqual $
---                   bimap sti sti
---                   ( HVar "out2" tmName 0 Tag LeftRun 0
---                   , HVar "out2" tmName 0 Tag RightRun 0
---                   )
---       return . SQ.singleton $
---         Horn { hornHead   = outEq
---              , hornBody   = HAnd $ srcEq |:> makeEmptyKVar targetModule
---              , hornType   = TagEqual
---              , hornStmtId = getThreadId targetModule
---              , hornData   = ()
---              }
---     _ -> return mempty
 
 -- -----------------------------------------------------------------------------
 -- Helper functions
 -- -----------------------------------------------------------------------------
 
-type TI = Thread Int
-
-type H = Horn ()
-
-type Horns = L H
-
-type VCGenOutput = (HornVariableMap, Horns)
-
-type Substitutions = HM.HashMap Id Int
-
-newtype NextVars = NextVars { _nextVars :: IM.IntMap Substitutions }
-
-type ModuleMap = HM.HashMap Id (Module Int)
-
+type TI                = Thread Int
+type H                 = Horn ()
+type Horns             = L H
+type VCGenOutput       = (HornVariableMap, Horns)
+type Substitutions     = HM.HashMap Id Int
+type ModuleMap         = HM.HashMap Id (Module Int)
 type ModuleInstanceMap = HM.HashMap Id (L (ModuleInstance Int))
+type ExprPair          = (HornExpr, HornExpr)
 
-type ExprPair = (HornExpr, HornExpr)
-
-newtype HornVariableMap = HornVariableMap { _getHornVariables :: IM.IntMap Ids }
+newtype NextVars              = NextVars { _nextVars :: IM.IntMap Substitutions }
+newtype HornVariableMap       = HornVariableMap { _getHornVariables :: IM.IntMap Ids }
+newtype InitialEqualVariables = InitialEqualVariables { getInitialEqualVariables :: HM.HashMap Id Ids }
 
 askHornVariables :: (Members '[Reader HornVariableMap] r, MakeKVar t) => t Int -> Sem r Ids
 askHornVariables t = (IM.! getThreadId t) <$> asks _getHornVariables
@@ -896,22 +867,12 @@ withAB t act = do
   act & runReader threadSt
 
 
-computeThreadStM :: G r => Module Int -> TI -> Sem r ThreadSt
+computeThreadStM :: G' r => Module Int -> TI -> Sem r ThreadSt
 computeThreadStM m@Module{..} thread = do
   as <- getAnnotations moduleName
   let filterAs l = HS.intersection (as ^. l) vs
   wvs <- getUpdatedVariables thread
-  extraInitEquals <-
-    case thread of
-      AB _ ->
-        mfoldM (\w -> do check <- autoInitialEqualWire m w
-                         for_ check
-                           (PT.trace . autoInitialEqualFailureMessage moduleName w)
-                         return $
-                           if isNothing check
-                           then liftToMonoid w
-                           else mempty) currentWires
-      _ -> return mempty
+  extraInitEquals <- asks (hmGet 15 moduleName . getInitialEqualVariables)
   unless (HS.null extraInitEquals) $
     trace
     ("automatically added initial_equal annotations for wires of #" ++ show (getData thread))
@@ -933,140 +894,138 @@ computeThreadStM m@Module{..} thread = do
   where
     vs = getVariables thread
     inputs = moduleAllInputs m
-    currentWires =
-      foldl'
-      (\ws -> \case
-          Wire{..} ->
-            if   variableName `elem` vs && variableName `notElem` inputs
-            then ws SQ.|> variableName
-            else ws
-          Register{} -> ws
-      ) mempty variables
 
 
-data AutoInitialEqualFailure =
-    DependsOnInputs         Ids
-  | WrittenByModuleInstance IS.IntSet
-  | MissingRegisters        Ids
-  deriving (Show)
+data FDEQReadSt = FDEQReadSt
+  { sccG      :: G.Gr IS.IntSet VarDepEdgeType
+  , sccNodes  :: IM.IntMap Int
+  , mInputs   :: Ids
+  , mRegs     :: Ids
+  , ms        :: ModuleSummary
+  , m         :: Module Int
+  }
 
--- | check whether we should assume automatically that the wire is initially
--- equal (through the annotations of other variables)
-autoInitialEqualWireSimple :: G r => Module Int -> Id -> Sem r (Maybe AutoInitialEqualFailure)
-autoInitialEqualWireSimple m@Module{..} v = do
-  as <- getAnnotations moduleName
-  let allInitialEquals = HS.union (as ^. initialEquals) (as ^. alwaysEquals)
-  if Wire v `elem` variables
-    then do
-    let w = v
-    ms@ModuleSummary{..} <- asks (hmGet 10 moduleName)
-    let (inputDeps, requiredRegs) = computeRegistersReadBy m ms inputs w
-        -- assume the wire is initial_eq if
-        -- 1. the wire does not depend on module inputs
-        -- 2. it's not a module instance output
-        -- 3. all registers that it depends on are initial_eq
-    let cond1 = HS.null inputDeps
-        writtenMIs = hmGetEmpty w threadWriteMap `IS.intersection` miThreadIds
-        cond2 = IS.null writtenMIs
-        missingRegs = requiredRegs `HS.difference` allInitialEquals
-        cond3 = HS.null missingRegs
-        result = if | not cond1 -> Just $ DependsOnInputs inputDeps
-                    | not cond2 -> Just $ WrittenByModuleInstance writtenMIs
-                    | not cond3 -> Just $ MissingRegisters missingRegs
-                    | otherwise -> Nothing
-    return result
-    else return $ if v `elem` allInitialEquals
-                  then Nothing
-                  else Just $ MissingRegisters $ HS.singleton v
-  where
-    inputs = moduleAllInputs m
-    miThreadIds = IS.fromList $ getData <$> toList moduleInstances
+type FDEQSt = HM.HashMap Id (Maybe FDEQReason)
 
--- | like before, but we try to resolve the module instance case
-autoInitialEqualWire :: G r => Module Int -> Id -> Sem r (Maybe AutoInitialEqualFailure)
-autoInitialEqualWire m v = do
-  res <- autoInitialEqualWireSimple m v
-  case res of
-    Just (WrittenByModuleInstance miIds)
-      | IS.size miIds == 1 -> do
-          let miId = IS.findMin miIds
-              ModuleInstance{..} = find' ((== miId) . getData) (moduleInstances m)
-              eqVarName str = \case
-                Variable{..} -> varName == str
-                _ -> False
-              miPorts = HM.toList moduleInstancePorts
-              miOutputLookup o = fst $ find' (eqVarName o . snd) miPorts
-              miInputLookup i  = snd $ find' ((== i) . fst) miPorts
-          miModule <- asks (hmGet 12 moduleInstanceType)
-          res' <- autoInitialEqualWire miModule (miOutputLookup v)
-          case res' of
-            Nothing -> return Nothing
-            Just (DependsOnInputs miInputs) -> do
-              let inputVars = foldMap (getVariables . miInputLookup) miInputs
-              getFirstJust (autoInitialEqualWire m) (HS.toList inputVars)
-            _ -> return res'
-    _ -> return res
-  where
-    getFirstJust act = \case
-      []   -> return Nothing
-      a:as -> do mb <- act a
-                 if isJust mb
-                   then return mb
-                   else getFirstJust act as
+data FDEQReason = FDEQReason
+  { dependsOnInputs :: Ids
+  , dependsOnReg    :: Ids
+  , writtenByMI     :: HS.HashSet (Id, Id)
+  }
 
-autoInitialEqualFailureMessage :: Id -> Id -> AutoInitialEqualFailure -> String
-autoInitialEqualFailureMessage m w = \case
-  DependsOnInputs inputDeps ->
-    printf "not initial_eq(%s, %s) because wire depends on input(s) %s\n"
-    w m (show $ toList inputDeps)
-  WrittenByModuleInstance writtenMIs ->
-    printf "not initial_eq(%s, %s) because wire written by module instance(s) %s\n"
-    w m (show $ IS.toList writtenMIs)
-  MissingRegisters missingRegs ->
-    printf "not initial_eq(%s, %s) because these registers are not initial_eq: %s\n"
-    w m (show $ toList missingRegs)
-
--- | return the registers that write to the given wire
-computeRegistersReadBy :: Module Int -> ModuleSummary -> Ids -> Id -> (Ids, Ids)
-computeRegistersReadBy Module{..} ModuleSummary{..} inputs wireName =
-  worklist mempty (HS.singleton wireName) mempty (SQ.singleton wireName)
-  where
-    -- worklist :: input dependencies of the wire
-    --          -> wires that added to the worklist
-    --          -> current set of registers
-    --          -> worklist of wires
-    --          -> registers
-    worklist inputDeps addedWires rs = \case
-      SQ.Empty    -> (inputDeps, rs)
-      w SQ.:<| ws ->
-        let writtenNodes =
-              G.pre variableDependencies (hmGet 13 w variableDependencyNodeMap)
-            (rs', newWrittenWires) =
-              foldl'
-              (\acc writtenNode ->
-                  let writtenVar =
-                        invVariableDependencyNodeMap IM.! writtenNode
-                  in if writtenVar `elem` allRegisters
-                     then acc & _1 %~ HS.insert writtenVar
-                     else if writtenVar `elem` addedWires
-                          then acc
-                          else acc & _2 %~ HS.insert writtenVar
+type FDEQ r = ( G r
+              , Members '[ State FDEQSt
+                         , Reader FDEQReadSt
+                         ] r
               )
-              (rs, mempty)
-              writtenNodes
-            (inputDeps', ws') =
-              foldl' (\acc v ->
-                        if v `elem` inputs
-                        then acc & _1 %~ HS.insert v
-                        else acc & _2 %~ (SQ.|> v)
-                     ) (inputDeps, ws) newWrittenWires
-            addedWires' = addedWires <> newWrittenWires
-        in worklist inputDeps' addedWires' rs' ws'
 
+computeAllInitialEqualVars :: G r => L (Module Int) -> Sem r (HM.HashMap Id Ids)
+computeAllInitialEqualVars modules = execState mempty $ for_ modules $ \m@Module{..} -> do
+  reasons <- autoInitialEqualVars m
+  ies <-
+    execState HS.empty $
+    for_ (HM.toList reasons) $ \(v, mr) ->
+    case mr of
+      Nothing -> modify (HS.insert v)
+      Just FDEQReason{..} ->
+        if | notNull dependsOnInputs ->
+               trace "computeAllInitialEqualVars - dependsOnInputs" (moduleName, v, toList dependsOnInputs)
+           | notNull dependsOnReg ->
+               trace "computeAllInitialEqualVars - dependsOnReg" (moduleName, v, toList dependsOnReg)
+           | notNull writtenByMI -> do
+               leftovers <-
+                 flip filterM (toList writtenByMI) $ \(miType, miVar) ->
+                 gets (notElem miVar . (HM.! miType))
+               if null leftovers
+                 then modify (HS.insert v)
+                 else trace "computeAllInitialEqualVars - writtenByMI" (moduleName, v, toList leftovers)
+           | otherwise ->
+             trace "computeAllInitialEqualVars - weird" (moduleName, v)
+  modify (at moduleName ?~ ies)
+  where
+    notNull = not . HS.null
+
+autoInitialEqualVars :: G r => Module Int -> Sem r FDEQSt
+autoInitialEqualVars m@Module{..} = do
+  ms@ModuleSummary{..} <- asks (hmGet 14 moduleName)
+  let (sccG, toSCCNodeMap) = sccGraph variableDependencies
+      readSt =
+        FDEQReadSt
+        { sccG      = sccG
+        , sccNodes  = toSCCNodeMap
+        , mInputs   = moduleAllInputs m
+        , mRegs     = allRegisters
+        , ms        = ms
+        , m         = m
+        }
+  for_ (G.topsort sccG) autoInitialEqualVarsRunSCCNode
+    & runReader readSt
+    & execState mempty
+  where
     allRegisters =
       foldl' (\rs -> \case
                  Register{..} -> HS.insert variableName rs
                  Wire{} -> rs) mempty variables
+
+autoInitialEqualVarsRunSCCNode :: FDEQ r => Int -> Sem r ()
+autoInitialEqualVarsRunSCCNode sccNode = do
+  FDEQReadSt{..} <- ask
+  let thisSCC = G.context sccG sccNode ^. _3
+  for_ (IS.toList thisSCC)
+    autoInitialEqualVarsRunOriginalNode
+
+autoInitialEqualVarsRunOriginalNode :: FDEQ r => Int -> Sem r (Maybe FDEQReason)
+autoInitialEqualVarsRunOriginalNode n = do
+  ModuleSummary{..} <- asks ms
+  let toVar = (invVariableDependencyNodeMap IM.!)
+      nName = toVar n
+  mSt <- gets (HM.lookup nName)
+  case mSt of
+    Just st -> return st
+    Nothing -> do
+      currentModuleName <- asks (moduleName . m)
+      as <- getAnnotations currentModuleName
+      FDEQReadSt{..} <- ask
+      let ies      = (as ^. initialEquals) <> (as ^. initialEquals)
+          isIE     = nName `elem` ies
+          isWire   = not . (`elem` mRegs)
+          isIn     = nName `elem` mInputs
+          nNameSet = HS.singleton nName
+      st <-
+        if | isIn -> return $ Just mempty {dependsOnInputs = nNameSet} -- variable is an input
+           | isIE -> return Nothing -- variable is initial_eq
+           | isWire nName ->
+               case G.pre variableDependencies n of
+                 [] ->
+                   case HM.lookup nName threadWriteMap of
+                     Nothing -> return $ Just mempty -- uninitialized variable
+                     Just ts -> do
+                       let miId = IS.findMin ts
+                       case find ((== miId) . getData) (moduleInstances m) of
+                         Nothing ->
+                           return Nothing -- variable is initialized with constant value
+                         Just ModuleInstance{..} -> do -- variable is written by a module instance
+                           let miPorts = HM.toList moduleInstancePorts
+                               miOutputLookup o = fst $ find' (eqVarName o . snd) miPorts
+                               outputPort = miOutputLookup nName
+                           return $ Just mempty {writtenByMI = HS.singleton (moduleInstanceType, outputPort)}
+                 parents ->
+                   mergeReasons
+                   <$> traverse autoInitialEqualVarsRunOriginalNode parents
+           | otherwise -> return $ Just mempty {dependsOnReg = nNameSet} -- variable is non-sanitized register
+      modify (at nName ?~ st)
+      return st
+  where
+    eqVarName str = \case
+      Variable{..} -> varName == str
+      _ -> False
+
+mergeReasons :: Foldable t => t (Maybe FDEQReason) -> Maybe FDEQReason
+mergeReasons = foldl' go Nothing
+  where
+    go Nothing b = b
+    go a Nothing = a
+    go (Just a) (Just b) = Just (a <> b)
 
 
 toSubs :: Id                    -- ^ module name
@@ -1144,3 +1103,14 @@ throw = PE.throw . IE VCGen
 
 getCurrentClocks :: FDM r => Sem r Ids
 getCurrentClocks = asks moduleName >>= getClocks
+
+instance Semigroup FDEQReason where
+  v1 <> v2 =
+    FDEQReason
+    { dependsOnInputs = dependsOnInputs v1 <> dependsOnInputs v2
+    , dependsOnReg    = dependsOnReg v1 <> dependsOnReg v2
+    , writtenByMI     = writtenByMI v1 <> writtenByMI v2
+    }
+
+instance Monoid FDEQReason where
+  mempty = FDEQReason mempty mempty mempty

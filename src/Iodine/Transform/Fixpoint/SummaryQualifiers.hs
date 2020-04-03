@@ -265,29 +265,37 @@ summaryQualifierVariablesAB moduleName ab = do
           oldQD <- fromMaybe mempty <$> gets (^.at vName)
           modify (at vName ?~ addParent l uName oldQD)
     else do
-    let (g, _toSCCNodeMap) = sccGraph variableDependencies
+    let (g, toSCCNodeMap) = sccGraph variableDependencies
         toVars n = case fst $ G.match n g of
                      Just (_, _, is, _) -> IS.toList is
                      Nothing -> error "unreachable"
-    for_ (G.topsort g) $ \sccV ->
-      for_ (toVars sccV) $ \v -> do
-        let vName = toVar v
-        for_ (G.lpre g sccV) $ \(sccU, l) ->
-          for_ (toVars sccU) $ \u -> do
-          -- if variableDependencies `G.hasLEdge` (u, v, l)
-          let uName = toVar u
-          mUQD <- gets (^.at uName)
-          oldQD <- fromMaybe mempty <$> gets (^.at vName)
-          case (mUQD, l) of
-            (Nothing, _) ->
-              modify (at vName ?~ addParent l uName oldQD)
-            (Just uQD, Implicit) -> do
-              let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
-                  newQD = oldQD & implicitVars %~ mappend uQDVars
-              modify (at vName ?~ newQD)
-            (Just uQD, Explicit _) ->
-              modify (at vName ?~ oldQD <> uQD)
-    modify (HM.filterWithKey (\k _ -> k `elem` abVars))
+    -- for_ (G.topsort g) $ \sccV ->
+    --   for_ (toVars sccV) $ \v -> do
+    --     let vName = toVar v
+    --     for_ (G.lpre g sccV) $ \(sccU, l) ->
+    --       for_ (toVars sccU) $ \u -> do
+    --       -- if variableDependencies `G.hasLEdge` (u, v, l)
+    --       let uName = toVar u
+    --       mUQD <- gets (^.at uName)
+    --       oldQD <- fromMaybe mempty <$> gets (^.at vName)
+    --       case (mUQD, l) of
+    --         (Nothing, _) ->
+    --           modify (at vName ?~ addParent l uName oldQD)
+    --         (Just uQD, Implicit) -> do
+    --           let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
+    --               newQD = oldQD & implicitVars %~ mappend uQDVars
+    --           modify (at vName ?~ newQD)
+    --         (Just uQD, Explicit _) ->
+    --           modify (at vName ?~ oldQD <> uQD)
+    -- modify (HM.filterWithKey (\k _ -> k `elem` abVars))
+    for_ abNodes $ \v -> do
+      let vName = toVar v
+          sccV  = toSCCNodeMap IM.! v
+      for_ (G.lpre g sccV) $ \(sccU, l) ->
+        for_ (toVars sccU) $ \u -> do
+        let uName = toVar u
+        oldQD <- fromMaybe mempty <$> gets (^.at vName)
+        modify (at vName ?~ addParent l uName oldQD)
 
 
 -- | given a list of input ports i1, i2, ... creates a qualifier of the form:
@@ -342,32 +350,3 @@ mkSummaryQualifierHelper kv moduleName qualifierName inputs valEqInputs output r
       setThreadId kv $ HVar0 v moduleName t r
     bt = FT.boolSort
     it = FT.intSort
-
--- | Creates a scc graph where the each node corresponds to a strongly connected
--- component of the original graph. There's an edge between scc_i & scc_j if
--- there was an edge (u,v) in the original graph where (u \in scc_i) and (v \in
--- scc_j). The new graph does not contain any loop, including self loops. In the
--- new graph, node labels are the set of nodes that form the corresponding scc.
-sccGraph :: Eq b
-         => G.Gr a b
-         -> (G.Gr IS.IntSet b, IM.IntMap Int)
-sccGraph g = (g2, toSCCNodeMap)
-  where
-    g2 =
-      foldl'
-      (\acc_g (n1, n2, b) ->
-         let n1' = toSCCNode n1
-             n2' = toSCCNode n2
-         in if n1' /= n2'
-            then insEdge (n1', n2', b) acc_g
-            else acc_g)
-      g1 (G.labEdges g)
-    toSCCNode = (toSCCNodeMap IM.!)
-    (g1, toSCCNodeMap) =
-      foldl' update (G.empty, IM.empty) (G.scc g)
-    update (acc_g, acc_m) = \case
-      scc@(sccNode:_) ->
-        let g'  = G.insNode (sccNode, IS.fromList scc) acc_g
-            m'  = foldl' (\m n -> IM.insert n sccNode m) acc_m scc
-        in (g', m')
-      [] -> error "unreachable"

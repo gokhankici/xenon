@@ -248,12 +248,12 @@ checkVariables =
           case abEvent of
             Star -> return ()
             _    ->
-              case eventExpr abEvent of
-                Variable{..} ->
-                  unless (varName `elem` clks && varModuleName == moduleName) $
-                  throw $ "always block has bad event: " ++ show abEvent
-                _ ->
-                  throw $ "always block has bad event: " ++ show abEvent
+              let errMsg = T.unpack moduleName ++ ":: always block has bad event: " ++ show abEvent
+              in case eventExpr abEvent of
+                   Variable{..} ->
+                     unless (varName `elem` clks && varModuleName == moduleName) $
+                     throw errMsg
+                   _ -> throw errMsg
 
         when (any isOutputVar (af ^. alwaysEquals)) $
           throw "an output port cannot be always_eq"

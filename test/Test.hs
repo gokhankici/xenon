@@ -8,22 +8,21 @@
 
 module Main (main) where
 
-import TestData
+import           TestData
 
-import qualified Iodine.IodineArgs               as IA
-import qualified Iodine.Runner                   as R
+import qualified Iodine.IodineArgs as IA
+import qualified Iodine.Runner as R
 
 import           Control.Exception
-import           Control.Lens                    hiding (simple, (<.>))
+import           Control.Lens hiding (simple, (<.>))
 import           Control.Monad
 import           Data.Foldable
-import           GHC.Generics                    hiding (moduleName, to)
+import           GHC.Generics hiding (moduleName, to)
 import           GHC.IO.Handle
 import           System.Console.CmdArgs.Explicit
+import           System.Directory
 import           System.Environment
 import           System.Exit
-import           System.FilePath
-import           System.Directory
 import           System.IO
 import           Test.Hspec
 import           Test.Hspec.Core.Runner
@@ -62,9 +61,7 @@ runTestTree ta va = \case
         appendFile outputFile $ printf "%s %s\n" r af
       withSilence = if ta ^. verbose then id else silence
       af  = case annotFile of
-              Nothing -> let dir  = takeDirectory verilogFile
-                             name = dropExtension $ takeBaseName verilogFile
-                         in  dir </> "annot-" ++ name <.> "json"
+              Nothing -> IA.defaultAnnotFile verilogFile
               Just f  -> f
       va' = va { IA.fileName   = verilogFile
                , IA.annotFile  = af

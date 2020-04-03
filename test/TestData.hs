@@ -4,7 +4,8 @@
 
 module TestData where
 
-import System.FilePath
+import qualified Iodine.IodineArgs as IA
+import           System.FilePath
 
 data UnitTestType = Succ | Fail deriving (Eq, Show)
 
@@ -191,8 +192,12 @@ aesStubs :: TestTree
 aesStubs = mkCollection "aes-stub" ts
   where
     d = benchmarkDir </> "crypto_cores" </> "tiny_aes" </> "trunk" </> "rtl"
-    ts = [ T "test1" $ d </> "test1.v"
-         , T "test2" $ d </> "test2.v"
+    mkT name = T name $ d </> name <.> "v"
+    ts = [ mkT "test1"
+         , (mkT "test2-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test2.v" }
+         , mkT "test2"
+         , (mkT "test3-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test3.v" }
+         , mkT "test3"
          ]
 
 

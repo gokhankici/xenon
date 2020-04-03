@@ -3,7 +3,6 @@
 cd "${0:A:h}"
 
 # PROFILE="--profile"
-# VCGEN="--vcgen"
 # FIXED="yes"
 
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
@@ -22,13 +21,13 @@ cd "${0:A:h}"
 # TEST="test/verilog/pos/merge03.v"
 # TEST="test/verilog/pos/nb-test-01.v"
 # TEST="test/verilog/pos/submodule-02.v"
+# TEST="test/verilog/pos/submodule-04.v"
 # TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-12.v"
-TEST="benchmarks/crypto_cores/tiny_aes/trunk/rtl/test2.v"
+TEST="benchmarks/crypto_cores/tiny_aes/trunk/rtl/test3-0.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
-
 TEST_FILE="${TEST_DIR}/${TEST_NAME}.v"
 
 if [ -z "${FIXED}" ]; then
@@ -37,9 +36,8 @@ else
         TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
 fi
 
-# TEST_ANNOT="${TEST_DIR}/annot-neg-mem32_test_03.json"
-
+TEST_ANNOT="benchmarks/crypto_cores/tiny_aes/trunk/rtl/annot-test3.json"
 # nvim "${TEST_ANNOT}"; exit 0
 
 ./iodine --build ${PROFILE} && \
-        ./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose ${VCGEN} $@
+        ./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose $@

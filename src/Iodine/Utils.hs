@@ -17,6 +17,8 @@ import qualified Data.Graph.Inductive as G
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.Hashable
+import qualified Data.IntMap.Strict as IM
+import qualified Data.IntSet as IS
 import           Data.Maybe
 import qualified Data.Sequence as SQ
 import           Polysemy
@@ -120,8 +122,11 @@ insEdge e g =
   then g
   else G.insEdge e g
 
-find' :: Foldable t => (a -> Bool) -> t a -> a
-find' q as = fromJust $ find q as
+find' :: (Foldable t, Show a) => (a -> Bool) -> t a -> a
+find' q as =
+  case find q as of
+    Just a  -> a
+    Nothing -> error $ "Could not find matching element in " ++ show (toList as)
 
 printGraph :: Show b => G.Gr a b -> (Int -> String) -> String
 printGraph g nodeLookup = unlines ls
@@ -152,3 +157,33 @@ mkMap :: (Foldable t, Hashable k, Eq k)
       -> t a
       -> HM.HashMap k a
 mkMap toKey = foldl' (\acc a -> HM.insert (toKey a) a acc) mempty
+
+
+-- | Creates a scc graph where the each node corresponds to a strongly connected
+-- component of the original graph. There's an edge between scc_i & scc_j if
+-- there was an edge (u,v) in the original graph where (u \in scc_i) and (v \in
+-- scc_j). The new graph does not contain any loop, including self loops. In the
+-- new graph, node labels are the set of nodes that form the corresponding scc.
+sccGraph :: Eq b
+         => G.Gr a b
+         -> (G.Gr IS.IntSet b, IM.IntMap Int)
+sccGraph g = (g2, toSCCNodeMap)
+  where
+    g2 =
+      foldl'
+      (\acc_g (n1, n2, b) ->
+         let n1' = toSCCNode n1
+             n2' = toSCCNode n2
+         in if n1' /= n2'
+            then insEdge (n1', n2', b) acc_g
+            else acc_g)
+      g1 (G.labEdges g)
+    toSCCNode = (toSCCNodeMap IM.!)
+    (g1, toSCCNodeMap) =
+      foldl' update (G.empty, IM.empty) (G.scc g)
+    update (acc_g, acc_m) = \case
+      scc@(sccNode:_) ->
+        let g'  = G.insNode (sccNode, IS.fromList scc) acc_g
+            m'  = foldl' (\m n -> IM.insert n sccNode m) acc_m scc
+        in (g', m')
+      [] -> error "unreachable"

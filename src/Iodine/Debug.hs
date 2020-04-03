@@ -115,34 +115,27 @@ getCondVars as = execState mempty $ do
         Skip{} -> return ()
   traverse_ goStmt (abStmt <$> as)
 
-getMissingInitialEquals :: D r => Module Int -> Sem r Ids
-getMissingInitialEquals m@Module{..} = do
+getMissingInitialEquals :: (D r, Members '[Reader (HM.HashMap Id Ids)] r)
+                        => Module Int -> Sem r Ids
+getMissingInitialEquals Module{..} = do
   PT.trace $ printf "getMissingInitialEquals - %s" moduleName
-  annots <- getAnnotations moduleName
-  let combinedInitEq =
-        (annots ^. initialEquals) <> (annots ^. alwaysEquals)
-      isInitEq v =
-        if v `elem` combinedInitEq
-        then return True
-        else do r <- autoInitialEqualWire m v
-                for_ r
-                  (PT.trace . autoInitialEqualFailureMessage moduleName v)
-                return $ isNothing r
+  allInitEqs :: Ids <- asks (HM.! moduleName)
+  let isInitEq = (`elem` allInitEqs)
   registersThatAffectConditions <-
     fold
     <$> (toSequence <$> getCondVars alwaysBlocks
          >>= traverse (allRegisterDependencies moduleName))
   -- trace "registers that affect conditions" (HS.toList registersThatAffectConditions)
-  missingRegs <-
-    mfoldM
-    (\r -> do ieq <- isInitEq r
-              return $ if not ieq then HS.singleton r else mempty)
-    registersThatAffectConditions
+  let missingRegs = HS.filter (not . isInitEq) registersThatAffectConditions
   trace "missing registers" (HS.toList missingRegs)
   return missingRegs
 
 debug2 :: D r => Sem r ()
-debug2 = asks HM.elems >>= traverse_ getMissingInitialEquals
+debug2 = do
+  ir <- ask @IRs
+  allIEs <- computeAllInitialEqualVars ir
+  traverse_ getMissingInitialEquals ir
+    & runReader allIEs
 
 debug :: D r => Sem r ()
 debug = do
@@ -150,12 +143,14 @@ debug = do
   PT.trace $ show portDependencies
   PT.trace $ show isCombinatorial
 
+type IRs = L (Module Int)
 type ModuleMap = HM.HashMap Id (Module Int)
 type G r  = Members '[Error IodineException, PT.Trace, Output String] r
 type D r = ( G r
            , Members '[ Reader AnnotationFile
                       , Reader ModuleMap
                       , Reader SummaryMap
+                      , Reader IRs
                       ] r
            )
 
@@ -168,6 +163,7 @@ debugPipeline af irReader = do
     (vcgen normalizedOutput >> debug)
       & runReader moduleSummaries
       & runReader normalizedIRMap
+      & runReader normalizedIR
 
 
 run :: IO ()
