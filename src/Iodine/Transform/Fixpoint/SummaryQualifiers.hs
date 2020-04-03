@@ -208,10 +208,8 @@ summaryQualifierVariablesM Module{..} = do
 
 addSummaryQualifiersAB :: FD r => Id -> AlwaysBlock Int -> Sem r ()
 addSummaryQualifiersAB moduleName ab = do
-  sqvs <-
-    summaryQualifierVariablesAB moduleName ab
-    & execState mempty
-  for_ (HM.toList sqvs) $ \(v, qds) -> do
+  sqvs <- summaryQualifierVariablesAB moduleName ab
+  for_ (HM.toList sqvs) $ \(v, lqds) -> for_ lqds $ \qds -> do
     trace "addSummaryQualifiersAB" (getThreadId ab, v, qds)
     let evs    = qds ^. explicitVars
         ivs    = qds ^. implicitVars
@@ -234,17 +232,17 @@ addSummaryQualifiersAB moduleName ab = do
       <> "T" <> show (getThreadId ab) <> "_"
 
 
-type QDM = HM.HashMap Id QualifierDependencies
+type QDM  = HM.HashMap Id QualifierDependencies
+type QDMs = HM.HashMap Id (L QualifierDependencies)
 
 summaryQualifierVariablesAB :: Members '[ Reader SummaryMap
                                         , Reader (HM.HashMap Id (Module Int))
                                         , Reader AnnotationFile
-                                        , State QDM
                                         , PT.Trace
                                         ] r
                             => Id -- ^ module name
                             -> AlwaysBlock Int
-                            -> Sem r ()
+                            -> Sem r QDMs
 summaryQualifierVariablesAB moduleName ab = do
   ModuleSummary{..} <- asks (hmGet 2 moduleName)
   abVars <- getUpdatedVariables (AB ab)
@@ -256,46 +254,58 @@ summaryQualifierVariablesAB moduleName ab = do
           Implicit   -> implicitVars %~ HS.insert uName
           Explicit _ -> explicitVars %~ HS.insert uName
   if isStar ab
-    then
-    for_ abNodes $ \v -> do
+    then do
+    m <- execState (mempty :: QDM) $
+      for_ abNodes $ \v -> do
       let vName = toVar v
       for_ (G.lpre variableDependencies v) $ \(u, l) -> do
         let uName = toVar u
         unless (v == u) $ do
           oldQD <- fromMaybe mempty <$> gets (^.at vName)
           modify (at vName ?~ addParent l uName oldQD)
+    return $ HM.map SQ.singleton m
     else do
     let (g, toSCCNodeMap) = sccGraph variableDependencies
         toVars n = case fst $ G.match n g of
                      Just (_, _, is, _) -> IS.toList is
                      Nothing -> error "unreachable"
-    -- for_ (G.topsort g) $ \sccV ->
-    --   for_ (toVars sccV) $ \v -> do
-    --     let vName = toVar v
-    --     for_ (G.lpre g sccV) $ \(sccU, l) ->
-    --       for_ (toVars sccU) $ \u -> do
-    --       -- if variableDependencies `G.hasLEdge` (u, v, l)
-    --       let uName = toVar u
-    --       mUQD <- gets (^.at uName)
-    --       oldQD <- fromMaybe mempty <$> gets (^.at vName)
-    --       case (mUQD, l) of
-    --         (Nothing, _) ->
-    --           modify (at vName ?~ addParent l uName oldQD)
-    --         (Just uQD, Implicit) -> do
-    --           let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
-    --               newQD = oldQD & implicitVars %~ mappend uQDVars
-    --           modify (at vName ?~ newQD)
-    --         (Just uQD, Explicit _) ->
-    --           modify (at vName ?~ oldQD <> uQD)
-    -- modify (HM.filterWithKey (\k _ -> k `elem` abVars))
-    for_ abNodes $ \v -> do
-      let vName = toVar v
-          sccV  = toSCCNodeMap IM.! v
-      for_ (G.lpre g sccV) $ \(sccU, l) ->
-        for_ (toVars sccU) $ \u -> do
-        let uName = toVar u
-        oldQD <- fromMaybe mempty <$> gets (^.at vName)
-        modify (at vName ?~ addParent l uName oldQD)
+    m1 <-
+      execState (mempty :: QDM) $ do
+      for_ (G.topsort g) $ \sccV ->
+        for_ (toVars sccV) $ \v -> do
+          let vName = toVar v
+          for_ (G.lpre g sccV) $ \(sccU, l) ->
+            for_ (toVars sccU) $ \u -> do
+            -- if variableDependencies `G.hasLEdge` (u, v, l)
+            let uName = toVar u
+            mUQD <- gets (^.at uName)
+            oldQD <- fromMaybe mempty <$> gets (^.at vName)
+            case (mUQD, l) of
+              (Nothing, _) ->
+                modify (at vName ?~ addParent l uName oldQD)
+              (Just uQD, Implicit) -> do
+                let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
+                    newQD = oldQD & implicitVars %~ mappend uQDVars
+                modify (at vName ?~ newQD)
+              (Just uQD, Explicit _) ->
+                modify (at vName ?~ oldQD <> uQD)
+      modify (HM.filterWithKey (\k _ -> k `elem` abVars))
+
+    m2 <-
+      execState (mempty :: QDM) $
+      for_ abNodes $ \v -> do
+        let vName = toVar v
+            sccV  = toSCCNodeMap IM.! v
+        for_ (G.lpre g sccV) $ \(sccU, l) ->
+          for_ (toVars sccU) $ \u -> do
+          let uName = toVar u
+          oldQD <- fromMaybe mempty <$> gets (^.at vName)
+          modify (at vName ?~ addParent l uName oldQD)
+
+    return $
+      HM.unionWith (<>)
+      (HM.map SQ.singleton m1)
+      (HM.map SQ.singleton m2)
 
 
 -- | given a list of input ports i1, i2, ... creates a qualifier of the form:
