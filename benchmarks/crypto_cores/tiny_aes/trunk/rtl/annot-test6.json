@@ -1,0 +1,26 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "in"
+        ],
+        "sink": [
+          "out_1",
+          "out_2"
+        ]
+      },
+      "clock": "clk"
+    },
+    "expand_key_type_B_256": {
+      "clock": "clk"
+    },
+    "S4": {
+      "clock": "clk"
+    },
+    "S": {
+      "clock": "clk"
+    }
+  }
+}

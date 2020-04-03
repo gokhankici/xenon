@@ -192,14 +192,18 @@ aesStubs :: TestTree
 aesStubs = mkCollection "aes-stub" ts
   where
     d = benchmarkDir </> "crypto_cores" </> "tiny_aes" </> "trunk" </> "rtl"
-    mkT name = T name $ d </> name <.> "v"
-    ts = [ mkT "test1"
-         , (mkT "test2-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test2.v" }
-         , mkT "test2"
-         , (mkT "test3-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test3.v" }
-         , mkT "test3"
-         , (mkT "test4-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test4.v" }
-         , mkT "test4"
+    mkT name file = T name $ d </> file <.> "v"
+    ts = [ mkT "table_lookup" "test1"
+         , (mkT "one_round-0" "test2-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test2.v" }
+         , mkT "one_round" "test2"
+         , (mkT "S4-0" "test3-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test3.v" }
+         , mkT "S4" "test3"
+         , (mkT "final_round-0" "test4-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test4.v" }
+         , mkT "final_round" "test4"
+         , (mkT "expand_key_type_A_256-0" "test5-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test5.v" }
+         , mkT "expand_key_type_A_256" "test5"
+         , (mkT "expand_key_type_B_256-0" "test6-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test6.v" }
+         , mkT "expand_key_type_B_256" "test6"
          ]
 
 
