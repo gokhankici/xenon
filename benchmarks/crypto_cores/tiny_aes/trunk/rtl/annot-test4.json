@@ -4,12 +4,19 @@
     "test": {
       "annotations": {
         "source": [
-          "in"
+          "state_in",
+          "key_in"
         ],
         "sink": [
           "out"
         ]
       },
+      "clock": "clk"
+    },
+    "final_round": {
+      "clock": "clk"
+    },
+    "S4": {
       "clock": "clk"
     },
     "one_round": {

@@ -39,6 +39,7 @@ import qualified Data.IntSet as IS
 import           Data.List
 import           Data.Maybe
 import qualified Data.Sequence as SQ
+import qualified Data.Text as T
 import           Data.Traversable
 import           Polysemy
 import qualified Polysemy.Error as PE
@@ -46,8 +47,6 @@ import qualified Polysemy.Output as PO
 import           Polysemy.Reader
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
--- import qualified Debug.Trace as DT
--- import           Text.Printf
 
 -- | State relevant to statements
 data ThreadSt =
@@ -680,7 +679,8 @@ interferenceReaderExpr readAB overlappingVars writeNext = do
                     Just n | n == maxWriteN -> mempty
                            | n <  maxWriteN -> extraSubs n
                            | otherwise      -> error "unreachable"
-                    Nothing -> extraSubs 1
+                    Nothing | maxWriteN > 1 -> extraSubs 1
+                            | otherwise     -> mempty
             )
             readHornVars
       let readTR = uviN $ sti $ transitionRelation (abStmt readAB)
@@ -733,7 +733,7 @@ instantiateMI :: FDM r => ModuleInstance Int -> Sem r HornExpr
 instantiateMI mi = instantiateMI' mi 1
 
 instantiateMI' :: FDM r => ModuleInstance Int -> Int -> Sem r HornExpr
-instantiateMI' ModuleInstance{..} varIndex = do
+instantiateMI' mi@ModuleInstance{..} varIndex = do
   currentModule <- ask
   let currentModuleName = moduleName currentModule
   targetModule <- asks (hmGet 2 moduleInstanceType)
@@ -741,12 +741,17 @@ instantiateMI' ModuleInstance{..} varIndex = do
   targetModuleClocks <- getClocks moduleInstanceType
   let inputs  = moduleInputs targetModule targetModuleClocks
       outputs = moduleOutputs targetModule targetModuleClocks
+      sti     = setThreadId currentModule
       mkInputSubs i = do
         (t, f) <- (Value, val) |:> (Tag, tag)
         r <- LeftRun |:> RightRun
-        return ( HVar0 i targetModuleName t r
-               , updateVarIndex (const varIndex) $
-                 f r $ hmGet 3 i moduleInstancePorts
+        let invParam = HVar0 i targetModuleName t r
+            invArgVarName = "IodineTmpMIInput_" <> T.pack (show $ getData mi) <> "_" <> i
+            invArgVar = sti $ HVar0 invArgVarName currentModuleName t r
+            invArgExpr = sti $ updateVarIndex (const varIndex) $
+                         f r $ hmGet 3 i moduleInstancePorts
+        return ( mkEqual (invArgVar, invArgExpr)
+               , (invParam, invArgVar)
                )
       mkOutputSubs o = do
         (t, r) <- allTagRuns
@@ -759,9 +764,10 @@ instantiateMI' ModuleInstance{..} varIndex = do
         return ( HVar0 o targetModuleName t r
                , rhs
                )
+      inputSubs = foldMap mkInputSubs inputs
       subs = second (setThreadId currentModule)
-            <$> (foldMap mkInputSubs inputs <> foldMap mkOutputSubs outputs)
-  return $ makeKVar targetModule subs
+             <$> (fmap snd inputSubs <> foldMap mkOutputSubs outputs)
+  return $ HAnd $ fmap fst inputSubs SQ.|> makeKVar targetModule subs
 
 -- -----------------------------------------------------------------------------
 summaryConstraint :: FDM r => Sem r H

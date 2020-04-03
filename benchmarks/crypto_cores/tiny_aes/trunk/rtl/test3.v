@@ -1,20 +1,18 @@
-`include "round.v"
 `include "table.v"
 
-module test(
-	input  wire         clk, 
-	input  wire [127:0] state_in,
-	input  wire [127:0] key_in,
-	output reg  [127:0] out
-);
+module test(clk, in, out);
 
-wire [127:0] state_out;
+input  wire        clk;
+input  wire [31:0] in;
+output reg  [31:0] out;
 
-final_round FINAL_ROUND(clk, state_in, key_in, state_out);
+wire [31:0] tmp;
 
-always @(*) begin
-	out = state_out;
+
+S4 S4_INSTANCE(clk, in, tmp);
+
+always @(posedge clk) begin
+	out <= tmp;
 end
 
 endmodule
-

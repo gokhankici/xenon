@@ -198,6 +198,8 @@ aesStubs = mkCollection "aes-stub" ts
          , mkT "test2"
          , (mkT "test3-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test3.v" }
          , mkT "test3"
+         , (mkT "test4-0") { annotFile = Just $ IA.defaultAnnotFile $ d </> "test4.v" }
+         , mkT "test4"
          ]
 
 
