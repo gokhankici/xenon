@@ -130,11 +130,11 @@ generateIR IodineArgs{..} = do
 -- -----------------------------------------------------------------------------
 checkIR :: (IodineArgs, AnnotationFile) -> IO Bool
 -- -----------------------------------------------------------------------------
-checkIR (IodineArgs{..}, af)
+checkIR (ia@IodineArgs{..}, af)
   | printIR = do
       irFileContents <- readIRFile fileName
       mNormalizedOutput <-
-        normalizeIR af (parse (fileName, irFileContents))
+        normalizeIR af (parse (fileName, irFileContents)) ia
         & handleTrace
         & errorToIOFinal
         & runOutputSem (embed . hPutStrLn stderr)
@@ -162,6 +162,7 @@ checkIR (IodineArgs{..}, af)
       irFileContents <- readIRFile fileName
       mFInfo <- pipeline af
         (parse (fileName, irFileContents)) -- ir reader
+        ia
         & handleTrace
         & errorToIOFinal
         & runOutputSem (embed . hPutStrLn stderr)
@@ -179,7 +180,7 @@ checkIR (IodineArgs{..}, af)
                           , FC.save      = not noSave
                           , FC.srcFile   = fileName
                           , FC.metadata  = True
-                          , FC.minimize  = False
+                          , FC.minimize  = delta
                           }
 
     -- smtFile = fileName <.> "horn" <.> "smt2"

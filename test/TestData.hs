@@ -121,10 +121,11 @@ mipsModules = mkCollection "modules" $ go <$> names
             , "mux3_test_01"
             , "mux3_test_02"
             , "mem32_test_01"
+            , "rom32-test-1"
             ]
 
 mipsNegatives :: TestTree
-mipsNegatives = mkCollection "neg" $ (go <$> names) ++ mem32
+mipsNegatives = mkCollection "neg" $ (go <$> names) ++ mem32 ++ rom32
   where
     go name = TF name $ mipsDir </> name <.> "v"
     names = [ "neg-mux3_test_02"
@@ -138,6 +139,10 @@ mipsNegatives = mkCollection "neg" $ (go <$> names) ++ mem32
                       , "neg-mem32_test_02"
                       , "neg-mem32_test_03"
                       ]
+            ]
+    rom32 = [ let name = "neg-rom32-test-1"
+              in (TF name $ mipsDir </> "rom32-test-1.v")
+                 { annotFile = Just $ mipsDir </> "annot-" <> name <.> "json" }
             ]
 
 mipsStubs :: TestTree

@@ -22,15 +22,44 @@
         "initial_eq": [
           "EX_MemRead",
           "EX_rt",
-          "ID_instr"
+          "ID_instr",
+          "Stall",
+          "EX_RegWrite",
+          "MEM_RegRd",
+          "MEM_RegWrite",
+          "EX_RegWrite",
+          "MEM_RegRd",
+          "MEM_RegWrite"
         ]
       },
       "clock": "clk"
+    },
+    "control_pipeline": {
+      "annotations": {
+        "initial_eq": [
+          "RegDst",
+          "ALUSrc",
+          "MemtoReg",
+          "RegWrite",
+          "MemRead",
+          "MemWrite",
+          "Branch",
+          "Jump",
+          "ALUOp"
+        ]
+      }
     },
     "rom32": {
       "annotations": {
         "initial_eq": [
           "data_out"
+        ]
+      }
+    },
+    "mux2": {
+      "annotations": {
+        "initial_eq": [
+          "y"
         ]
       }
     },

@@ -24,28 +24,25 @@ import System.FilePath
 -- -----------------------------------------------------------------------------
 {- |
 @
-iodine v2.0, (C) Rami Gokhan Kici 2019
+iodine v2.0, (C) Rami Gokhan Kici 2020
 
-iodine [OPTIONS] ITEM ITEM
+Verifies whether the given Verilog file runs in constant time under the given
+assumptions.
 
-Common flags:
+First positional argument is the verilog file to analyze.
+Second positional argument is the JSON file that contains the annotations.
+
+iodine [OPTIONS] VERILOG-FILE ANNOTATION-FILE
+
      --iverilog-dir=DIR  path of the iverilog-parser directory
      --print-ir          just run the verilog parser
      --vcgen             just generate the .fq file
      --no-save           do not save the fq file
      --no-fp-output      disable the output from fixpoint
-     --trace             enable the debug trace
      --abduction         run abduction algorithm
-     --verbose           enable verbose output
-  -h --help              Display help message
-  -V --version           Print version information
-     --numeric-version   Print just the version number
-
-Verifies whether the given Verilog file runs in constant time.
-
-First argument is the path the to the verilog file.
-Second argument is a JSON file that contains the annotations.
-
+     --no-sanity-check   do not run the sanity check step (for benchmarking)
+  -v --verbose           Loud verbosity
+  -q --quiet             Quiet verbosity
 -}
 data IodineArgs =
   IodineArgs { fileName    :: FilePath -- this is used for both the Verilog and IR file
@@ -58,6 +55,8 @@ data IodineArgs =
              , abduction   :: Bool
              , verbose     :: Bool
              , moduleName  :: String
+             , noSanity    :: Bool
+             , delta       :: Bool
              }
   deriving (Show)
 
@@ -73,6 +72,8 @@ defaultIodineArgs =
              , abduction   = False
              , verbose     = False
              , moduleName  = ""
+             , noSanity    = False
+             , delta       = False
              }
 
 programName :: String
@@ -129,6 +130,12 @@ parseFlags =
   , flagNone ["abduction"]
     (\ia -> ia { abduction = True })
     "run abduction algorithm"
+  , flagNone ["no-sanity-check"]
+    (\ia -> ia { noSanity = True })
+    "do not run the sanity check step (for benchmarking)"
+  , flagNone ["delta"]
+    (\ia -> ia { delta = True })
+    "run fixpoint in delta debugging mode"
   ]
   ++ flagsVerbosity (\v ia -> ia { verbose = v == Loud })
 

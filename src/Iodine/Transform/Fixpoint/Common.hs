@@ -88,6 +88,7 @@ data QualifierDependencies = QualifierDependencies
   { _explicitVars :: Ids
   , _implicitVars :: Ids
   }
+  deriving (Eq)
 
 makeLenses ''St
 makeLenses ''QualifierDependencies
@@ -176,9 +177,9 @@ getFixpointName isParam v =
   where
     threadno = "T" <> T.pack (show $ hThreadId v)
 getFixpointVarPrefix isParam v =
-  getFixpointTypePrefix isParam v <> varname <> "_" <>  modulename <> "_"
+  getFixpointTypePrefix isParam v <> varname <> "_" -- <>  modulename <> "_"
   where
-    modulename = "M_" <> hVarModule v
+    -- modulename = "M_" <> hVarModule v
     varname = "V_" <> hVarName v
 getFixpointTypePrefix isParam v =
   varno <> prefix

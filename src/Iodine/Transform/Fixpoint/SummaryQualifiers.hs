@@ -26,6 +26,7 @@ import           Data.Foldable
 import qualified Data.Graph.Inductive as G
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import           Data.Hashable
 import qualified Data.IntMap.Strict as IM
 import qualified Data.IntSet as IS
 import           Data.Maybe
@@ -209,19 +210,24 @@ summaryQualifierVariablesM Module{..} = do
 addSummaryQualifiersAB :: FD r => Id -> AlwaysBlock Int -> Sem r ()
 addSummaryQualifiersAB moduleName ab = do
   sqvs <- summaryQualifierVariablesAB moduleName ab
-  for_ (HM.toList sqvs) $ \(v, lqds) -> for_ lqds $ \qds -> do
+  for_ (HM.toList sqvs) $ \(v, lqds) -> flip SQ.traverseWithIndex lqds $ \n qds -> do
     trace "addSummaryQualifiersAB" (getThreadId ab, v, qds)
     let evs    = qds ^. explicitVars
         ivs    = qds ^. implicitVars
         allEqs = HS.toList (evs <> ivs)
         valEqs = HS.toList ivs
-        qs = [ mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Tag1")
+        nstr   = "_" <> show n
+        qs = [ mkSummaryQualifierHelper ab moduleName
+               (namePrefix <> T.unpack v <> "_Tag1" <> nstr)
                allEqs mempty v Tag
-             , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Tag2")
+             , mkSummaryQualifierHelper ab moduleName
+               (namePrefix <> T.unpack v <> "_Tag2" <> nstr)
                allEqs valEqs v Tag
-             , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Tag3")
+             , mkSummaryQualifierHelper ab moduleName
+               (namePrefix <> T.unpack v <> "_Tag3" <> nstr)
                allEqs allEqs v Tag
-             , mkSummaryQualifierHelper ab moduleName (namePrefix <> T.unpack v <> "_Value")
+             , mkSummaryQualifierHelper ab moduleName
+               (namePrefix <> T.unpack v <> "_Value" <> nstr)
                mempty allEqs v Value
              ]
     for_ qs addQualifier
@@ -255,7 +261,8 @@ summaryQualifierVariablesAB moduleName ab = do
           Explicit _ -> explicitVars %~ HS.insert uName
   if isStar ab
     then do
-    m <- execState (mempty :: QDM) $
+    m1 <-
+      execState (mempty :: QDM) $
       for_ abNodes $ \v -> do
       let vName = toVar v
       for_ (G.lpre variableDependencies v) $ \(u, l) -> do
@@ -263,7 +270,29 @@ summaryQualifierVariablesAB moduleName ab = do
         unless (v == u) $ do
           oldQD <- fromMaybe mempty <$> gets (^.at vName)
           modify (at vName ?~ addParent l uName oldQD)
-    return $ HM.map SQ.singleton m
+
+    m2 <-
+      execState (mempty :: QDM) $
+      for_ (G.topsort variableDependencies) $ \v -> do
+      let vName = toVar v
+      for_ (G.lpre variableDependencies v) $ \(u, l) -> do
+        let uName = toVar u
+        unless (v == u) $ do
+          muQD <- gets (^.at uName)
+          oldQD <- fromMaybe mempty <$> gets (^.at vName)
+          case muQD of
+            Nothing -> -- u is a root node
+              modify (at vName ?~ addParent l uName oldQD)
+            Just uQD ->
+              case l of
+                Implicit -> do
+                  let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
+                      newQD   = oldQD & (implicitVars <>~ uQDVars)
+                  modify (at vName ?~ newQD)
+                Explicit _ ->
+                  modify (at vName ?~ uQD <> oldQD)
+
+    return $ mergeQDMaps m1 m2
     else do
     let (g, toSCCNodeMap) = sccGraph variableDependencies
         toVars n = case fst $ G.match n g of
@@ -302,11 +331,16 @@ summaryQualifierVariablesAB moduleName ab = do
           oldQD <- fromMaybe mempty <$> gets (^.at vName)
           modify (at vName ?~ addParent l uName oldQD)
 
-    return $
-      HM.unionWith (<>)
-      (HM.map SQ.singleton m1)
-      (HM.map SQ.singleton m2)
+    return $ mergeQDMaps m1 m2
 
+mergeQDMaps :: (Eq k, Hashable k, Eq a)
+            => HM.HashMap k a
+            -> HM.HashMap k a
+            -> HM.HashMap k (L a)
+mergeQDMaps m1 m2 =
+  HM.unionWith mrg (HM.map SQ.singleton m1) (HM.map SQ.singleton m2)
+  where
+    mrg l1 l2 = l1 <> SQ.filter (`notElem` l1) l2
 
 -- | given a list of input ports i1, i2, ... creates a qualifier of the form:
 -- ((TL_i1 <=> TR_i1) && (TL_i2 <=> TR_i2) && ...) ==> TL_$1 <=> TR_$1)

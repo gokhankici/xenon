@@ -11,6 +11,7 @@ module Iodine.Pipeline
 
 import           Iodine.Analyze.ModuleDependency (topsortModules)
 import           Iodine.Analyze.ModuleSummary
+import qualified Iodine.IodineArgs as IA
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Query
@@ -23,6 +24,7 @@ import           Iodine.Types
 import           Iodine.Utils
 
 import           Control.Lens
+import           Control.Monad
 import qualified Data.HashMap.Strict as HM
 import           Polysemy
 import           Polysemy.Error
@@ -34,14 +36,16 @@ normalizeIR
   :: Members '[Error IodineException, Trace, Output String] r
   => AnnotationFile             -- ^ annotation file
   -> Sem r (L (Module ()))      -- ^ ir parser
+  -> IA.IodineArgs
   -> Sem r (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
-normalizeIR af irReader = do
+normalizeIR af irReader ia = do
   (af', allIR) <- variableRename af . assignThreadIds <$> irReader
   let topModuleName = af' ^. afTopModule
       ir            = topsortModules topModuleName allIR
       irMap         = mkModuleMap ir
   normalizedOutput <- runReader af' $ do
-    sanityCheck
+    unless (IA.noSanity ia) $
+      sanityCheck
       & runReader ir
       & runReader irMap
     (merge ir & runReader irMap) >>= normalize
@@ -60,9 +64,10 @@ pipeline
   :: Members '[Error IodineException, Trace, Output String] r
   => AnnotationFile             -- ^ annotation file
   -> Sem r (L (Module ()))      -- ^ ir parser
+  -> IA.IodineArgs
   -> Sem r FInfo                -- ^ fixpoint query to run
-pipeline af irReader = do
-  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader
+pipeline af irReader ia = do
+  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
   runReader af' $ do
     let normalizedIRMap = mkModuleMap normalizedIR
     moduleSummaries <- createModuleSummaries normalizedIR normalizedIRMap

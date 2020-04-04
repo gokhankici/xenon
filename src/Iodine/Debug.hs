@@ -12,6 +12,7 @@ module Iodine.Debug where
 
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.IodineArgs
+import qualified Iodine.IodineArgs as IA
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR as IR
 import           Iodine.Language.IRParser
@@ -154,9 +155,9 @@ type D r = ( G r
                       ] r
            )
 
-debugPipeline :: G r => AnnotationFile -> Sem r (L (Module ())) -> Sem r ()
-debugPipeline af irReader = do
-  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader
+debugPipeline :: G r => AnnotationFile -> Sem r (L (Module ())) -> IA.IodineArgs -> Sem r ()
+debugPipeline af irReader ia = do
+  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
   runReader af' $ do
     let normalizedIRMap = mkMap IR.moduleName normalizedIR
     moduleSummaries <- createModuleSummaries normalizedIR normalizedIRMap
@@ -168,13 +169,13 @@ debugPipeline af irReader = do
 
 run :: IO ()
 run = do
-  (IodineArgs{..}, af) <- debugArgs >>= generateIR
+  (ia@IodineArgs{..}, af) <- debugArgs >>= generateIR
   irFileContents <- readIRFile fileName
   r <- tryIOError $ removeFile outputFile
   case r of
     Right _ -> return ()
     Left e -> unless (isDoesNotExistError e) $ E.throwIO e
-  res <- debugPipeline af (parse (fileName, irFileContents))
+  res <- debugPipeline af (parse (fileName, irFileContents)) ia
     & (if verbose then PT.traceToIO else PT.ignoreTrace)
     & errorToIOFinal
     & runOutputSem (embed . appendFile outputFile)

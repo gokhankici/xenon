@@ -1,0 +1,22 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "address"
+        ],
+        "sink": [
+          "out"
+        ]
+      }
+    },
+    "rom32": {
+      "annotations": {
+        "initial_eq": [
+          "data_out"
+        ]
+      }
+    }
+  }
+}
