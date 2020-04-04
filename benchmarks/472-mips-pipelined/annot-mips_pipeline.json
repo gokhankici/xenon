@@ -23,31 +23,10 @@
           "EX_MemRead",
           "EX_rt",
           "ID_instr",
-          "Stall",
-          "EX_RegWrite",
-          "MEM_RegRd",
-          "MEM_RegWrite",
-          "EX_RegWrite",
-          "MEM_RegRd",
-          "MEM_RegWrite"
+          "Stall"
         ]
       },
       "clock": "clk"
-    },
-    "control_pipeline": {
-      "annotations": {
-        "initial_eq": [
-          "RegDst",
-          "ALUSrc",
-          "MemtoReg",
-          "RegWrite",
-          "MemRead",
-          "MemWrite",
-          "Branch",
-          "Jump",
-          "ALUOp"
-        ]
-      }
     },
     "rom32": {
       "annotations": {
