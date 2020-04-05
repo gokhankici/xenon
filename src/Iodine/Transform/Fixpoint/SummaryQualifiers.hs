@@ -176,8 +176,8 @@ summaryQualifierVariablesAB moduleName ab = do
   let toVar n = invVariableDependencyNodeMap IM.! n
       addParent l uName =
         case l of
-          Implicit   -> implicitVars %~ HS.insert uName
-          Explicit _ -> explicitVars %~ HS.insert uName
+          Implicit -> implicitVars %~ HS.insert uName
+          Explicit -> explicitVars %~ HS.insert uName
   if isStar ab
     then do
     m1 <-
@@ -208,7 +208,7 @@ summaryQualifierVariablesAB moduleName ab = do
                   let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
                       newQD   = oldQD & (implicitVars <>~ uQDVars)
                   modify (at vName ?~ newQD)
-                Explicit _ ->
+                Explicit ->
                   modify (at vName ?~ uQD <> oldQD)
 
     return $ mergeQDMaps m1 m2
@@ -235,7 +235,7 @@ summaryQualifierVariablesAB moduleName ab = do
                 let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
                     newQD = oldQD & implicitVars %~ mappend uQDVars
                 modify (at vName ?~ newQD)
-              (Just uQD, Explicit _) ->
+              (Just uQD, Explicit) ->
                 modify (at vName ?~ oldQD <> uQD)
       modify (HM.filterWithKey (\k _ -> k `elem` abVars))
 

@@ -149,7 +149,7 @@ createModuleSummary m@Module{..} = do
              (concatMap fromNodes $ toList $ qd ^. implicitVars)
            accG'' =
              foldl'
-             (\g2 i -> insEdge (i, oNode, Explicit Blocking) g2) -- FIXME
+             (\g2 i -> insEdge (i, oNode, Explicit) g2)
              accG'
              (concatMap fromNodes $ toList $ qd ^. explicitVars)
        in accG''
@@ -375,12 +375,12 @@ moduleAnnotsSCC ns =
         case mparentQD of
           Nothing ->
             case lbl of
-              Explicit _ -> qd & explicitVars %~ HS.insert parentName
-              Implicit   -> qd & implicitVars %~ HS.insert parentName
+              Explicit -> qd & explicitVars %~ HS.insert parentName
+              Implicit -> qd & implicitVars %~ HS.insert parentName
           Just parentQD ->
             case lbl of
-              Explicit _ -> qd <> parentQD
-              Implicit   ->
+              Explicit -> qd <> parentQD
+              Implicit ->
                 let parentQDVars =
                       (parentQD ^. implicitVars) <> (parentQD ^. explicitVars)
                 in qd & implicitVars <>~ parentQDVars

@@ -38,7 +38,7 @@ import           Polysemy.Reader
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
-data VarDepEdgeType = Implicit | Explicit AssignmentType deriving (Show, Eq)
+data VarDepEdgeType = Implicit | Explicit deriving (Show, Eq)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 
@@ -135,10 +135,10 @@ handleStmt Assignment{..} =
       lhsNode <- getNode varName
       let rhsVars = getVariables assignmentRhs
       rhsNodes <- getNodes rhsVars
-      for_ (IS.toList rhsNodes) $ \rhsNode -> do
-        addEdge (rhsNode, lhsNode, Explicit assignmentType)
+      for_ (IS.toList rhsNodes) $ \rhsNode ->
+        addEdge (rhsNode, lhsNode, Explicit)
       pathNodes <- gets (^. pathVars)
-      for_ (IS.toList pathNodes) $ \pathNode -> do
+      for_ (IS.toList pathNodes) $ \pathNode ->
         addEdge (pathNode, lhsNode, Implicit)
       -- update the thread map
       tid <- ask
