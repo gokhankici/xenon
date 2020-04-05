@@ -5,6 +5,7 @@ import os
 import subprocess
 
 PACKAGE_NAME = "iodine"
+O0 = False
 
 def add_quotes(s):
     i = s.find(" ")
@@ -14,7 +15,8 @@ def add_quotes(s):
         return '"{}"'.format(s)
 
 def run_tests(test_args, stack_args=[]):
-    cmd = ["stack"] + stack_args + ["test", "--fast", PACKAGE_NAME]
+    fast = ["--fast"] if O0 else []
+    cmd = ["stack"] + stack_args + ["test"] + fast + [PACKAGE_NAME]
 
     if test_args:
         args = " ".join([add_quotes(a) for a in test_args])

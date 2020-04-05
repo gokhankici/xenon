@@ -87,6 +87,7 @@ executables:
     main:          Main.hs
     source-dirs:   app
     ghc-options:
+    - -O2
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
@@ -96,6 +97,7 @@ executables:
     main:          Main.hs
     source-dirs:   prolog-pretty-app
     ghc-options:
+    - -O2
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
@@ -107,6 +109,7 @@ tests:
     main:          Test.hs
     source-dirs:   test
     ghc-options:
+    - -O2
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N

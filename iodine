@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+O0 = False
+
 def get_args():
     argparser = argparse.ArgumentParser(prog="iodine", add_help=False)
     argparser.add_argument("-b", "--build", action="store_true")
@@ -20,7 +22,7 @@ args, unknown_args = get_args()
 
 THIS_DIR = Path(__file__).resolve().parent
 IVERILOG_DIR = THIS_DIR / "iverilog-parser"
-STACK_BUILD_CMD = ["stack", "build", "--fast"]
+STACK_BUILD_CMD = ["stack", "build"] + (["--fast"] if O0 else [])
 STACK_RUN_CMD = ["stack", "exec", "iodine"]
 STACK_PROFILE_ARGS = ["--profile", "--work-dir", ".stack-work-profile"] if args.profile else []
 
