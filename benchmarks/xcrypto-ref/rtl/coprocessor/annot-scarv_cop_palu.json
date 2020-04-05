@@ -1,62 +1,59 @@
 {
-  "clock": "g_clk",
-  "annotations": [
-    {
-      "type": "source",
-      "variables": [
-		  "g_resetn",
-		  "palu_ivalid",
-		  "gpr_rs1",
-		  "palu_rs1",
-		  "palu_rs2",
-		  "palu_rs3",
-		  "id_imm",
-		  "id_pw",
-		  "id_class",
-		  "id_subclass"
-      ]
+  "top_module": "scarv_cop_palu",
+  "modules": {
+    "scarv_cop_palu": {
+      "annotations": {
+        "source": [
+          "g_resetn",
+          "palu_ivalid",
+          "gpr_rs1",
+          "palu_rs1",
+          "palu_rs2",
+          "palu_rs3",
+          "id_imm",
+          "id_pw",
+          "id_class",
+          "id_subclass"
+        ],
+        "sink": [
+          "reg_palu_idone",
+          "reg_palu_cpr_rd_ben",
+          "reg_palu_cpr_rd_wdata"
+        ],
+        "always_eq": [
+          "id_pw",
+          "mul_start",
+          "g_resetn"
+        ]
+      },
+      "clock": "g_clk"
     },
-    {
-      "type": "sink",
-      "variables": [
-		  "reg_palu_idone",
-		  "reg_palu_cpr_rd_ben",
-		  "reg_palu_cpr_rd_wdata"
-      ]
-    },
-    {
-      "type": "always_eq",
-      "variables": [
-		  "id_pw",
-		  "mul_start",
-		  "g_resetn"
-      ]
-    },
-    {
-      "type": "initial_eq",
-	  "module": "scarv_cop_palu_multiplier",
-      "variables": [
-		  "ctr"
-      ]
+    "scarv_cop_palu_multiplier": {
+      "annotations": {
+        "initial_eq": [
+          "ctr"
+        ]
+      },
+      "clock": "g_clk"
     }
-  ],
+  },
   "history": [
     {
       "type": "always_eq",
       "variables": [
-		  "g_resetn",
-		  "id_class",
-		  "id_pw",
-		  "id_subclass",
-		  "palu_ivalid"
+        "g_resetn",
+        "id_class",
+        "id_pw",
+        "id_subclass",
+        "palu_ivalid"
       ],
       "comment": "These were the ones that found manually"
     },
     {
       "type": "initial_eq",
-	  "module": "scarv_cop_palu_multiplier",
+      "module": "scarv_cop_palu_multiplier",
       "variables": [
-		  "ctr"
+        "ctr"
       ],
       "comment": "These were the ones that found manually"
     }
