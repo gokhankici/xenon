@@ -74,12 +74,18 @@ inline std::ostream &operator<<(std::ostream &out, const IRAlwaysBlock &ab)
     return out << "always(" << *ab.event << ", " << *ab.statement << ")";
 }
 
+inline std::ostream &operator<<(std::ostream &out, const IRVariableInit &vi)
+{
+    return out << "(" << vi.first << ", " << *vi.second << ")";
+}
+
 std::ostream &operator<<(std::ostream &out, const IRModule &irModule)
 {
     return out << "module("
                << irModule.moduleName << ", "
                << irModule.ports << ", "
                << irModule.variables << ", "
+               << irModule.variableInits << ", "
                << irModule.gateStatements << ", "
                << irModule.alwaysBlocks << ","
                << irModule.moduleInstances << ")";

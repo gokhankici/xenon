@@ -87,6 +87,7 @@ handleModule Module{..} = do
     Module moduleName
     <$> traverse fixPort ports
     <*> traverse fixVariable variables
+    <*> traverse (\(v, e) -> (,) <$> fix v <*> fixExpr e) constantInits
     <*> traverse fixStmt gateStmts
     <*> traverse fixAB alwaysBlocks
     <*> return moduleInstances'

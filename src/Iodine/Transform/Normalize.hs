@@ -23,6 +23,7 @@ import           Iodine.Types
 
 import           Control.Lens
 import           Control.Monad
+import           Data.Functor
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import qualified Data.Sequence as SQ
@@ -96,7 +97,7 @@ normalizeModule :: (FD r, Members '[Error IodineException] r)
 normalizeModule Module {..} = runReader (ModuleName moduleName) $ do
   unless (SQ.null gateStmts) $
     throw $ IE Normalize "gateStmts should be empty here"
-  Module moduleName ports variables
+  Module moduleName ports variables constantInits
     <$> return mempty
     <*> traverse normalizeAB alwaysBlocks
     <*> traverse normalizeModuleInstance moduleInstances
@@ -313,6 +314,7 @@ assignThreadIds modules =
     freshModule :: Members '[State Int] r => Module a -> Sem r (Module Int)
     freshModule Module{..} =
       Module moduleName ports variables
+      (fmap ($> 0) <$> constantInits)
       <$> traverse freshStmt gateStmts
       <*> traverse freshAB alwaysBlocks
       <*> traverse freshMI moduleInstances

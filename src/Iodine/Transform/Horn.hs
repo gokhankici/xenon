@@ -38,7 +38,7 @@ data HornType = Init
               | SourceTagReset
               | Next
               | TagEqual
-              | Interference
+              | Interference [Int]
               | AssertEqCheck
               | WellFormed
               | InstanceCheck
@@ -207,11 +207,13 @@ instance FT.Fixpoint HornType where
        toFix SourceTagReset = PP.text "source-tag-reset"
        toFix Next           = PP.text "next"
        toFix TagEqual       = PP.text "tag-equal"
-       toFix Interference   = PP.text "interference"
        toFix AssertEqCheck  = PP.text "assert-eq"
        toFix WellFormed     = PP.text "wellformed"
        toFix InstanceCheck  = PP.text "instance-check"
        toFix Summary        = PP.text "module-summary"
+       toFix (Interference l) =
+         let arr = PP.brackets . PP.hsep . PP.punctuate PP.comma . fmap PP.int
+         in PP.text "interference" PP.<+> arr l
 
 instance NFData HornType
 

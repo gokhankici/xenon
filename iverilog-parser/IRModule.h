@@ -73,6 +73,8 @@ private:
     const IRStmt *statement;
 };
 
+typedef std::pair<std::string, const IRExpr*> IRVariableInit;
+
 class IRModule
 {
 public:
@@ -84,6 +86,7 @@ public:
     void addGateStatement(const IRStmt *stmt) { gateStatements.push_back(stmt); }
     void addAlwaysBlock(const IRAlwaysBlock *ab) { alwaysBlocks.push_back(ab); }
     void addModuleInstance(const IRStmt *stmt) { moduleInstances.push_back(stmt); }
+    void addVariableInit(const std::string& v, const IRExpr* e) { variableInits.push_back(std::pair(v, e)); }
 
     friend std::ostream &operator<<(std::ostream &, const IRModule &);
 
@@ -94,6 +97,7 @@ private:
     std::vector<const IRStmt *> gateStatements;
     std::vector<const IRStmt *> moduleInstances;
     std::vector<const IRAlwaysBlock *> alwaysBlocks;
+    std::vector<IRVariableInit> variableInits;
 };
 
 #endif

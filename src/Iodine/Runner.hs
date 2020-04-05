@@ -17,7 +17,8 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IRParser
 import           Iodine.Language.PrologParser
 import           Iodine.Pipeline
-import           Iodine.Transform.Fixpoint.Query (FInfo)
+import           Iodine.Transform.Fixpoint.Common
+import           Iodine.Transform.Horn
 import           Iodine.Types
 
 import qualified Control.Exception as E
@@ -26,6 +27,8 @@ import           Control.Monad
 import qualified Data.ByteString.Lazy as B
 import           Data.Foldable
 import           Data.Function
+import qualified Data.IntMap.Strict as IM
+import qualified Data.IntSet as IS
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Language.Fixpoint.Misc as FM
@@ -44,7 +47,7 @@ import           System.FilePath
 import           System.IO
 import           System.Process
 import           Text.PrettyPrint.HughesPJ (render)
--- import           Data.ByteString.Builder
+import           Text.Printf
 
 
 -- -----------------------------------------------------------------------------
@@ -144,20 +147,32 @@ checkIR (ia@IodineArgs{..}, af)
         Right (_, (normalizedIR, _)) -> printList normalizedIR
         Left e      -> errorHandle e
       return True
-  | onlyVCGen = do computeFInfo >>= FCons.saveQuery config
+  | onlyVCGen = do computeFInfo >>= FCons.saveQuery config . fst
                    exitSuccess
   | otherwise = do
-      finfo <- computeFInfo
+      (finfo, threadTypes) <- computeFInfo
       result <- F.solve config finfo
       let stat = FT.resStatus result
           statStr = render . FT.resultDoc
       FM.colorStrLn (FT.colorResult stat) (statStr stat)
       let safe = FT.isSafe result
-      unless noFPOutput $
+      unless (noFPOutput || delta) $
         (readFile fqoutFile >>= putStrLn) `E.catch` (\(_ :: E.IOException) -> return ())
+      when delta $ do
+        let mds = case stat of
+                    FT.Unsafe cs -> snd <$> cs
+                    _ -> error "unreachable"
+            tids =
+              foldMap
+              (\HornClauseId{..} ->
+                 case hcType of
+                   Interference l -> IS.insert hcStmtId $ IS.fromList l
+                   _ -> IS.singleton hcStmtId)
+              mds
+        for_ (IS.toList tids) $ \tid ->
+          printf "Thread #%d: %s\n" tid (show $ threadTypes IM.! tid)
       return safe
   where
-    computeFInfo :: IO FInfo
     computeFInfo = do
       irFileContents <- readIRFile fileName
       mFInfo <- pipeline af

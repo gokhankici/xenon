@@ -148,37 +148,38 @@ const IRModule *IRExporter::extractModule() const
         }
     }
 
+    for (unsigned i = 0; i < module->var_inits.size(); i++)
+    {
+        Statement *s = module->var_inits[i];
+        PAssign *ba = dynamic_cast<PAssign *>(s);
+        assert(ba != NULL);
+
+        PExpr *rexpr = ba->rval();
+        if (rexpr == NULL)
+        {
+            // don't know what to do, so continue
+            continue;
+        }
+
+        if (!isConstantExpr(rexpr))
+        {
+            cerr << endl;
+            s->dump(cerr, 0);
+            cerr << endl
+                    << "initial assignment is not a constant blocking assignment" << endl;
+            exit(1);
+        }
+
+
+        auto v = dynamic_cast<const IRExpr_Variable*>(toIRExpr(ba->lval_));
+        auto e = toIRExpr(ba->rval_);
+        assert(v != NULL);
+        irModule->addVariableInit(v->getOnlyVariableName(), e);
+    }
+
     // ###########################################################################
     // missing functionality
     // ###########################################################################
-    // skipping variable initializations
-    if (module->var_inits.size() != 0)
-    {
-        cerr << "skipping variable initializations" << endl;
-        for (unsigned i = 0; i < module->var_inits.size(); i++)
-        {
-            Statement *s = module->var_inits[i];
-            PAssign *ba = dynamic_cast<PAssign *>(s);
-            assert(ba != NULL);
-
-            PExpr *rexpr = ba->rval();
-            if (rexpr == NULL)
-            {
-                // don't know what to do, so continue
-                continue;
-            }
-
-            if (!isConstantExpr(rexpr))
-            {
-                cerr << endl;
-                s->dump(cerr, 0);
-                cerr << endl
-                     << "initial assignment is not a constant blocking assignment" << endl;
-                exit(1);
-            }
-        }
-    }
-
     // attributes
     if (module->attributes.begin() != module->attributes.end())
     {

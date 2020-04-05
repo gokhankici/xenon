@@ -3,18 +3,19 @@
 cd "${0:A:h}"
 
 # PROFILE="--profile"
-# FIXED="yes"
+FIXED="yes"
+# PRINT_ALL_CONSTRAINTS="yes"
 
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
 # TEST="benchmarks/472-mips-pipelined/rom32-test-1.v"
-TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
+# TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/472-mips-pipelined/neg-mux3_test_02.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
 # TEST="benchmarks/crypto_cores/tiny_aes/trunk/rtl/aes_256.v"
 # TEST="benchmarks/fpu/verilog/fpu.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/mult_test.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/scarv_cop_palu.v"
-# TEST="benchmarks/yarvi/shared/yarvi.v"
+TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="examples/verilog/stall.v"
 # TEST="test/verilog/neg/neg-test-2.v"
 # TEST="test/verilog/pos/merge-02.v"
@@ -29,15 +30,25 @@ TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
 TEST_FILE="${TEST_DIR}/${TEST_NAME}.v"
+FQ_FILE="${TEST_FILE:h}/.liquid/.${TEST_NAME}.pl.fq"
+
+print_constraints() {
+	grep 'constraint id' "${FQ_FILE}" | sort
+	printf "# constraints: "
+	grep 'constraint id' "${FQ_FILE}" | wc -l
+}
 
 if [ -z "${FIXED}" ]; then
         TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}.json"
 else
         TEST_ANNOT="${TEST_DIR}/annot-${TEST_NAME}_fixed.json"
 fi
+# TEST_ANNOT="${TEST_ANNOT:h}/annot-test6.json"
 
-# TEST_ANNOT="benchmarks/crypto_cores/tiny_aes/trunk/rtl/annot-test6.json"
-# nvim "${TEST_ANNOT}"; exit 0
+if [ -n "${PRINT_ALL_CONSTRAINTS}" ]; then
+	print_constraints
+	exit 0
+fi
 
 ./iodine --build ${PROFILE} && \
         ./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose $@

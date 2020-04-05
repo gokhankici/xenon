@@ -45,6 +45,7 @@ parseModule =
   <$> identifier
   <*> (comma *> list parsePort)
   <*> (comma *> list parseVariable)
+  <*> (comma *> list parseVarInit)
   <*> (comma *> list parseStmt)
   <*> (comma *> list parseAlwaysBlock)
   <*> (comma *> list parseModuleInstance)
@@ -170,6 +171,9 @@ parseAlwaysBlock =
                      <$> parseEvent
                      <*> (comma *> parseStmt)
                      <*> return ())
+
+parseVarInit :: Parser (Id, Expr ())
+parseVarInit = parens $ (,) <$> identifier <*> (comma *> parseExpr)
 
 parseData :: Parser ()
 parseData = return ()

@@ -122,6 +122,7 @@ data UFOp =
   | UF_write_to_index
   | UF_call Id -- ^ call a function with the given name
   deriving (Eq)
+{- HLINT ignore UFOp -}
 
 data AssignmentType = Blocking | NonBlocking | Continuous
                     deriving (Generic, Eq, Show)
@@ -168,6 +169,7 @@ data Module a =
   Module { moduleName      :: Id
          , ports           :: L Port
          , variables       :: L Variable
+         , constantInits   :: L (Id, Expr a)
          , gateStmts       :: L (Stmt a)
          , alwaysBlocks    :: L (AlwaysBlock a)
          , moduleInstances :: L (ModuleInstance a)
@@ -322,7 +324,7 @@ instance ShowIndex a => Doc (Expr a) where
 instance ShowIndex a => Doc (Event a) where
   doc (PosEdge e) = PP.text "@(posedge " PP.<> doc e PP.<> PP.rparen
   doc (NegEdge e) = PP.text "@(negedge " PP.<> doc e PP.<> PP.rparen
-  doc Star        = PP.text "*"
+  doc Star        = PP.text "@(*)"
 
 instance ShowIndex a => Doc (Stmt a) where
   doc (Block ss a) =

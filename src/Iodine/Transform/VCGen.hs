@@ -617,13 +617,14 @@ interferenceCheckMI writeMI readAB overlappingVars = do
                    )
            in acc SQ.|> e
         ) mempty alwaysEqualVariables
+  let otherThreadIds = getData writeMI : IS.toList depThreadIds
   return $
     Horn { hornHead   = readHornHead
          , hornBody   = HAnd $
                         topModuleExprs <> aeExprs <>
                         (depThreadInstances |> writeInstance)
                         <> readBodyExpr
-         , hornType   = Interference
+         , hornType   = Interference otherThreadIds
          , hornStmtId = getThreadId readAB
          , hornData   = ()
          }
@@ -649,7 +650,7 @@ interferenceCheckAB writeAB readAB overlappingVars= do
   return $
     Horn { hornHead   = hd
          , hornBody   = HAnd $ writeInstance <| writeTR <| body
-         , hornType   = Interference
+         , hornType   = Interference [getData writeAB]
          , hornStmtId = getThreadId readAB
          , hornData   = ()
          }
