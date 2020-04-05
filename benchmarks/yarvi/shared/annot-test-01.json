@@ -1,0 +1,28 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+			"clk",
+			"wr",
+			"addr",
+			"din"
+		],
+        "sink": [
+          "dout"
+        ],
+        "always_eq": [
+			"wr"
+        ]
+      },
+      "clock": "clk"
+    },
+    "bram_tdp": {
+      "clock": [
+        "a_clk",
+        "b_clk"
+      ]
+    }
+  }
+}

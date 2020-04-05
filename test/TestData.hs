@@ -186,8 +186,12 @@ majorStubs = mkCollection "major-stub" ts
     b  = benchmarkDir
     shaDir = b </> "crypto_cores" </> "sha_core" </> "trunk" </> "rtl"
     aluDir = b </> "xcrypto-ref" </> "rtl" </> "coprocessor"
+    yarviDir = b </> "yarvi" </> "shared"
     ts = [ T "sha_stub_3" $ shaDir </> "sha256_stub_3.v"
          , T "mult_test"  $ aluDir </> "mult_test.v"
+         , T "yarvi-stub-01" $ yarviDir </> "test-01.v"
+         , (TF "yarvi-stub-neg-01" $ yarviDir </> "test-01.v")
+           { annotFile = Just $ yarviDir </> "annot-neg-test-01.json" }
          ]
 
 
