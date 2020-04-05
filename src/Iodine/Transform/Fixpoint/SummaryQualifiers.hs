@@ -47,17 +47,19 @@ addSimpleModuleQualifiers :: FD r => Module Int -> Sem r ()
 addSimpleModuleQualifiers m =
   (zip [0..] <$> asks (HM.toList . portDependencies . (HM.! moduleName m))) >>=
     traverse_
-    (\(n1, (o, inputSet)) -> do
-       let inputSeq = toSequence inputSet
-           inputList = toList inputSet
-       -- trace "QUALIFIER COUNT :: addSimpleModuleQualifiers" (moduleName m, length inputList)
-       flip SQ.traverseWithIndex (powerset inputSeq) $ \n2 vs ->
-         for_ [Tag, Value] $ \t ->
-         let name = "SimpleModule_" <> T.unpack (moduleName m) <> "_"
-                    <> show n1 <> "_" <> show n2 <> "_"
-                    <> show t
-         in addQualifier $
-            mkSimpleModuleQualifierHelper m name inputList (toList vs) o t
+    (\(n1, (o, qd)) -> do
+        let aeVars   = qd ^. implicitVars
+            allVars  = (qd ^. explicitVars) <> aeVars
+            aeVarsL  = toList aeVars
+            allVarsL = toList allVars
+            name n2  = "SimpleModule_" <> T.unpack (moduleName m) <> "_"
+                       <> show n1 <> "_" <> show n2
+            qs = [ mkSimpleModuleQualifierHelper m (name 0) allVarsL []       o Tag
+                 , mkSimpleModuleQualifierHelper m (name 1) allVarsL aeVarsL  o Tag
+                 , mkSimpleModuleQualifierHelper m (name 2) allVarsL allVarsL o Tag
+                 , mkSimpleModuleQualifierHelper m (name 0) allVarsL allVarsL o Value
+                 ]
+        traverse_ addQualifier qs
     )
 
 
@@ -120,91 +122,8 @@ mkSimpleModuleQualifierHelper m qualifierName inputs valEqInputs rhsName rhsType
 
 addSummaryQualifiers :: FD r => Module Int -> Sem r ()
 addSummaryQualifiers m@Module{..} = do
-  addSummaryQualifiersM m
+  addSimpleModuleQualifiers m
   traverse_ (addSummaryQualifiersAB moduleName) alwaysBlocks
-
-
-addSummaryQualifiersM :: FD r => Module Int -> Sem r ()
-addSummaryQualifiersM m@Module{..} = do
-  portDeps <- portDependencies <$> asks (hmGet 1 moduleName)
-  valEqMap <- summaryQualifierVariablesM m
-  for_ (HM.toList portDeps) $ \(o, is) -> do
-    let inputList = HS.toList is
-        valEqSeq  = toSequence $ valEqMap HM.! o
-        name      = namePrefix <> "_" <> T.unpack o
-    -- addQualifier $
-    --   mkSummaryQualifierHelper m moduleName (name <> "_Tag")
-    --   inputList valEqList o Tag
-    flip SQ.traverseWithIndex (powerset valEqSeq) $ \n vsSeq -> do
-      let valEqList = toList vsSeq
-          name'     = name <> "_Tag" <> show n
-      addQualifier $
-        mkSummaryQualifierHelper m moduleName name'
-        inputList valEqList o Tag
-
-    addQualifier $
-      mkSummaryQualifierHelper m moduleName (name <> "_Value")
-      mempty inputList o Value
-  where
-    namePrefix =
-      "SummaryQualifierM_"
-      <> T.unpack moduleName <> "_"
-      <> "T" <> show (getThreadId m) <> "_"
-
-summaryQualifierVariablesM :: Members '[ Reader SummaryMap
-                                       ] r
-                            => Module Int
-                            -> Sem r (HM.HashMap Id Ids)
-summaryQualifierVariablesM Module{..} = do
-  ModuleSummary{..} <- asks (hmGet 2 moduleName)
-  let toVar n  = invVariableDependencyNodeMap IM.! n
-      toNode v = variableDependencyNodeMap HM.! v
-
-      -- update :: acc@(worklist, history, ps) (parentNode, label) -> acc
-      backwardsSearchHelper update wl history ps =
-        case wl of
-          SQ.Empty    -> ps
-          n SQ.:<| ns ->
-            let (ns', history', ps') =
-                  foldl' update (ns, history, ps) (G.lpre variableDependencies n)
-            in backwardsSearchHelper update ns' history' ps'
-
-      -- start from the given node, and go back in the graph while applying the
-      -- given update function
-      backwardsSearch update startNode =
-        backwardsSearchHelper update (SQ.singleton startNode) mempty mempty
-
-      implicitParents :: Int -> IS.IntSet
-      implicitParents =
-        backwardsSearch $ \acc (parentNode, lbl) ->
-        case lbl of
-          Implicit   -> acc & _3 %~ IS.insert parentNode
-          Explicit _ -> if parentNode `IS.member` (acc ^. _2)
-                        then acc
-                        else acc & (_1 %~ (SQ.|> parentNode)) . (_2 %~ IS.insert parentNode)
-
-      allParents :: Int -> IS.IntSet
-      allParents outputNode =
-        let update acc (parentNode, _lbl) =
-              if parentNode `IS.member` (acc ^. _2)
-              then acc
-              else acc
-                   & (_1 %~ (SQ.|> parentNode))
-                   . (_2 %~ IS.insert parentNode)
-                   . (_3 %~ IS.insert parentNode)
-            parents = implicitParents outputNode
-            parentsSeq = SQ.fromList $ IS.toList parents
-        in backwardsSearchHelper update parentsSeq parents parents
-
-      getImplicitInputs :: Id -> Ids -> Ids
-      getImplicitInputs output inputs =
-        let outputNode = toNode output
-            nodes = allParents outputNode
-            vars  = IS.foldl' (\acc n -> HS.insert (toVar n) acc) mempty nodes
-        in HS.intersection inputs vars
-
-  return $
-    HM.mapWithKey getImplicitInputs portDependencies
 
 
 addSummaryQualifiersAB :: FD r => Id -> AlwaysBlock Int -> Sem r ()
@@ -294,7 +213,7 @@ summaryQualifierVariablesAB moduleName ab = do
 
     return $ mergeQDMaps m1 m2
     else do
-    let (g, toSCCNodeMap) = sccGraph variableDependencies
+    let (g, toSCCNodeMap) = (variableDependenciesSCC, variableDependencySCCNodeMap)
         toVars n = case fst $ G.match n g of
                      Just (_, _, is, _) -> IS.toList is
                      Nothing -> error "unreachable"

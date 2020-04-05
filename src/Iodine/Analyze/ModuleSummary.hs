@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Iodine.Analyze.ModuleSummary
   (
@@ -11,6 +12,9 @@ module Iodine.Analyze.ModuleSummary
   , ModuleSummary(..)
   , SummaryMap
   , readBeforeWrittenTo
+  , QualifierDependencies
+  , explicitVars
+  , implicitVars
   )
 where
 
@@ -23,8 +27,8 @@ import           Iodine.Utils
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
+import           Data.Maybe
 import qualified Data.Graph.Inductive as G
-import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.IntMap as IM
@@ -37,15 +41,24 @@ import           Polysemy.Reader
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
 
-type ModuleMap   = HM.HashMap Id (Module Int)
-type SummaryMap  = HM.HashMap Id ModuleSummary
-type TDGraph     = G.Gr () () -- ^ thread dependency graph
-type Error       = PE.Error IodineException
+data QualifierDependencies = QualifierDependencies
+  { _explicitVars :: Ids
+  , _implicitVars :: Ids
+  }
+  deriving (Eq)
+
+makeLenses ''QualifierDependencies
+
+type ModuleMap        = HM.HashMap Id (Module Int)
+type TDGraph          = G.Gr () () -- ^ thread dependency graph
+type Error            = PE.Error IodineException
+type SummaryMap       = HM.HashMap Id ModuleSummary
+type PortDependencies = HM.HashMap Id QualifierDependencies
 
 data ModuleSummary =
   ModuleSummary { -- | the dependency map between ports: from an output to the
                   -- set of inputs that affect it
-                  portDependencies :: HM.HashMap Id Ids,
+                  portDependencies :: PortDependencies,
 
                   -- | whether the module is a combinational logic (i.e., does
                   isCombinatorial :: Bool,
@@ -72,9 +85,14 @@ data ModuleSummary =
                   variableDependencyNodeMap  :: HM.HashMap Id Int,
 
                   -- | node id -> variable name
-                  invVariableDependencyNodeMap :: IM.IntMap Id
+                  invVariableDependencyNodeMap :: IM.IntMap Id,
+
+                  -- | variable dependency graph with SCC
+                  variableDependenciesSCC       :: G.Gr IS.IntSet VarDepEdgeType,
+                  variableDependencySCCNodeMap  :: IM.IntMap Int
                   }
   deriving (Show)
+
 
 -- #############################################################################
 
@@ -105,27 +123,40 @@ createModuleSummary :: Members '[ Reader AnnotationFile
                     => Module Int
                     -> Sem r ModuleSummary
 createModuleSummary m@Module{..} = do
-  dgState <- dependencyGraphFromModule m
+  dgState <- dependencyGraph m
   let varDepGraph = dgState ^. depGraph
       varDepMap   = dgState ^. varMap
   -- trace "createModuleSummary-module" moduleName
   -- trace
   --   ("thread dependencies of module #" ++ show (getData m))
   --   (G.edges $ dgState ^. threadGraph)
-  let lookupNode v = mapLookup 1 v varDepMap
   clks <- getClocks moduleName
   let hasClock = not $ HS.null clks
-      isClk v = v `elem` clks
-  let portDeps =
-        foldl'
-        (\deps o ->
-           let is = HS.fromList $ toList $
-                    SQ.filter
-                    (\i -> not (isClk i) && (isReachable varDepGraph (lookupNode o) . lookupNode) i)
-                    inputs
-           in  HM.insert o is deps)
-        mempty
-        outputs
+
+  let nodeMap = IM.fromList $ swap <$> HM.toList varDepMap
+  varDepGraph' <-
+    foldlM' varDepGraph moduleInstances $ \g ModuleInstance{..} ->
+    HM.foldlWithKey'
+    (\accG o qd ->
+       let toNode v = hmGet 0 v varDepMap
+           oVar = varName $ hmGet 1 o moduleInstancePorts
+           oNode = toNode oVar
+           fromNodes = fmap toNode . toList . getVariables . (\v -> hmGet 2 v moduleInstancePorts)
+           accG' =
+             foldl'
+             (\g2 i -> insEdge (i, oNode, Implicit) g2)
+             accG
+             (concatMap fromNodes $ toList $ qd ^. implicitVars)
+           accG'' =
+             foldl'
+             (\g2 i -> insEdge (i, oNode, Explicit Blocking) g2) -- FIXME
+             accG'
+             (concatMap fromNodes $ toList $ qd ^. explicitVars)
+       in accG''
+    ) g
+    <$> gets (portDependencies . hmGet 3 moduleInstanceType)
+
+  portDeps <- moduleAnnots m varDepGraph' nodeMap varDepMap
 
   -- we can summarize the module instance if itself does not have a clock and
   -- all of its submodules can be summarized
@@ -139,7 +170,7 @@ createModuleSummary m@Module{..} = do
     (\ModuleInstance{..} -> do
         outputPorts <-
           moduleOutputs
-          <$> asks (HM.! moduleInstanceType)
+          <$> asks (hmGet 4 moduleInstanceType)
           <*> getClocks moduleInstanceType
         return $
           HM.foldlWithKey'
@@ -165,84 +196,24 @@ createModuleSummary m@Module{..} = do
         submodulesCanBeSummarized &&
         HS.null readBeforeWrittenVars
 
+  let (sccG, toSCCNodeMap) = sccGraph varDepGraph
+
   return $
     ModuleSummary
     { portDependencies             = portDeps
     , isCombinatorial              = isComb
-    -- , readBeforeWrittenVars        = readBeforeWrittenVars
     , threadDependencies           = dgState ^. threadGraph
-    -- , threadReadMap                = dgState ^. varReads
     , threadWriteMap               = dgState ^. varUpdates
     , variableDependencies         = varDepGraph
     , variableDependencyNodeMap    = varDepMap
-    , invVariableDependencyNodeMap = IM.fromList $
-                                     swap <$> HM.toList varDepMap
+    , invVariableDependencyNodeMap = nodeMap
+    , variableDependenciesSCC      = sccG
+    , variableDependencySCCNodeMap = toSCCNodeMap
     }
   where
-    isReachable g toNode fromNode =
-      let ns = GQ.reachable fromNode g
-      in toNode `elem` ns
-
     swap (a,b) = (b,a)
+    inputsSet = moduleInputs m mempty
 
-    inputsSet :: Ids
-    inputsSet = toHSet inputs
-
-    inputs, outputs :: L Id
-    (inputs, outputs) =
-      foldl' (\acc -> \case
-                 Input i  -> acc & _1 %~ (|> variableName i)
-                 Output o -> acc & _2 %~ (|> variableName o)) mempty ports
-
-
-dependencyGraphFromModule :: Members '[ State SummaryMap
-                                      , Error
-                                      , PT.Trace
-                                      , Reader AnnotationFile
-                                      , Reader ModuleMap
-                                      ] r
-                          => Module Int
-                          -> Sem r DependencyGraphSt
-dependencyGraphFromModule m@Module{..} =
-  dependencyGraph m
-  -- dgState <- dependencyGraph m
-  -- if   SQ.null moduleInstances
-  --   then return dgState
-  --   else do
-  --   let nodeMap = dgState ^. varMap
-  --       maxId   = maximum $ HM.elems nodeMap
-  --   unless (SQ.null gateStmts) (PE.throw $ IE Analysis "non null gate stmts")
-  --   (nodeMap', extraEdges) <-
-  --     runState nodeMap $ evalState maxId $
-  --     foldlM' SQ.empty moduleInstances $ \es ModuleInstance{..} -> do
-  --     ModuleSummary{..} <- gets (mapLookup 3 moduleInstanceType)
-  --     let assignedVars p = toSequence . getVariables $ mapLookup 4 p moduleInstancePorts
-  --         tmpEdges = do (o, is) <- toSequence $ HM.toList portDependencies
-  --                       i <- toSequence is
-  --                       fromVar <- assignedVars i
-  --                       toVar   <- assignedVars o
-  --                       return (fromVar, toVar)
-  --     es' <- for tmpEdges $ \(fromVar, toVar) -> do
-  --       fromNode <- getNode fromVar
-  --       toNode <- getNode toVar
-  --       return (fromNode, toNode, Explicit Blocking)
-  --     return $ es <> es'
-  --   -- trace "thread graph" $ dgState ^. threadGraph
-  --   return $
-  --     dgState
-  --     & over depGraph (\g -> foldr' insEdge g extraEdges)
-  --     & set varMap nodeMap'
-
--- getNode :: Members '[State (HM.HashMap Id Int), State Int] r => Id -> Sem r Int
--- getNode nodeName = do
---   mNodeId <- gets (HM.lookup nodeName)
---   case mNodeId of
---     Nothing -> do
---       newId <- gets (+ 1)
---       modify (HM.insert nodeName newId)
---       put newId
---       return newId
---     Just n  -> return n
 
 mapLookup :: Show a => Int -> Id -> HM.HashMap Id a -> a
 mapLookup n k m =
@@ -324,3 +295,104 @@ readBeforeWrittenTo ab initialWrittenVars = readBeforeWrittenSet
 
       modify $ _1 .~ (readVarsThen <> readVarsElse)
       modify $ _2 .~ (writtenVarsThen <> writtenVarsElse)
+
+
+instance Semigroup QualifierDependencies where
+  qd1 <> qd2 =
+    qd1 &
+    (explicitVars %~ mappend (qd2 ^. explicitVars)) .
+    (implicitVars %~ mappend (qd2 ^. implicitVars))
+
+
+instance Monoid QualifierDependencies where
+  mempty = QualifierDependencies mempty mempty
+
+instance Show QualifierDependencies where
+  show qd = "{ explicit: " ++ show (toList $ qd ^. explicitVars) ++
+            ", implicit: " ++ show (toList $ qd ^. implicitVars) ++
+            "}"
+
+type Nodes = IS.IntSet
+type NodeMap = IM.IntMap Id
+type InvNodeMap = HM.HashMap Id Int
+type QDMI  = IM.IntMap (Maybe QualifierDependencies)
+
+moduleAnnots :: Module Int -> VarDepGraph -> NodeMap -> InvNodeMap -> Sem r PortDependencies
+moduleAnnots m@Module{..} g nodeMap invNodeMap = do
+  let (sccG, _) = sccGraph g
+  qdmi <-
+    execState @QDMI mempty $ runReader m $ runReader g $ runReader nodeMap $
+    for_ (G.topsort sccG) $ \sccN ->
+    let (parentNodes, _, nodeSet, _) = G.context sccG sccN
+    in if null parentNodes
+       then for_ (IS.toList nodeSet) $
+            \n -> modify $ IM.insert n Nothing
+       else moduleAnnotsSCC nodeSet & runReader nodeSet
+  let outputs = moduleOutputs m mempty
+      inputs  = moduleInputs  m mempty
+  return $
+    foldl'
+    (\acc o ->
+       let n  = hmGet 5 o invNodeMap
+           qd = case IM.lookup n qdmi of
+                  Nothing       -> error $ show o
+                  Just Nothing  -> mempty
+                  Just (Just a) -> a
+           qd' = qd
+                 & (implicitVars %~ HS.intersection inputs)
+                 . (explicitVars %~ HS.intersection inputs)
+       in HM.insert o qd' acc
+    )
+    mempty
+    outputs
+
+moduleAnnotsSCC :: Members '[ Reader (Module Int)
+                            , Reader VarDepGraph
+                            , Reader NodeMap
+                            , Reader Nodes
+                            , State QDMI
+                            ] r
+                => IS.IntSet
+                -> Sem r ()
+moduleAnnotsSCC ns =
+  if IS.null ns
+  then return ()
+  else do
+    sccNodes <- ask @Nodes
+    nodeMap <- ask @NodeMap
+    g <- ask @VarDepGraph
+    let toVar = (nodeMap IM.!)
+    let currentNode = IS.findMin ns
+        rest  = IS.delete currentNode ns
+        getQD = gets . IM.findWithDefault (Just mempty)
+    moldQD <- gets (IM.lookup currentNode)
+    let oldQD = maybe mempty (fromMaybe mempty) moldQD
+    newQD <-
+      foldlM' oldQD (G.lpre g currentNode) $ \qd (parentNode, lbl) -> do
+      let parentName = toVar parentNode
+      mparentQD <- getQD parentNode
+      return $
+        case mparentQD of
+          Nothing ->
+            case lbl of
+              Explicit _ -> qd & explicitVars %~ HS.insert parentName
+              Implicit   -> qd & implicitVars %~ HS.insert parentName
+          Just parentQD ->
+            case lbl of
+              Explicit _ -> qd <> parentQD
+              Implicit   ->
+                let parentQDVars =
+                      (parentQD ^. implicitVars) <> (parentQD ^. explicitVars)
+                in qd & implicitVars <>~ parentQDVars
+    ns' <-
+      if newQD /= oldQD || isNothing moldQD
+      then do
+        modify $ IM.insert currentNode (Just newQD)
+        let newNodes =
+              IS.fromList
+              $ filter (`IS.member` sccNodes)
+              $ G.suc g currentNode
+        return $ rest <> newNodes
+      else
+        return rest
+    moduleAnnotsSCC ns'

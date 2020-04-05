@@ -955,7 +955,7 @@ computeAllInitialEqualVars modules = execState mempty $ for_ modules $ \m@Module
 autoInitialEqualVars :: G r => Module Int -> Sem r FDEQSt
 autoInitialEqualVars m@Module{..} = do
   ms@ModuleSummary{..} <- asks (hmGet 14 moduleName)
-  let (sccG, toSCCNodeMap) = sccGraph variableDependencies
+  let (sccG, toSCCNodeMap) = (variableDependenciesSCC, variableDependencySCCNodeMap)
       readSt =
         FDEQReadSt
         { sccG      = sccG

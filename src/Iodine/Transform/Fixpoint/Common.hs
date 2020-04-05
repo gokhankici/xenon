@@ -17,7 +17,6 @@ import           Iodine.Language.IR
 import           Iodine.Transform.Horn
 import           Iodine.Transform.VCGen
 import           Iodine.Types
-import           Iodine.Utils
 
 import           Control.DeepSeq
 import           Control.Lens
@@ -84,15 +83,7 @@ data St = St { _hornConstraints           :: HM.HashMap Integer (FT.SubC HornCla
              , _invBindMap                :: HM.HashMap Id FT.BindId
              }
 
-data QualifierDependencies = QualifierDependencies
-  { _explicitVars :: Ids
-  , _implicitVars :: Ids
-  }
-  deriving (Eq)
-
 makeLenses ''St
-makeLenses ''QualifierDependencies
-
 
 -- | We create a binding for true and false values, and use them in the horn
 -- clauses instead of the boolean type directly.
@@ -254,21 +245,6 @@ vSymbol :: FT.Symbol
 vSymbol = symbol "v"
 
 
-instance Semigroup QualifierDependencies where
-  qd1 <> qd2 =
-    qd1 &
-    (explicitVars %~ mappend (qd2 ^. explicitVars)) .
-    (implicitVars %~ mappend (qd2 ^. implicitVars))
-
-
-instance Monoid QualifierDependencies where
-  mempty = QualifierDependencies mempty mempty
-
-instance Show QualifierDependencies where
-  show qd = "{ explicit: " ++ show (toList $ qd ^. explicitVars) ++
-            ", implicit: " ++ show (toList $ qd ^. implicitVars) ++
-            "}"
-
 allPredecessors :: Int
                 -> G.Gr a b
                 -> IS.IntSet
@@ -291,8 +267,8 @@ allPredecessors startNode g =
       in go wl' ps'
 
 
-powerset :: L a -> L (L a)
-powerset SQ.Empty            = SQ.Empty
-powerset (a SQ.:<| SQ.Empty) = mempty |:> SQ.singleton a
-powerset (a SQ.:<| as)       = let ps = powerset as
-                               in ps <> ((a SQ.:<|) <$> ps)
+-- powerset :: L a -> L (L a)
+-- powerset SQ.Empty            = SQ.Empty
+-- powerset (a SQ.:<| SQ.Empty) = mempty |:> SQ.singleton a
+-- powerset (a SQ.:<| as)       = let ps = powerset as
+--                                in ps <> ((a SQ.:<|) <$> ps)
