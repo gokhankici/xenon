@@ -936,16 +936,20 @@ computeAllInitialEqualVars modules = execState mempty $ for_ modules $ \m@Module
       Nothing -> modify (HS.insert v)
       Just FDEQReason{..} ->
         if | notNull dependsOnInputs ->
-               trace "computeAllInitialEqualVars - dependsOnInputs" (moduleName, v, toList dependsOnInputs)
+               -- trace "computeAllInitialEqualVars - dependsOnInputs" (moduleName, v, toList dependsOnInputs)
+               return ()
            | notNull dependsOnReg ->
-               trace "computeAllInitialEqualVars - dependsOnReg" (moduleName, v, toList dependsOnReg)
+               -- trace "computeAllInitialEqualVars - dependsOnReg" (moduleName, v, toList dependsOnReg)
+               return ()
            | notNull writtenByMI -> do
                leftovers <-
                  flip filterM (toList writtenByMI) $ \(miType, miVar) ->
                  gets (notElem miVar . (HM.! miType))
                if null leftovers
                  then modify (HS.insert v)
-                 else trace "computeAllInitialEqualVars - writtenByMI" (moduleName, v, toList leftovers)
+                 else
+                 -- trace "computeAllInitialEqualVars - writtenByMI" (moduleName, v, toList leftovers)
+                 return ()
            | otherwise ->
              trace "computeAllInitialEqualVars - weird" (moduleName, v)
   modify (at moduleName ?~ ies)

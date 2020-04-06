@@ -2,9 +2,25 @@
 
 cd "${0:A:h}"
 
-# PROFILE="--profile"
-# FIXED="yes"
-# PRINT_FQ_INFO="yes"
+PROFILE="--profile"
+ARGS=()
+
+for arg in $@; do
+	case "$arg" in
+		--profile)
+			PROFILE="--profile"
+			;;
+		--fixed)
+			FIXED="yes"
+			;;
+		--info)
+			PRINT_FQ_INFO="yes"
+			;;
+		*)
+			ARGS+=("$arg")
+			;;
+	esac
+done
 
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
 # TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
@@ -16,8 +32,8 @@ cd "${0:A:h}"
 # TEST="benchmarks/fpu/verilog/fpu.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/mult_test.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/scarv_cop_palu.v"
-TEST="benchmarks/yarvi/shared/test-01.v"
-# TEST="benchmarks/yarvi/shared/yarvi.v"
+# TEST="benchmarks/yarvi/shared/test-01.v"
+TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="examples/verilog/stall.v"
 # TEST="test/verilog/neg/neg-test-2-v0.v"
 # TEST="test/verilog/pos/merge-02.v"
@@ -56,4 +72,4 @@ if [ -n "${PRINT_FQ_INFO}" ]; then
 fi
 
 ./iodine --build ${PROFILE} && \
-        ./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose $@
+        ./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose $ARGS

@@ -6,10 +6,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE GADTs #-}
 
 module Iodine.Debug where
 
+import           Iodine.Analyze.FQOutAnalysis
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.IodineArgs
 import qualified Iodine.IodineArgs as IA
@@ -18,6 +20,7 @@ import           Iodine.Language.IR as IR
 import           Iodine.Language.IRParser
 import           Iodine.Pipeline (normalizeIR)
 import           Iodine.Runner (generateIR, readIRFile)
+import           Iodine.Transform.Fixpoint.Query
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
 import           Iodine.Transform.VCGen
@@ -39,6 +42,8 @@ import qualified Data.IntSet as IS
 import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
+import qualified Language.Fixpoint.Solver as F
+import qualified Language.Fixpoint.Types.Config as FC
 import           Polysemy hiding (run)
 import           Polysemy.Error
 import           Polysemy.Output
@@ -50,9 +55,27 @@ import           System.FilePath.Posix
 import           System.IO.Error
 import           Text.Printf
 
-enableVerbose       = True
-debugVerilogFile    = "benchmarks" </> "472-mips-pipelined" </> "mips_pipeline.v"
-debugAnnotationFile = commonAnnotationFile debugVerilogFile
+-- #############################################################################
+-- Debug Configuration
+-- #############################################################################
+-- | iodine arguments
+enableVerbose = True
+disableFQSave = True
+
+-- debugVerilogFile = "benchmarks" </> "yarvi" </> "shared" </> "test-01.v"
+-- debugAnnotationFile = commonAnnotationFile debugVerilogFile
+debugVerilogFile = "benchmarks" </> "yarvi" </> "shared" </> "yarvi.v"
+debugAnnotationFile = "benchmarks" </> "yarvi" </> "shared" </> "annot-yarvi_fixed.json"
+
+-- | this is the code that runs after the vcgen step
+debug :: D r => Debug4 r
+debug = debug4
+
+-- | takes the iodine args and successful result of the 'debug' as an input
+runPipeline :: RunFixpoint
+runPipeline = runFixpoint
+-- #############################################################################
+
 
 allRegisterDependencies :: D r => Id -> Id -> Sem r Ids
 allRegisterDependencies mn var = do
@@ -126,10 +149,16 @@ getMissingInitialEquals Module{..} = do
     fold
     <$> (toSequence <$> getCondVars alwaysBlocks
          >>= traverse (allRegisterDependencies moduleName))
-  -- trace "registers that affect conditions" (HS.toList registersThatAffectConditions)
+  trace "registers that affect conditions" (HS.toList registersThatAffectConditions)
   let missingRegs = HS.filter (not . isInitEq) registersThatAffectConditions
-  trace "missing registers" (HS.toList missingRegs)
+  trace "missing registers" (moduleName, HS.toList missingRegs)
   return missingRegs
+
+debug1 :: D r => Sem r ()
+debug1 = do
+  ModuleSummary{..} <- asks (! "mux3")
+  PT.trace $ show portDependencies
+  PT.trace $ show isCombinatorial
 
 debug2 :: D r => Sem r ()
 debug2 = do
@@ -138,11 +167,20 @@ debug2 = do
   traverse_ getMissingInitialEquals ir
     & runReader allIEs
 
-debug :: D r => Sem r ()
-debug = do
-  ModuleSummary{..} <- asks (! "mux3")
-  PT.trace $ show portDependencies
-  PT.trace $ show isCombinatorial
+debug3 :: D r => Sem r ()
+debug3 = do
+  ModuleSummary{..} <- asks (! "yarvi")
+  PT.trace $
+    printGraph threadDependencies (\n -> "#" <> show n)
+
+type Debug4 r = VCGenOutput -> Sem r ( FInfo , AnnotationFile , ModuleMap , SummaryMap)
+debug4 :: D r => Debug4 r
+debug4 vcOut = do
+  modules <- ask
+  finfo <- constructQuery modules vcOut
+  (finfo,,,) <$> ask <*> ask <*> ask
+
+
 
 type IRs = L (Module Int)
 type ModuleMap = HM.HashMap Id (Module Int)
@@ -155,16 +193,31 @@ type D r = ( G r
                       ] r
            )
 
-debugPipeline :: G r => AnnotationFile -> Sem r (L (Module ())) -> IA.IodineArgs -> Sem r ()
 debugPipeline af irReader ia = do
   (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
   runReader af' $ do
     let normalizedIRMap = mkMap IR.moduleName normalizedIR
     moduleSummaries <- createModuleSummaries normalizedIR normalizedIRMap
-    (vcgen normalizedOutput >> debug)
+    (vcgen normalizedOutput >>= debug)
       & runReader moduleSummaries
       & runReader normalizedIRMap
       & runReader normalizedIR
+
+runDefaultPipeline _ = return ()
+
+type RunFixpoint = IodineArgs -> ( FInfo , AnnotationFile , ModuleMap , SummaryMap) -> IO ()
+runFixpoint :: RunFixpoint
+runFixpoint IodineArgs{..} (finfo, af, mm, sm) = do
+  result <- F.solve config finfo
+  findFirstNonCTVars result af mm sm
+  where
+    config = FC.defConfig { FC.eliminate = FC.Some
+                          , FC.save      = not noSave
+                          , FC.srcFile   = fileName
+                          , FC.metadata  = True
+                          , FC.minimize  = delta
+                          }
+
 
 
 run :: IO ()
@@ -182,8 +235,8 @@ run = do
     & embedToFinal
     & runFinal
   case res of
-    Left err -> E.throwIO err
-    Right _  -> return ()
+    Left err  -> E.throwIO err
+    Right out -> runPipeline ia out
   where
     outputFile = "debug-output"
 
@@ -198,6 +251,7 @@ debugArgs = do
     , annotFile   = af
     , iverilogDir = ivd
     , verbose     = enableVerbose
+    , noSave      = disableFQSave
     }
 
 
