@@ -77,10 +77,6 @@ dependencies:
 
 library:
   source-dirs:     src
-  exposed-modules:
-  - Iodine.Runner
-  - Iodine.IodineArgs
-  - Iodine.Language.PrologParser
 
 executables:
   iodine:
@@ -96,6 +92,16 @@ executables:
   prolog-pretty:
     main:          Main.hs
     source-dirs:   prolog-pretty-app
+    ghc-options:
+    - -O2
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - iodine
+  iodine-debug:
+    main:          Main.hs
+    source-dirs:   dbg
     ghc-options:
     - -O2
     - -threaded

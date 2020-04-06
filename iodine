@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-O0 = True # False
+O0 = False
 
 def get_args():
     argparser = argparse.ArgumentParser(prog="iodine", add_help=False)

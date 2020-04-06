@@ -6,8 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Iodine.Analyze.ModuleSummary
-  (
-    createModuleSummaries
+  ( createModuleSummaries
   , getAllDependencies
   , ModuleSummary(..)
   , SummaryMap
@@ -15,8 +14,8 @@ module Iodine.Analyze.ModuleSummary
   , QualifierDependencies
   , explicitVars
   , implicitVars
-  )
-where
+  , addPortDependencies
+  ) where
 
 import           Iodine.Analyze.DependencyGraph hiding (getNode)
 import           Iodine.Language.Annotation
@@ -125,28 +124,13 @@ createModuleSummary m@Module{..} = do
   clks <- getClocks moduleName
   let hasClock = not $ HS.null clks
 
+  summaryMap <- get
   let nodeMap = IM.fromList $ swap <$> HM.toList varDepMap
-  varDepGraph' <-
-    foldlM' varDepGraph moduleInstances $ \g ModuleInstance{..} ->
-    HM.foldlWithKey'
-    (\accG o qd ->
-       let toNode v = hmGet 0 v varDepMap
-           oVar = varName $ hmGet 1 o moduleInstancePorts
-           oNode = toNode oVar
-           fromNodes = fmap toNode . toList . getVariables . (\v -> hmGet 2 v moduleInstancePorts)
-           accG' =
-             foldl'
-             (\g2 i -> insEdge (i, oNode, Implicit) g2)
-             accG
-             (concatMap fromNodes $ toList $ qd ^. implicitVars)
-           accG'' =
-             foldl'
-             (\g2 i -> insEdge (i, oNode, Explicit) g2)
-             accG'
-             (concatMap fromNodes $ toList $ qd ^. explicitVars)
-       in accG''
-    ) g
-    <$> gets (portDependencies . hmGet 3 moduleInstanceType)
+      varDepGraph' =
+        foldl'
+        (\g mi -> addPortDependencies mi g varDepMap
+                  & runReader summaryMap & run
+        ) varDepGraph moduleInstances
 
   portDeps <- moduleAnnots m varDepGraph' nodeMap varDepMap
 
@@ -206,6 +190,31 @@ createModuleSummary m@Module{..} = do
     swap (a,b) = (b,a)
     inputsSet = moduleInputs m mempty
 
+addPortDependencies :: Members '[Reader SummaryMap] r
+                    => ModuleInstance Int
+                    -> VarDepGraph
+                    -> HM.HashMap Id Int
+                    -> Sem r VarDepGraph
+addPortDependencies ModuleInstance{..} g varDepMap =
+  HM.foldlWithKey'
+  (\accG o qd ->
+     let toNode v = hmGet 0 v varDepMap
+         oVar = varName $ hmGet 1 o moduleInstancePorts
+         oNode = toNode oVar
+         fromNodes = fmap toNode . toList . getVariables . (\v -> hmGet 2 v moduleInstancePorts)
+         accG' =
+           foldl'
+           (\g2 i -> insEdge (i, oNode, Implicit) g2)
+           accG
+           (concatMap fromNodes $ toList $ qd ^. implicitVars)
+         accG'' =
+           foldl'
+           (\g2 i -> insEdge (i, oNode, Explicit) g2)
+           accG'
+           (concatMap fromNodes $ toList $ qd ^. explicitVars)
+     in accG''
+  ) g
+  <$> asks (portDependencies . hmGet 3 moduleInstanceType)
 
 mapLookup :: Show a => Int -> Id -> HM.HashMap Id a -> a
 mapLookup n k m =

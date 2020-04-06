@@ -5,7 +5,7 @@ import os
 import subprocess
 
 PACKAGE_NAME = "iodine"
-O0 = True # False
+O0 = False
 
 def add_quotes(s):
     i = s.find(" ")

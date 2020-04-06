@@ -9,7 +9,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE GADTs #-}
 
-module Iodine.Debug where
+module Main where
 
 import           Iodine.Analyze.FQOutAnalysis
 import           Iodine.Analyze.ModuleSummary
@@ -220,8 +220,8 @@ runFixpoint IodineArgs{..} (finfo, af, mm, sm) = do
 
 
 
-run :: IO ()
-run = do
+main :: IO ()
+main = do
   (ia@IodineArgs{..}, af) <- debugArgs >>= generateIR
   irFileContents <- readIRFile fileName
   r <- tryIOError $ removeFile outputFile

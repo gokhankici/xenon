@@ -22,7 +22,7 @@ import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
-import           Iodine.Transform.VariableRename
+-- import           Iodine.Transform.VariableRename
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -45,7 +45,9 @@ normalizeIR
   -> IA.IodineArgs                           -- ^ iodine args
   -> Sem r (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
 normalizeIR af irReader ia = do
-  (af', allIR) <- variableRename af . assignThreadIds <$> irReader
+  -- (af', allIR) <- variableRename af . assignThreadIds <$> irReader
+  let af' = af
+  allIR <- assignThreadIds <$> irReader
   let topModuleName = af' ^. afTopModule
       ir            = topsortModules topModuleName allIR
       irMap         = mkModuleMap ir

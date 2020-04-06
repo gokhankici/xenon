@@ -2,7 +2,6 @@
 
 cd "${0:A:h}"
 
-PROFILE="--profile"
 ARGS=()
 
 for arg in $@; do
