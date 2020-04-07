@@ -10,7 +10,8 @@
           "din"
         ],
         "sink": [
-          "dout"
+          "dout1",
+          "dout1"
         ],
         "always_eq": [
           "wr"

@@ -1,1 +1,1 @@
---command=stack ghci iodine:lib iodine:iodine-test
+--command=stack ghci iodine:lib iodine:iodine-debug

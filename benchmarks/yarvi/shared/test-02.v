@@ -8,7 +8,8 @@ module test(
         input  wire            wr,
         input  wire [ADDR-1:0] addr,
         input  wire [DATA-1:0] din,
-        output reg  [DATA-1:0] dout
+        output reg  [DATA-1:0] dout1,
+        output reg  [DATA-1:0] dout2
 );
 
 wire [DATA-1:0] a_dout;
@@ -20,7 +21,8 @@ bram_tdp mem0(
 
 
 always @(*) begin
-        dout = a_dout;
+        dout1 = a_dout;
+        dout2 = b_dout;
 end
 
 endmodule

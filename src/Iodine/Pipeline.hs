@@ -95,7 +95,7 @@ mkModuleMap = mkMap moduleName
 toThreadType :: Module Int -> IM.IntMap ThreadType
 toThreadType m = IM.fromList $ (getData m, ModuleSummaryThread mn) <| abts <> mits
   where
-    goAB ab = (getData ab, AlwaysBlockThread mn (show $ void $ abEvent ab))
+    goAB ab = (getData ab, AlwaysBlockThread mn (prettyShow $ void $ abEvent ab))
     abts = goAB <$> toList (alwaysBlocks m)
     goMI mi = (getData mi, ModuleInstanceThread mn (T.unpack $ moduleInstanceType mi))
     mits = goMI <$> toList (moduleInstances m)

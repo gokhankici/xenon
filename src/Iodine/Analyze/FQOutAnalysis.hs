@@ -29,6 +29,8 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.IntSet as IS
 import           Data.List
 import           Data.Maybe
+import           Data.Monoid
+import qualified Data.Sequence as SQ
 import           Data.String
 import qualified Data.Text as T
 import qualified Language.Fixpoint.Types as FT
@@ -44,6 +46,7 @@ import           Text.Printf
 type FPResult = FCons.Result (Integer, HornClauseId)
 type Var      = String
 type Vars     = HS.HashSet String
+type VarsMap  = IM.IntMap Vars
 type Node     = Int
 type Nodes    = IS.IntSet
 
@@ -60,10 +63,13 @@ data WorklistSt = WorklistSt
 makeLenses ''WorklistR
 makeLenses ''WorklistSt
 
+type CTVarsDisagree = [(Int, Int, Vars)]
+
 data FQOutAnalysisOutput = FQOutAnalysisOutput
   { firstNonCtVars :: Vars
-  , ctVars         :: Vars
-  , aeVars         :: Vars
+  , ctVars         :: VarsMap
+  , aeVars         :: VarsMap
+  , ctVarsDisagree :: CTVarsDisagree
   }
   deriving (Eq, Show, Read)
 
@@ -76,23 +82,29 @@ findFirstNonCTVars fpResult af moduleMap summaryMap = do
         worklist wl
       firstNonCtVars =
         IS.foldl' (\acc n -> HS.insert (toVar n) acc) mempty firstNonCtVarNodes
+  let maybeLookup e l = if e `elem` l
+                        then Just e
+                        else Nothing
+      colorMapHelper vm c n v =
+        c <$ (IM.lookup n vm >>= maybeLookup (T.unpack v))
   let docConfig =
-        DocConfig $
-        HM.fromList $ toList $
-        ((,Blue)  . T.pack <$> toList ctVars) <>
-        ((,Blue)           <$> srcs) <>
-        ((,Green) . T.pack <$> toList aeVars) <>
-        ((,Green)          <$> toList (topMA ^. moduleAnnotations . alwaysEquals))
+        defaultDocConfig
+        { varColorMap =
+          \n v -> getFirst $
+                  First (colorMapHelper aeVars Green n v) <>
+                  First (colorMapHelper ctVars Blue n v)
+        }
   withFile "debug-ir" WriteMode $ \f -> do
     hPutStrLn f $ prettyShowWithConfig docConfig Module{..}
     hPutStrLn f ""
   return $ FQOutAnalysisOutput {..}
   where
-    topModuleName = af ^. afTopModule
+    topModuleName     = af ^. afTopModule
     ModuleSummary{..} = summaryMap HM.! topModuleName
-    Module{..} = moduleMap HM.! topModuleName
-    (ctVars, aeVars) = findCTVars fpResult af moduleMap
-    ctNodes  = IS.fromList $ toNode . T.pack <$> toList ctVars
+    m@Module{..}      = moduleMap HM.! topModuleName
+    (ctVars, aeVars)  = findCTVars fpResult af moduleMap
+    (ctVarsCommon, ctVarsDisagree) = mergeVarsMap m ctVars
+    ctNodes  = IS.fromList $ toNode . T.pack <$> toList ctVarsCommon
     topMA    = af ^. afAnnotations . at topModuleName . to fromJust
     srcs     = toList $ mappend inputs $ topMA ^. moduleAnnotations . sources
     inputs   = moduleInputs (moduleMap HM.! topModuleName) mempty
@@ -115,6 +127,31 @@ findFirstNonCTVars fpResult af moduleMap summaryMap = do
     wl = G.topsort sg
     st = WorklistSt mempty mempty
     r  = WorklistR ctNodes sg
+
+mergeVarsMap :: Module Int -> VarsMap -> (Vars, CTVarsDisagree)
+mergeVarsMap Module{..} vsm = ( foldMap fst comparisons
+                              , keepDisagreedVars comparisons
+                              )
+  where
+    keepDisagreedVars = foldMap (\(_, t) -> [t | not $ HS.null (t^._3)])
+
+    comparisons :: SQ.Seq (Vars, (Int, Int, Vars))
+    comparisons = do
+      (n1, n2) <- choose2 $ getData <$> alwaysBlocks
+      let getVars n = IM.findWithDefault mempty n vsm
+          vs1       = getVars n1
+          vs2       = getVars n2
+          common    = vs1 `HS.intersection` vs2
+          disagree  = vs1 `HS.difference` vs2
+      return (common, (n1, n2, disagree))
+
+    choose2 :: SQ.Seq a -> SQ.Seq (a, a)
+    choose2 = \case
+      SQ.Empty          -> mempty
+      _ SQ.:<| SQ.Empty -> mempty
+      a SQ.:<| rest     -> ((a,) <$> rest) <> ((,a) <$> rest) <> choose2 rest
+
+
 
 worklist :: Members '[ Reader WorklistR
                      , State  WorklistSt
@@ -139,7 +176,7 @@ worklist (sccNode:rest) = do
   worklist rest
 
 
-findCTVars :: FPResult -> AnnotationFile -> ModuleMap -> (Vars, Vars)
+findCTVars :: FPResult -> AnnotationFile -> ModuleMap -> (VarsMap, VarsMap)
 findCTVars fpResult af moduleMap = (ctVars, aeVars)
   where
     topModuleName = af ^. afTopModule
@@ -147,29 +184,27 @@ findCTVars fpResult af moduleMap = (ctVars, aeVars)
     Module{..} = moduleMap HM.! topModuleName
     abIds = getData <$> alwaysBlocks
     toInvName = FT.KV . fromString . printf "inv%d"
-    go bf f n =
-      HS.fromList
-      . mapMaybe (bf n)
-      . toList
-      . foldMap f
-      . FT.splitPAnd
-      -- . (\a -> DT.trace (show a) a)
-    getCTVars = go (bindFilter "TL_") getTagEqs
-    getAEVars = go (bindFilter "VL_") getValEqs
-    go2 f =
-      foldl'
-      (\acc n -> acc <> f n (hmGet 0 (toInvName n) invMap))
-      mempty
-      abIds
-    ctVars = go2 getCTVars
-    aeVars = go2 getAEVars
+    getVars :: (Int -> Var -> Maybe Var) -> (FT.Expr -> Vars) -> Int -> FT.Expr -> Vars
+    getVars bf f n = HS.fromList
+                     . mapMaybe (bf n)
+                     . toList
+                     . foldMap f
+                     . FT.splitPAnd
+    createVarsMap f = foldl'
+                      (\acc n ->
+                         let vs = f n (hmGet 0 (toInvName n) invMap)
+                         in IM.insert n vs acc)
+                      mempty
+                      abIds
+    ctVars = createVarsMap $ getVars (bindFilter "TL_") getTagEqs
+    aeVars = createVarsMap $ getVars (bindFilter "VL_") getValEqs
 
 
-getTagEqs :: FT.Expr -> HS.HashSet Var
+getTagEqs :: FT.Expr -> Vars
 getTagEqs (FT.PIff (FT.EVar v1) (FT.EVar v2)) = HS.fromList [symToVar v1, symToVar v2]
 getTagEqs _ = mempty
 
-getValEqs :: FT.Expr -> HS.HashSet Var
+getValEqs :: FT.Expr -> Vars
 getValEqs (FT.EEq (FT.EVar v1) (FT.EVar v2)) = HS.fromList [symToVar v1, symToVar v2]
 getValEqs _ = mempty
 

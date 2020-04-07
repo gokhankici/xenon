@@ -1,11 +1,11 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
-{-# LANGUAGE DeriveFoldable    #-}
-{-# LANGUAGE DeriveFunctor     #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE KindSignatures    #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE StrictData        #-}
+{-# LANGUAGE DeriveFoldable      #-}
+{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE StrictData          #-}
 
 module Iodine.Language.IR
   ( Expr (..)
@@ -248,7 +248,7 @@ instance GetData Module where
 -- Typeclass Instances
 -- -----------------------------------------------------------------------------
 class ShowIndex a where
-  showIndex :: a -> String
+  showIndex    :: a -> String
 
 instance ShowIndex () where
   showIndex () = ""
@@ -274,40 +274,45 @@ colorId c v = "\x1b[1m" <> colorPrefix <> s <> "\x1b[0m"
         Green -> "\x1b[32m"
     s = T.unpack v
 
-newtype DocConfig = DocConfig
-  { varColorMap :: HM.HashMap Id DocColor }
+data DocConfig a = DocConfig
+  { varColorMap     :: a -> Id -> Maybe DocColor
+  , currentDocIndex :: Maybe a
+  }
 
-defaultDocConfig :: DocConfig
-defaultDocConfig = DocConfig mempty
+defaultDocConfig :: DocConfig a
+defaultDocConfig = DocConfig (\_ _ -> Nothing) Nothing
 
-class Doc a where
-  doc ::DocConfig -> a -> PP.Doc
+class DocSimple d where
+  docSimple :: d -> PP.Doc
+
+class Doc m where
+  doc :: ShowIndex a => DocConfig a -> m a -> PP.Doc
 
 sep :: PP.Doc
 sep = PP.comma
 
-docList :: Doc a => DocConfig -> L a -> PP.Doc
-docList c l = PP.hsep $ PP.punctuate sep (doc c <$> toList l)
-
 nest :: PP.Doc -> PP.Doc
 nest = PP.nest 2
 
-vcat :: Doc a => DocConfig -> L a -> PP.Doc
+vcatSimple :: DocSimple d => L d -> PP.Doc
+vcatSimple = PP.vcat . fmap docSimple . toList
+
+vcat :: (ShowIndex a, Doc m) => DocConfig a -> L (m a) -> PP.Doc
 vcat c = PP.vcat . fmap (doc c) . toList
 
 id2Doc :: Id -> PP.Doc
 id2Doc = PP.text . T.unpack
 
-instance Doc Variable where
-  doc _ (Wire v)     = PP.text "wire" PP.<+> id2Doc v PP.<> PP.semi
-  doc _ (Register v) = PP.text "reg " PP.<+> id2Doc v PP.<> PP.semi
+instance DocSimple Variable where
+  docSimple (Wire v)     = PP.text "wire" PP.<+> id2Doc v PP.<> PP.semi
+  docSimple (Register v) = PP.text "reg " PP.<+> id2Doc v PP.<> PP.semi
 
-instance Doc Port where
-  doc _ (Input p)  = PP.text "input " PP.<+> id2Doc (variableName p) PP.<> PP.semi
-  doc _ (Output p) = PP.text "output" PP.<+> id2Doc (variableName p) PP.<> PP.semi
+instance DocSimple Port where
+  docSimple (Input p)  = PP.text "input " PP.<+> id2Doc (variableName p) PP.<> PP.semi
+  docSimple (Output p) = PP.text "output" PP.<+> id2Doc (variableName p) PP.<> PP.semi
 
-instance Doc UFOp where
-  doc _ = PP.text . \case
+instance DocSimple UFOp where
+  docSimple = PP.text . \case
     UF_abs            -> "uf_abs"
     UF_and            -> "uf_and"
     UF_negate         -> "uf_negate"
@@ -341,10 +346,10 @@ instance Doc UFOp where
     UF_write_to_index -> "uf_write_to_index"
     UF_call f         -> "uf_call_function_" <> T.unpack f
 
-instance ShowIndex a => Doc (Expr a) where
+instance Doc Expr where
   doc _ (Constant c _)   = id2Doc c
-  doc cfg (Variable v _ a) = str PP.<> docIndex a
-    where str = case HM.lookup v $ varColorMap cfg of
+  doc DocConfig{..} (Variable v _ a) = str PP.<> docIndex a
+    where str = case currentDocIndex >>= (`varColorMap` v) of
                   Nothing -> id2Doc v
                   Just dc -> PP.text $ colorId dc v
 
@@ -379,7 +384,6 @@ instance ShowIndex a => Doc (Expr a) where
       UF_xor            -> commonB "^"
       _ -> common
     where
-      d :: Doc d => d -> PP.Doc
       d = doc cfg
       commonB bop = commonB2 bop True es
       commonB2 bop isTop = withParens .
@@ -390,18 +394,20 @@ instance ShowIndex a => Doc (Expr a) where
           e SQ.:<| rest                -> d e PP.<+> PP.text bop PP.<+> PP.parens (commonB2 bop False rest)
         where
           withParens = if isTop then id else PP.parens
-      common = d n PP.<> PP.parens args
+      common = docSimple n PP.<> PP.parens args
       args = PP.sep $ PP.punctuate sep (d <$> toList es)
   doc cfg (IfExpr c t e _) = PP.parens $ PP.hsep [doc cfg c, PP.text "?", doc cfg t, PP.colon, doc cfg e]
   doc _   (Str s _)        = PP.quotes $ id2Doc s
   doc cfg (Select v is _)  = doc cfg v PP.<> PP.brackets (docList cfg is)
+    where docList c l = PP.hsep $ PP.punctuate sep (doc c <$> toList l)
 
-instance ShowIndex a => Doc (Event a) where
+
+instance Doc Event where
   doc c (PosEdge e) = PP.text "@(posedge " PP.<> doc c e PP.<> PP.rparen
   doc c (NegEdge e) = PP.text "@(negedge " PP.<> doc c e PP.<> PP.rparen
   doc _ Star        = PP.text "@(*)"
 
-instance ShowIndex a => Doc (Stmt a) where
+instance Doc Stmt where
   doc cfg (Block ss a) =
     case ss of
       SQ.Empty          -> doc cfg (Skip a)
@@ -437,7 +443,7 @@ instance ShowIndex a => Doc (Stmt a) where
       (elseIfs, lastStmt) = (first fromJust <$> init rest, snd $ last rest)
   doc _ (Skip _) = PP.text "skip" PP.<> PP.semi
 
-instance ShowIndex a => Doc (ModuleInstance a) where
+instance Doc ModuleInstance where
   doc c (ModuleInstance t n ps a) =
     id2Doc t PP.<+> id2Doc n PP.<> PP.parens (PP.hsep $ PP.punctuate sep args) PP.<> docIndex a
     where
@@ -447,34 +453,35 @@ instance ShowIndex a => Doc (ModuleInstance a) where
         (\acc v e-> (id2Doc v PP.<+> PP.equals PP.<+> doc c e) : acc)
         []
 
-instance ShowIndex a => Doc (AlwaysBlock a) where
+instance Doc AlwaysBlock where
   doc c (AlwaysBlock e s a) =
     PP.sep [ PP.text "always"
              PP.<> PP.text (showIndex a)
-             PP.<+> doc c e
-           , doc c s
+             PP.<+> doc fixedC e
+           , doc fixedC s
            ]
+    where fixedC = c { currentDocIndex = Just a }
 
-instance ShowIndex a => Doc (Module a) where
-  doc c Module{..} =
+instance Doc Module where
+  doc (c :: DocConfig a) Module{..} =
     PP.vcat [ PP.text "module" PP.<> docIndex moduleData PP.<+> id2Doc moduleName PP.<> PP.parens args PP.<> PP.semi
             , PP.nest 2 contents
             , PP.text "endmodule"
             ]
     where
       contents =
-        vcatNL [ vcat c ports
-               , vcat c variables
-               , vcatNS gateStmts
-               , vcatNS moduleInstances
-               , vcatNS alwaysBlocks
+        vcatNL [ vcatSimple ports
+               , vcatSimple variables
+               , vcatNS cNoIndex gateStmts
+               , vcatNS cNoIndex moduleInstances
+               , vcatNS cNoIndex alwaysBlocks
                ]
       args =
         PP.hsep $
         PP.punctuate sep (id2Doc . variableName . portVariable <$> toList ports)
 
-      vcatNS :: Doc b => L b -> PP.Doc
-      vcatNS = vcatNL . fmap (doc c) . toList
+      vcatNS :: Doc d2 => DocConfig a -> L (d2 a) -> PP.Doc
+      vcatNS c2 = vcatNL . fmap (doc c2) . toList
 
       vcatNL :: [PP.Doc] -> PP.Doc
       vcatNL = PP.vcat . go . filter (not . PP.isEmpty)
@@ -483,15 +490,17 @@ instance ShowIndex a => Doc (Module a) where
           go [a]    = [a]
           go (a:as) = a : PP.text "" : go as
 
+      cNoIndex = c{currentDocIndex = Nothing}
+
 iodineRender :: PP.Doc -> String
 iodineRender = PP.renderStyle sty
   where
     sty = PP.style { PP.lineLength = 200 }
 
-prettyShow :: Doc a => a -> String
+prettyShow :: (ShowIndex a, Doc d) => d a -> String
 prettyShow = prettyShowWithConfig defaultDocConfig
 
-prettyShowWithConfig :: Doc a => DocConfig -> a -> String
+prettyShowWithConfig :: (ShowIndex a, Doc d) => DocConfig a -> d a -> String
 prettyShowWithConfig cfg = iodineRender . doc cfg
 
 instance Hashable a => Hashable (Expr a) where

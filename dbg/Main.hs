@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE GADTs #-}
 
 module Main where
@@ -254,6 +255,7 @@ main :: IO ()
 main = do
   out <- run
   writeFile "debug-output" $ show out
+  analyze
 
 
 readDebugOutput :: IO DebugOutput
@@ -287,33 +289,56 @@ m ! k =
 trace' :: (Members '[PT.Trace] r, Show a) => String -> a -> Sem r ()
 trace' msg a = PT.trace (msg ++ " " ++ show a)
 
-findDivergingBranches = do
+analyze :: IO ()
+analyze = do
   ((af, mm, sm), FQOutAnalysisOutput{..}) <- readDebugOutput
   let topModuleName = af ^. afTopModule
-      Module{..}    = mm ! topModuleName
+      m@Module{..}  = mm ! topModuleName
+      inputs        = moduleInputs m mempty
 
-      go Block{..}  = gos blockStmts
-      go s          = gos (mempty |> s)
+      isCTVar i t = T.unpack t `elem` (ctVars IM.! i) || t `elem` inputs
+      isAEVar i t = T.unpack t `elem` (aeVars IM.! i)
+      isCTExpr i  = all (isCTVar i) . getVariables
+      isAEExpr i  = all (isAEVar i) . getVariables
 
-      gos SQ.Empty = return SQ.empty
-      gos (s SQ.:<| ss) =
+      go i Block{..}  = gos i blockStmts
+      go i s          = gos i (mempty |> s)
+
+      gos i SQ.Empty = return SQ.empty
+      gos i (s SQ.:<| ss) =
         case s of
-          Block{..}     -> gos $ blockStmts <> ss
+          Block{..}     -> gos i $ blockStmts <> ss
           IfStmt{..}    ->
-            let condVars = getVariables ifStmtCondition
-            in if all ((`elem` ctVars) . T.unpack) condVars
-               then do r <- mappend <$> go ifStmtThen <*> go ifStmtElse
-                       if SQ.null r
-                         then gos ss
-                         else return r
-               else return $ SQ.singleton s
-          Assignment{}  -> gos ss
-          Skip{}        -> gos ss
+            if isAEExpr i ifStmtCondition
+            then gos i (ifStmtThen <| ifStmtElse <| ss)
+            else (s SQ.<|) <$> gos i ss
+          Assignment{}  -> gos i ss
+          Skip{}        -> gos i ss
 
   for_ alwaysBlocks $ \ab -> do
-    stmts <- go $ abStmt ab
+    let i = getData ab
+    stmts <- go i $ abStmt ab
+    let dc = defaultDocConfig
+             { varColorMap = \n v -> if | isAEVar n v -> Just Green
+                                        | isCTVar n v -> Just Blue
+                                        | otherwise   -> Nothing
+             , currentDocIndex = Just i
+             }
     for_ stmts $ \s -> do
-      pp s
+      putStrLn $ prettyShowWithConfig dc s
       putStrLn $ replicate 80 '#'
-  where
-    pp = putStrLn . prettyShow
+
+  let isCommonCTVar v = all (elem $ T.unpack v) ctVars
+      dc = defaultDocConfig
+           { varColorMap = \_ v -> if isCommonCTVar v then Nothing else Just Red
+           , currentDocIndex = Just 0
+           }
+      abIds = getData <$> alwaysBlocks
+      isCTExpr' v = all (`isCTExpr` v) abIds
+  for_ moduleInstances $ \mi ->
+    unless (all isCTExpr' $ moduleInstancePorts mi) $ do
+      putStrLn $ prettyShowWithConfig dc mi
+      putStrLn $ replicate 80 '#'
+
+  for_ ctVarsDisagree $ \(n1, n2, vs) ->
+    printf "%d and %d disagree on: %s\n" n1 n2 (show $ toList vs)

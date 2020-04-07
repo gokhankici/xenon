@@ -192,8 +192,7 @@ majorStubs = mkCollection "major-stub" ts
          , T "yarvi-stub-01" $ yarviDir </> "test-01.v"
          , (TF "yarvi-stub-neg-01" $ yarviDir </> "test-01.v")
            { annotFile = Just $ yarviDir </> "annot-neg-test-01.json" }
-         , (T "yarvi-stub-02" $ yarviDir </> "test-02.v")
-           { annotFile = Just $ IA.defaultAnnotFile $ yarviDir </> "test-01.v" }
+         , T "yarvi-stub-02" $ yarviDir </> "test-02.v"
          ]
 
 
