@@ -29,7 +29,7 @@ data Annotations =
               , _assertEquals  :: HS.HashSet Id
               , _tagEquals     :: HS.HashSet Id
               }
-  deriving (Show)
+  deriving (Show, Read)
 
 emptyAnnotations :: Annotations
 emptyAnnotations = Annotations mempty mempty mempty mempty mempty mempty
@@ -38,14 +38,14 @@ data Qualifier =
     QImplies Id (L Id)
   | QIff     Id (L Id)
   | QPairs   (L Id)
-  deriving (Show)
+  deriving (Show, Read)
 
 data ModuleAnnotations =
   ModuleAnnotations { _moduleAnnotations :: Annotations
                     , _moduleQualifiers  :: L Qualifier
                     , _clocks            :: HS.HashSet Id
                     }
-  deriving (Show)
+  deriving (Show, Read)
 
 emptyModuleAnnotations :: ModuleAnnotations
 emptyModuleAnnotations = ModuleAnnotations emptyAnnotations mempty mempty
@@ -54,7 +54,7 @@ data AnnotationFile =
   AnnotationFile { _afAnnotations :: HM.HashMap Id ModuleAnnotations -- ^ module -> annotations
                  , _afTopModule   :: Id                              -- ^ name of the top module
                  }
-  deriving (Show)
+  deriving (Show, Read)
 
 makeLenses ''Annotations
 makeLenses ''ModuleAnnotations

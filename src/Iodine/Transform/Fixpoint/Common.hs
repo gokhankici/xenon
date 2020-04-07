@@ -70,7 +70,7 @@ type QFD r = Members '[ PT.Trace
 -- -----------------------------------------------------------------------------
 
 data HornClauseId = HornClauseId { hcStmtId :: Int, hcType :: HornType }
-                  deriving (Show, Generic)
+                  deriving (Show, Generic, Read)
 
 data St = St { _hornConstraints           :: HM.HashMap Integer (FT.SubC HornClauseId)
              , _wellFormednessConstraints :: HM.HashMap FT.KVar (FT.WfC HornClauseId)
@@ -171,7 +171,8 @@ getFixpointVarPrefix isParam v =
   getFixpointTypePrefix isParam v <> varname <> "_" -- <>  modulename <> "_"
   where
     -- modulename = "M_" <> hVarModule v
-    varname = "V_" <> hVarName v
+    -- varname = "V_" <> hVarName v
+    varname = hVarName v
 getFixpointTypePrefix isParam v =
   varno <> prefix
   where

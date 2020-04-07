@@ -8,6 +8,7 @@
 
 module Iodine.Analyze.FQOutAnalysis
  ( findFirstNonCTVars
+ , FQOutAnalysisOutput(..)
  )
 where
 
@@ -38,6 +39,7 @@ import           Polysemy.State
 import           System.IO
 import qualified Text.PrettyPrint.HughesPJ.Compat as PP
 import           Text.Printf
+-- import qualified Debug.Trace as DT
 
 type FPResult = FCons.Result (Integer, HornClauseId)
 type Var      = String
@@ -58,16 +60,22 @@ data WorklistSt = WorklistSt
 makeLenses ''WorklistR
 makeLenses ''WorklistSt
 
-findFirstNonCTVars :: FPResult -> AnnotationFile -> ModuleMap -> SummaryMap -> IO ()
+data FQOutAnalysisOutput = FQOutAnalysisOutput
+  { firstNonCtVars :: Vars
+  , ctVars         :: Vars
+  , aeVars         :: Vars
+  }
+  deriving (Eq, Show, Read)
+
+findFirstNonCTVars :: FPResult -> AnnotationFile -> ModuleMap -> SummaryMap -> IO FQOutAnalysisOutput
 findFirstNonCTVars fpResult af moduleMap summaryMap = do
-  let firstNonCtVars =
+  let firstNonCtVarNodes =
         (`IS.difference` IS.fromList srcNodes) $
         view nonCtVars $
         run $ execState st $ runReader r $
         worklist wl
-  withFile "debug-output" WriteMode $ \f ->
-    for_ (IS.toList firstNonCtVars) $ \n ->
-      hPutStrLn f $ toVar n
+      firstNonCtVars =
+        IS.foldl' (\acc n -> HS.insert (toVar n) acc) mempty firstNonCtVarNodes
   let docConfig =
         DocConfig $
         HM.fromList $ toList $
@@ -76,8 +84,9 @@ findFirstNonCTVars fpResult af moduleMap summaryMap = do
         ((,Green) . T.pack <$> toList aeVars) <>
         ((,Green)          <$> toList (topMA ^. moduleAnnotations . alwaysEquals))
   withFile "debug-ir" WriteMode $ \f -> do
-    hPutStrLn f $ prettyShow docConfig Module{..}
+    hPutStrLn f $ prettyShowWithConfig docConfig Module{..}
     hPutStrLn f ""
+  return $ FQOutAnalysisOutput {..}
   where
     topModuleName = af ^. afTopModule
     ModuleSummary{..} = summaryMap HM.! topModuleName
@@ -138,14 +147,15 @@ findCTVars fpResult af moduleMap = (ctVars, aeVars)
     Module{..} = moduleMap HM.! topModuleName
     abIds = getData <$> alwaysBlocks
     toInvName = FT.KV . fromString . printf "inv%d"
-    go f n =
+    go bf f n =
       HS.fromList
-      . mapMaybe (bindFilter n)
+      . mapMaybe (bf n)
       . toList
       . foldMap f
       . FT.splitPAnd
-    getCTVars = go getTagEqs
-    getAEVars = go getValEqs
+      -- . (\a -> DT.trace (show a) a)
+    getCTVars = go (bindFilter "TL_") getTagEqs
+    getAEVars = go (bindFilter "VL_") getValEqs
     go2 f =
       foldl'
       (\acc n -> acc <> f n (hmGet 0 (toInvName n) invMap))
@@ -163,15 +173,13 @@ getValEqs :: FT.Expr -> HS.HashSet Var
 getValEqs (FT.EEq (FT.EVar v1) (FT.EVar v2)) = HS.fromList [symToVar v1, symToVar v2]
 getValEqs _ = mempty
 
-bindFilter :: Int -> Var -> Maybe Var
-bindFilter n b =
-  if "TL_" `isPrefixOf ` b
-  then let s1 = drop 5 b
-           s1Len = length s1
-           s2 = take (s1Len - 2 - length (show n)) s1
-       in Just s2
-  else Nothing
-
+bindFilter :: String -> Int -> Var -> Maybe Var
+bindFilter prefix n b = do
+  s <- stripPrefix prefix b
+  let suffix = "_T" <> show n
+  if suffix `isSuffixOf` s
+    then Just $ take (length s - length suffix) s
+    else Nothing
 
 symToVar :: FT.Symbol -> Var
 symToVar = PP.render . FT.toFix

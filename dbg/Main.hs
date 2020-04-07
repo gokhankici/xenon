@@ -1,7 +1,8 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# OPTIONS_GHC -Wno-unused-binds #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
+{-# OPTIONS_GHC -Wno-unused-matches #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -42,7 +43,9 @@ import qualified Data.IntSet as IS
 import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
+import qualified Language.Fixpoint.Misc as FM
 import qualified Language.Fixpoint.Solver as F
+import qualified Language.Fixpoint.Types as FT
 import qualified Language.Fixpoint.Types.Config as FC
 import           Polysemy hiding (run)
 import           Polysemy.Error
@@ -51,8 +54,10 @@ import           Polysemy.Reader
 import           Polysemy.State
 import qualified Polysemy.Trace as PT
 import           System.Directory
+import           System.Environment
 import           System.FilePath.Posix
 import           System.IO.Error
+import           Text.PrettyPrint.HughesPJ (render)
 import           Text.Printf
 
 -- #############################################################################
@@ -60,10 +65,10 @@ import           Text.Printf
 -- #############################################################################
 -- | iodine arguments
 enableVerbose = True
-disableFQSave = True
+disableFQSave = False
 
 -- debugVerilogFile = "benchmarks" </> "yarvi" </> "shared" </> "test-01.v"
--- debugAnnotationFile = commonAnnotationFile debugVerilogFile
+-- debugAnnotationFile = defaultAnnotFile debugVerilogFile
 debugVerilogFile = "benchmarks" </> "yarvi" </> "shared" </> "yarvi.v"
 debugAnnotationFile = "benchmarks" </> "yarvi" </> "shared" </> "annot-yarvi_fixed.json"
 
@@ -173,12 +178,12 @@ debug3 = do
   PT.trace $
     printGraph threadDependencies (\n -> "#" <> show n)
 
-type Debug4 r = VCGenOutput -> Sem r ( FInfo , AnnotationFile , ModuleMap , SummaryMap)
+type Debug4 r = VCGenOutput -> Sem r PipelineData
 debug4 :: D r => Debug4 r
 debug4 vcOut = do
   modules <- ask
   finfo <- constructQuery modules vcOut
-  (finfo,,,) <$> ask <*> ask <*> ask
+  (finfo,) <$> ((,,) <$> ask <*> ask <*> ask)
 
 
 
@@ -205,10 +210,17 @@ debugPipeline af irReader ia = do
 
 runDefaultPipeline _ = return ()
 
-type RunFixpoint = IodineArgs -> ( FInfo , AnnotationFile , ModuleMap , SummaryMap) -> IO ()
+type PipelineData  = (FInfo, PipelineData2)
+type PipelineData2 = (AnnotationFile, ModuleMap, SummaryMap)
+type RunFixpoint  = IodineArgs -> PipelineData -> IO FQOutAnalysisOutput
+type DebugOutput  = (PipelineData2, FQOutAnalysisOutput)
+
 runFixpoint :: RunFixpoint
-runFixpoint IodineArgs{..} (finfo, af, mm, sm) = do
+runFixpoint IodineArgs{..} (finfo, (af, mm, sm)) = do
   result <- F.solve config finfo
+  let stat = FT.resStatus result
+      statStr = render . FT.resultDoc
+  FM.colorStrLn (FT.colorResult stat) (statStr stat)
   findFirstNonCTVars result af mm sm
   where
     config = FC.defConfig { FC.eliminate = FC.Some
@@ -219,9 +231,8 @@ runFixpoint IodineArgs{..} (finfo, af, mm, sm) = do
                           }
 
 
-
-main :: IO ()
-main = do
+run :: IO DebugOutput
+run = do
   (ia@IodineArgs{..}, af) <- debugArgs >>= generateIR
   irFileContents <- readIRFile fileName
   r <- tryIOError $ removeFile outputFile
@@ -231,35 +242,40 @@ main = do
   res <- debugPipeline af (parse (fileName, irFileContents)) ia
     & (if verbose then PT.traceToIO else PT.ignoreTrace)
     & errorToIOFinal
-    & runOutputSem (embed . appendFile outputFile)
-    & embedToFinal
-    & runFinal
+    & runOutputSem (embed . appendFile outputFile) & embedToFinal & runFinal
   case res of
     Left err  -> E.throwIO err
-    Right out -> runPipeline ia out
+    Right out -> (snd out,) <$> runPipeline ia out
   where
     outputFile = "debug-output"
 
 
+main :: IO ()
+main = do
+  out <- run
+  writeFile "debug-output" $ show out
+
+
+readDebugOutput :: IO DebugOutput
+readDebugOutput = read <$> readFile "debug-output"
+
+
 debugArgs :: IO IodineArgs
 debugArgs = do
-  ivd <- makeAbsolute "iverilog-parser"
-  vf  <- makeAbsolute debugVerilogFile
-  af  <- makeAbsolute debugAnnotationFile
-  return $ defaultIodineArgs
-    { fileName    = vf
-    , annotFile   = af
-    , iverilogDir = ivd
-    , verbose     = enableVerbose
-    , noSave      = disableFQSave
-    }
+  args <- getArgs
+  case args of
+    [] -> do ivd <- makeAbsolute "iverilog-parser"
+             vf  <- makeAbsolute debugVerilogFile
+             af  <- makeAbsolute debugAnnotationFile
+             return $ defaultIodineArgs
+               { fileName    = vf
+               , annotFile   = af
+               , iverilogDir = ivd
+               , verbose     = enableVerbose
+               , noSave      = disableFQSave
+               }
+    _ -> parseArgsWithError args
 
-
-commonAnnotationFile :: FilePath -> FilePath
-commonAnnotationFile verilogFile =
-  parentDir </> ("annot-" ++ name -<.> "json")
-  where
-    (parentDir, name) = splitFileName verilogFile
 
 (!) :: (Eq k, Hashable k, Show k)
     => HM.HashMap k v -> k -> v
@@ -270,3 +286,34 @@ m ! k =
 
 trace' :: (Members '[PT.Trace] r, Show a) => String -> a -> Sem r ()
 trace' msg a = PT.trace (msg ++ " " ++ show a)
+
+findDivergingBranches = do
+  ((af, mm, sm), FQOutAnalysisOutput{..}) <- readDebugOutput
+  let topModuleName = af ^. afTopModule
+      Module{..}    = mm ! topModuleName
+
+      go Block{..}  = gos blockStmts
+      go s          = gos (mempty |> s)
+
+      gos SQ.Empty = return SQ.empty
+      gos (s SQ.:<| ss) =
+        case s of
+          Block{..}     -> gos $ blockStmts <> ss
+          IfStmt{..}    ->
+            let condVars = getVariables ifStmtCondition
+            in if all ((`elem` ctVars) . T.unpack) condVars
+               then do r <- mappend <$> go ifStmtThen <*> go ifStmtElse
+                       if SQ.null r
+                         then gos ss
+                         else return r
+               else return $ SQ.singleton s
+          Assignment{}  -> gos ss
+          Skip{}        -> gos ss
+
+  for_ alwaysBlocks $ \ab -> do
+    stmts <- go $ abStmt ab
+    for_ stmts $ \s -> do
+      pp s
+      putStrLn $ replicate 80 '#'
+  where
+    pp = putStrLn . prettyShow

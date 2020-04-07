@@ -44,7 +44,7 @@ data QualifierDependencies = QualifierDependencies
   { _explicitVars :: Ids
   , _implicitVars :: Ids
   }
-  deriving (Eq)
+  deriving (Eq, Show, Read)
 
 makeLenses ''QualifierDependencies
 
@@ -82,7 +82,7 @@ data ModuleSummary =
                   variableDependenciesSCC       :: G.Gr IS.IntSet VarDepEdgeType,
                   variableDependencySCCNodeMap  :: IM.IntMap Int
                   }
-  deriving (Show)
+  deriving (Show, Read)
 
 
 -- #############################################################################
@@ -307,11 +307,6 @@ instance Semigroup QualifierDependencies where
 
 instance Monoid QualifierDependencies where
   mempty = QualifierDependencies mempty mempty
-
-instance Show QualifierDependencies where
-  show qd = "{ explicit: " ++ show (toList $ qd ^. explicitVars) ++
-            ", implicit: " ++ show (toList $ qd ^. implicitVars) ++
-            "}"
 
 type Nodes = IS.IntSet
 type NodeMap = IM.IntMap Id

@@ -38,7 +38,7 @@ import           Polysemy.Reader
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
-data VarDepEdgeType = Implicit | Explicit deriving (Show, Eq)
+data VarDepEdgeType = Implicit | Explicit deriving (Show, Eq, Read)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 

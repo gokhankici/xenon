@@ -41,6 +41,7 @@ iodine [OPTIONS] VERILOG-FILE ANNOTATION-FILE
      --no-fp-output      disable the output from fixpoint
      --abduction         run abduction algorithm
      --no-sanity-check   do not run the sanity check step (for benchmarking)
+     --delta             run fixpoint in delta debugging mode
   -v --verbose           Loud verbosity
   -q --quiet             Quiet verbosity
 -}

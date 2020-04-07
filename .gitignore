@@ -1,7 +1,5 @@
-.stack-work/
 .stack-work-profile/
 /iodine.cabal
-configuration.sh
 .*.pl
 .*.preproc.v
 .*.smt2
@@ -10,51 +8,16 @@ flycheck_*
 
 /*.prof
 /*.prof.html
+/.test-report.txt
 
 .liquid/
 .*.fq
 
-[._]*.s[a-v][a-z]
-[._]*.sw[a-p]
-[._]s[a-v][a-z]
-[._]sw[a-p]
-Session.vim
-.netrwhist
-*~
-tags
-*~
-\#*\#
-/.emacs.desktop
-/.emacs.desktop.lock
-*.elc
-auto-save-list
-tramp
-.\#*
-.org-id-locations
-*_archive
-*_flymake.*
-/eshell/history
-/eshell/lastdir
-/elpa/
-*.rel
-/auto/
-.cask/
-dist/
-flycheck_*.el
-/server/
-.projectile
-.dir-locals.el
-
-/.test-report.txt
-
-*.annot
-
 cplex.json
-
-/stack.yaml.lock
 
 /run_all
 /old_src/
 /TAGS
-
-/debug-output*
+/debug-*
+/ir
+/out

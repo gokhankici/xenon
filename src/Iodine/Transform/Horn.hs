@@ -43,7 +43,7 @@ data HornType = Init
               | WellFormed
               | InstanceCheck
               | Summary
-              deriving (Eq, Show, Generic)
+              deriving (Eq, Show, Generic, Read)
 
 data HornVarType = Tag | Value
                    deriving (Eq, Show)

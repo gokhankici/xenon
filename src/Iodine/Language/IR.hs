@@ -33,8 +33,10 @@ module Iodine.Language.IR
   , getUpdatedVariables
   , DocColor (..)
   , DocConfig (..)
+  , defaultDocConfig
   , colorId
   , prettyShow
+  , prettyShowWithConfig
   )
 where
 
@@ -43,11 +45,13 @@ import           Iodine.Types
 import           Iodine.Utils
 
 import           Control.Lens hiding (op)
+import           Data.Bifunctor
 import           Data.Foldable
 import           Data.Functor (void)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.Hashable
+import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics hiding (moduleName)
@@ -59,12 +63,12 @@ import qualified Text.PrettyPrint as PP
 data Variable =
     Wire     { variableName :: Id }
   | Register { variableName :: Id }
-  deriving (Eq)
+  deriving (Eq, Show, Read)
 
 data Port =
     Input  { portVariable :: Variable }
   | Output { portVariable :: Variable }
-  deriving (Eq)
+  deriving (Eq, Show, Read)
 
 data Expr a =
   Constant { constantValue :: Id
@@ -90,7 +94,7 @@ data Expr a =
            , selectIndices :: L (Expr a)
            , exprData      :: a
            }
-  deriving (Eq, Generic, Functor, Foldable, Traversable)
+  deriving (Eq, Generic, Functor, Foldable, Traversable, Show, Read)
 
 data UFOp =
     UF_abs
@@ -125,11 +129,11 @@ data UFOp =
   | UF_concat
   | UF_write_to_index
   | UF_call Id -- ^ call a function with the given name
-  deriving (Eq)
+  deriving (Eq, Show, Read)
 {- HLINT ignore UFOp -}
 
 data AssignmentType = Blocking | NonBlocking | Continuous
-                    deriving (Generic, Eq, Show)
+                    deriving (Generic, Eq, Show, Read)
 
 data ModuleInstance a =
   ModuleInstance { moduleInstanceType  :: Id
@@ -137,7 +141,7 @@ data ModuleInstance a =
                  , moduleInstancePorts :: HM.HashMap Id (Expr a)
                  , moduleInstanceData  :: a
                  }
-  deriving (Generic, Functor, Foldable, Traversable)
+  deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
 
 data Stmt a =
   Block { blockStmts :: L (Stmt a)
@@ -154,20 +158,20 @@ data Stmt a =
              , stmtData        :: a
              }
   | Skip { stmtData :: a }
-  deriving (Generic, Functor, Foldable, Traversable)
+  deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
 
 data Event a =
     PosEdge { eventExpr :: Expr a }
   | NegEdge { eventExpr :: Expr a }
   | Star
-  deriving (Generic, Functor, Foldable, Traversable, Eq)
+  deriving (Generic, Functor, Foldable, Traversable, Eq, Show, Read)
 
 data AlwaysBlock a =
     AlwaysBlock { abEvent :: Event a
                 , abStmt  :: Stmt a
                 , abData  :: a
                 }
-  deriving (Generic, Functor, Foldable, Traversable)
+  deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
 
 data Module a =
   Module { moduleName      :: Id
@@ -179,11 +183,12 @@ data Module a =
          , moduleInstances :: L (ModuleInstance a)
          , moduleData      :: a
          }
-  deriving (Generic, Functor, Foldable, Traversable)
+  deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
 
 -- | An always block or a module instance
 data Thread a = AB (AlwaysBlock a)
               | MI (ModuleInstance a)
+  deriving (Eq, Show, Read)
 
 class GetVariables m where
   -- return the name of the variables in type m
@@ -343,7 +348,50 @@ instance ShowIndex a => Doc (Expr a) where
                   Nothing -> id2Doc v
                   Just dc -> PP.text $ colorId dc v
 
-  doc cfg (UF n es _)      = doc cfg n PP.<> PP.parens (docList cfg es)
+  doc cfg (UF n es _) =
+    case n of
+      UF_add            -> commonB "+"
+      UF_and            -> commonB "&&"
+      UF_negate         -> commonB "¬"
+      UF_negative       -> commonB "-"
+      UF_not            -> commonB "!"
+      UF_or             -> commonB "||"
+      UF_arith_rs       -> commonB ">>"
+      UF_bitwise_and    -> commonB "&"
+      UF_bitwise_or     -> commonB "|"
+      UF_case_eq        -> commonB "=="
+      UF_case_neq       -> commonB "!="
+      UF_div            -> commonB "/"
+      UF_ge             -> commonB ">="
+      UF_gt             -> commonB ">"
+      UF_le             -> commonB "<="
+      UF_logic_eq       -> commonB "=="
+      UF_logic_neq      -> commonB "!="
+      UF_lt             -> commonB "<"
+      UF_mod            -> commonB "%"
+      UF_mul            -> commonB "*"
+      UF_nand           -> commonB "!&&"
+      UF_nor            -> commonB "!||"
+      UF_shl            -> commonB "<<"
+      UF_shr            -> commonB ">>"
+      UF_sub            -> commonB "-"
+      UF_xnor           -> commonB "!^"
+      UF_xor            -> commonB "^"
+      _ -> common
+    where
+      d :: Doc d => d -> PP.Doc
+      d = doc cfg
+      commonB bop = commonB2 bop True es
+      commonB2 bop isTop = withParens .
+        \case
+          SQ.Empty                     -> PP.empty
+          e SQ.:<| SQ.Empty            -> PP.text bop PP.<> PP.parens (d e)
+          e1 SQ.:<| e2 SQ.:<| SQ.Empty -> d e1 PP.<+> PP.text bop PP.<+> d e2
+          e SQ.:<| rest                -> d e PP.<+> PP.text bop PP.<+> PP.parens (commonB2 bop False rest)
+        where
+          withParens = if isTop then id else PP.parens
+      common = d n PP.<> PP.parens args
+      args = PP.sep $ PP.punctuate sep (d <$> toList es)
   doc cfg (IfExpr c t e _) = PP.parens $ PP.hsep [doc cfg c, PP.text "?", doc cfg t, PP.colon, doc cfg e]
   doc _   (Str s _)        = PP.quotes $ id2Doc s
   doc cfg (Select v is _)  = doc cfg v PP.<> PP.brackets (docList cfg is)
@@ -368,12 +416,25 @@ instance ShowIndex a => Doc (Stmt a) where
                  NonBlocking -> "<="
                  Continuous  -> ":="
   doc cfg (IfStmt c t e _) =
-    PP.cat [ PP.text "if" PP.<+> PP.parens (doc cfg c) PP.<+> PP.lbrace
-           , nest $ doc cfg t
-           , PP.rbrace PP.<+> PP.text "else" PP.<+> PP.lbrace
-           , nest $ doc cfg e
-           , PP.rbrace
-           ]
+    PP.cat $
+    [ PP.text "if" PP.<+> PP.parens (doc cfg c) PP.<+> PP.lbrace
+    , nest $ doc cfg t
+    ] ++
+    concat
+    [ [ PP.rbrace PP.<+> PP.text "else if" PP.<+> PP.parens (doc cfg c2) PP.<+> PP.lbrace
+      , nest $ doc cfg t2
+      ]
+    | (c2, t2) <- elseIfs
+    ] ++
+    [ PP.rbrace PP.<+> PP.text "else" PP.<+> PP.lbrace
+    , nest $ doc cfg lastStmt
+    , PP.rbrace
+    ]
+    where
+      go IfStmt{..} = (Just ifStmtCondition, ifStmtThen) : go ifStmtElse
+      go s          = [(Nothing, s)]
+      rest = go e
+      (elseIfs, lastStmt) = (first fromJust <$> init rest, snd $ last rest)
   doc _ (Skip _) = PP.text "skip" PP.<> PP.semi
 
 instance ShowIndex a => Doc (ModuleInstance a) where
@@ -422,8 +483,16 @@ instance ShowIndex a => Doc (Module a) where
           go [a]    = [a]
           go (a:as) = a : PP.text "" : go as
 
-prettyShow :: Doc a => DocConfig -> a -> String
-prettyShow cfg = PP.render . doc cfg
+iodineRender :: PP.Doc -> String
+iodineRender = PP.renderStyle sty
+  where
+    sty = PP.style { PP.lineLength = 200 }
+
+prettyShow :: Doc a => a -> String
+prettyShow = prettyShowWithConfig defaultDocConfig
+
+prettyShowWithConfig :: Doc a => DocConfig -> a -> String
+prettyShowWithConfig cfg = iodineRender . doc cfg
 
 instance Hashable a => Hashable (Expr a) where
   hashWithSalt n (Variable v m a) = hashWithSalt n (v,m,a)
@@ -433,39 +502,6 @@ instance Hashable a => Hashable (Event a) where
   hashWithSalt n (PosEdge e) = hashWithSalt n (1::Int, e)
   hashWithSalt n (NegEdge e) = hashWithSalt n (2::Int, e)
   hashWithSalt n Star        = hashWithSalt n (3::Int)
-
-instance Show Variable where
-  show (Register r) = "reg(" ++ T.unpack r ++ ")"
-  show (Wire w)     = "wire(" ++ T.unpack w ++ ")"
-
-instance Show Port where
-  show (Input i)  = "input(" ++ show i ++ ")"
-  show (Output o) = "output(" ++ show o ++ ")"
-
-instance ShowIndex a => Show (Event a) where
-  show = PP.render . doc defaultDocConfig
-
-instance ShowIndex a => Show (Stmt a) where
-  show = PP.render . doc defaultDocConfig
-
-instance Show UFOp where
-  show = PP.render . doc defaultDocConfig
-
-instance ShowIndex a => Show (Expr a) where
-  show = PP.render . doc defaultDocConfig
-
-instance ShowIndex a => Show (AlwaysBlock a) where
-  show = PP.render . doc defaultDocConfig
-
-instance ShowIndex a => Show (Module a) where
-  show = PP.render . doc defaultDocConfig
-
-instance ShowIndex a => Show (ModuleInstance a) where
-  show = PP.render . doc defaultDocConfig
-
-instance ShowIndex a => Show (Thread a) where
-  show (AB ab) = PP.render $ doc defaultDocConfig ab
-  show (MI mi) = PP.render $ doc defaultDocConfig mi
 
 isInput :: Port -> Bool
 isInput (Input _)  = True
