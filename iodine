@@ -11,6 +11,7 @@ def get_args():
     argparser = argparse.ArgumentParser(prog="iodine", add_help=False)
     argparser.add_argument("-b", "--build", action="store_true")
     argparser.add_argument("--profile", action="store_true")
+    argparser.add_argument("--debug", action="store_true")
     args, unknown_args = argparser.parse_known_args()
     for i, arg in enumerate(unknown_args):
         p = Path(arg)
@@ -23,7 +24,8 @@ args, unknown_args = get_args()
 THIS_DIR = Path(__file__).resolve().parent
 IVERILOG_DIR = THIS_DIR / "iverilog-parser"
 STACK_BUILD_CMD = ["stack", "build"] + (["--fast"] if O0 else [])
-STACK_RUN_CMD = ["stack", "exec", "iodine"]
+EXE_NAME = "iodine-debug" if args.debug else "iodine"
+STACK_RUN_CMD = ["stack", "exec", EXE_NAME]
 STACK_PROFILE_ARGS = ["--profile", "--work-dir", ".stack-work-profile"] if args.profile else []
 
 if args.build:

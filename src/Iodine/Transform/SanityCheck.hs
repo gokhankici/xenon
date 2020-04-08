@@ -177,13 +177,27 @@ handleModuleInstance :: SC r
 handleModuleInstance mi@ModuleInstance{..} = do
   currentModuleName <- asks moduleName
   targetModule <- asks (HM.! moduleInstanceType)
+  checkMIArguments targetModule mi
   targetModuleClocks <- getClocks moduleInstanceType
   let mPorts  = toHSet $ variableName . portVariable <$> ports targetModule
       miPorts = HM.keysSet moduleInstancePorts
   when (mPorts /= miPorts) $
-    throw $ printf "Module instance is missing or have extra ports:\n%s" (show mi)
+    throw $ printf "Module instance is missing or have extra ports:\n%s" (prettyShow mi)
   let (_, miWrites) = moduleInstanceReadsAndWrites targetModule targetModuleClocks mi
   checkPrevious $ HS.map (, currentModuleName) miWrites
+
+checkMIArguments :: SC r => M -> MI -> Sem r ()
+checkMIArguments m mi@ModuleInstance{..} =
+  unless (HS.null $ inputVars `HS.intersection` outputVars) $
+  throw $ printf "Module instance has overlapping variables in between input and output ports:\n%s" (prettyShow mi)
+  where
+    (inputVars, outputVars) =
+      HM.foldlWithKey'
+      (\acc p e ->
+         acc & (if isOutput p then _2 else _1) <>~ getVariables e
+      ) mempty moduleInstancePorts
+    isOutput = (`elem` outputs)
+    outputs  = moduleOutputs m mempty
 
 runUniqueUpdateCheck :: SC r => Sem (UniqueUpdateCheck ': r) a -> Sem (State S1 ': r) a
 runUniqueUpdateCheck = reinterpret $ \case

@@ -1,3 +1,4 @@
+-- {-# OPTIONS_GHC -Wno-unused-binds #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -17,10 +18,10 @@ import           Control.Exception
 import           Control.Lens hiding (simple, (<.>))
 import           Control.Monad
 import           Data.Foldable
+import           Data.Maybe
 import           GHC.Generics hiding (moduleName, to)
 import           GHC.IO.Handle
 import           System.Console.CmdArgs.Explicit
-import           System.Directory
 import           System.Environment
 import           System.Exit
 import           System.IO
@@ -44,36 +45,31 @@ makeLenses ''TestArgs
 --------------------------------------------------------------------------------
 runTestTree :: TestArgs -> IA.IodineArgs -> TestTree -> Spec
 --------------------------------------------------------------------------------
-runTestTree ta va = \case
+runTestTree ta templateIA = \case
   TestCollection name tests ->
-    describe name $ traverse_ (runTestTree ta va) tests
-
-  SingleTest UnitTest{..} ->
-    it testName $
-    if   ta ^. dryRun
-    then printf "sb && ./iodine %s %s\n" verilogFile af :: IO ()
-    else
-      let act = withSilence (R.run va') `shouldReturn` (testType == Succ)
-      in  catch (act <* appendTestName "passed")
-          (\(e :: SomeException) -> appendTestName "failed" >> throw e)
+    describe name $ traverse_ (runTestTree ta templateIA) tests
+  SingleTest u@UnitTest{..} ->
+    it testName $ do
+    ia <- getIodineArgs ta u templateIA
+    if ta ^. dryRun
+      then printf "sb && ./iodine %s %s\n" (IA.fileName ia) (IA.annotFile ia)
+      else withSilence $ R.run ia `shouldReturn` expected
     where
-      appendTestName r =
-        appendFile outputFile $ printf "%s %s\n" r af
+      expected    = testType == Succ
       withSilence = if ta ^. verbose then id else silence
-      af  = case annotFile of
-              Nothing -> IA.defaultAnnotFile verilogFile
-              Just f  -> f
-      va' = va { IA.fileName   = verilogFile
-               , IA.annotFile  = af
-               , IA.noSave     = True
-               , IA.verbose    = ta ^. verbose
-               }
+
+getIodineArgs :: TestArgs -> UnitTest -> IA.IodineArgs -> IO IA.IodineArgs
+getIodineArgs ta UnitTest{..} templateIA =
+  IA.normalizeIodineArgs $
+  templateIA
+  { IA.fileName   = verilogFile
+  , IA.annotFile  = fromMaybe (IA.defaultAnnotFile verilogFile) annotFile
+  , IA.noSave     = True
+  , IA.verbose    = ta ^. verbose
+  }
 
 spec :: TestArgs -> IA.IodineArgs -> Spec
-spec ta va = sequential $ traverse_ (runTestTree ta va) allTests
-
-outputFile :: FilePath
-outputFile = "/tmp/passed"
+spec ta templateIA = sequential $ traverse_ (runTestTree ta templateIA) allTests
 
 silence :: IO a -> IO a
 silence action = withFile "/dev/null" AppendMode prepareAndRun
@@ -165,12 +161,10 @@ main = do
         else va
 
   -- hack: set the required first two positional arguments to empty list
-  va <- updateDef . invalidate <$> IA.parseArgsWithError ("" : "" : opts ^. iodineArgs)
-
-  catch (removeFile outputFile) (\(_ :: IOError) -> return ())
+  templateIA <- updateDef . invalidate <$> IA.parseArgsWithError ("" : "" : opts ^. iodineArgs)
 
   readConfig defaultConfig (opts^.hspecArgs)
-    >>= withArgs [] . runSpec (spec opts va)
+    >>= withArgs [] . runSpec (spec opts templateIA)
     >>= evaluateSummary
   where
     invalidate va = va { IA.fileName   = undefined

@@ -63,19 +63,7 @@ main = do
 run :: IodineArgs -> IO Bool
 -- -----------------------------------------------------------------------------
 -- | Runs the verification process, and returns 'True' if the program is constant time.
-run a = normalizePaths a >>= generateIR >>= checkIR
-
-normalizePaths :: IodineArgs -> IO IodineArgs
-normalizePaths IodineArgs{..} = do
-  f' <- makeAbsolute fileName
-  i' <- makeAbsolute iverilogDir
-  a' <- makeAbsolute annotFile
-  return IodineArgs { fileName    = f'
-                    , iverilogDir = i'
-                    , annotFile   = a'
-                    , ..
-                    }
-
+run a = generateIR a >>= checkIR
 
 -- -----------------------------------------------------------------------------
 generateIR :: IodineArgs -> IO (IodineArgs, AnnotationFile)
@@ -148,7 +136,7 @@ checkIR (ia@IodineArgs{..}, af)
         Left e      -> errorHandle e
       return True
   | onlyVCGen = do computeFInfo >>= FCons.saveQuery config . fst
-                   exitSuccess
+                   return True
   | otherwise = do
       (finfo, threadTypes) <- computeFInfo
       result <- F.solve config finfo

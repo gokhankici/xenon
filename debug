@@ -6,9 +6,6 @@ ARGS=()
 
 for arg in $@; do
 	case "$arg" in
-		--profile)
-			PROFILE="--profile"
-			;;
 		--fixed)
 			FIXED="yes"
 			;;
@@ -70,5 +67,6 @@ if [ -n "${PRINT_FQ_INFO}" ]; then
 	exit 0
 fi
 
-./iodine --build ${PROFILE} && \
-        ./iodine ${PROFILE} "${TEST_FILE}" "${TEST_ANNOT}" --verbose $ARGS
+./iodine --build $ARGS && \
+	./iodine "${TEST_FILE}" "${TEST_ANNOT}" --verbose $ARGS
+

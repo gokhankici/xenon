@@ -1,5 +1,4 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
-{-# OPTIONS_GHC -fno-cse #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Iodine.IodineArgs
   ( IodineArgs(..)
@@ -7,6 +6,7 @@ module Iodine.IodineArgs
   , parseArgs
   , parseArgsWithError
   , defaultAnnotFile
+  , normalizeIodineArgs
   ) where
 
 import Control.Monad
@@ -14,6 +14,7 @@ import Data.List
 import System.Console.CmdArgs.Explicit
 import System.Console.CmdArgs.Text
 import System.Console.CmdArgs.Verbosity
+import System.Directory
 import System.Exit
 import System.FilePath
 
@@ -152,7 +153,18 @@ parseArgsWithError :: [String] -> IO IodineArgs
 parseArgsWithError args = do
   let (isHelp, args') = isHelpNeeded args
   when isHelp printHelp
-  processValueIO iodineMode args'
+  processValueIO iodineMode args' >>= normalizeIodineArgs
+
+normalizeIodineArgs :: IodineArgs -> IO IodineArgs
+normalizeIodineArgs IodineArgs{..} = do
+  f' <- makeAbsolute fileName
+  i' <- makeAbsolute iverilogDir
+  a' <- makeAbsolute annotFile
+  return IodineArgs { fileName    = f'
+                    , iverilogDir = i'
+                    , annotFile   = a'
+                    , ..
+                    }
 
 printHelp :: IO ()
 printHelp = do

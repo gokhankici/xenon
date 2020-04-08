@@ -266,16 +266,13 @@ debugArgs :: IO IodineArgs
 debugArgs = do
   args <- getArgs
   case args of
-    [] -> do ivd <- makeAbsolute "iverilog-parser"
-             vf  <- makeAbsolute debugVerilogFile
-             af  <- makeAbsolute debugAnnotationFile
-             return $ defaultIodineArgs
-               { fileName    = vf
-               , annotFile   = af
-               , iverilogDir = ivd
-               , verbose     = enableVerbose
-               , noSave      = disableFQSave
-               }
+    [] -> normalizeIodineArgs $ defaultIodineArgs
+          { fileName    = debugVerilogFile
+          , annotFile   = debugAnnotationFile
+          , iverilogDir = "iverilog-parser"
+          , verbose     = enableVerbose
+          , noSave      = disableFQSave
+          }
     _ -> parseArgsWithError args
 
 
@@ -302,9 +299,9 @@ analyze = do
       isAEExpr i  = all (isAEVar i) . getVariables
 
       go i Block{..}  = gos i blockStmts
-      go i s          = gos i (mempty |> s)
+      go i s          = gos i (return s)
 
-      gos i SQ.Empty = return SQ.empty
+      gos i SQ.Empty = return mempty
       gos i (s SQ.:<| ss) =
         case s of
           Block{..}     -> gos i $ blockStmts <> ss
@@ -325,8 +322,10 @@ analyze = do
              , currentDocIndex = Just i
              }
     for_ stmts $ \s -> do
+      printf "In always #%d %s\n" i (prettyShow $ abEvent ab)
       putStrLn $ prettyShowWithConfig dc s
       putStrLn $ replicate 80 '#'
+      putStrLn ""
 
   let isCommonCTVar v = all (elem $ T.unpack v) ctVars
       dc = defaultDocConfig
@@ -339,6 +338,7 @@ analyze = do
     unless (all isCTExpr' $ moduleInstancePorts mi) $ do
       putStrLn $ prettyShowWithConfig dc mi
       putStrLn $ replicate 80 '#'
+      putStrLn ""
 
   for_ ctVarsDisagree $ \(n1, n2, vs) ->
-    printf "%d and %d disagree on: %s\n" n1 n2 (show $ toList vs)
+    printf "Variables ct in %d but not in %d: %s\n" n1 n2 (show $ toList vs)
