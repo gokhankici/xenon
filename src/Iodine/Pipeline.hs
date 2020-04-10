@@ -52,7 +52,7 @@ normalizeIR af irReader ia = do
       ir            = topsortModules topModuleName allIR
       irMap         = mkModuleMap ir
   normalizedOutput <- runReader af' $ do
-    unless (IA.noSanity ia) $
+    unless (IA.benchmarkMode ia) $
       sanityCheck
       & runReader ir
       & runReader irMap

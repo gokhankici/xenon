@@ -3,19 +3,19 @@
 cd "${0:A:h}"
 
 ARGS=()
+SEEN_DOUBLE_DASH=0
 
 for arg in $@; do
-	case "$arg" in
-		--fixed)
-			FIXED="yes"
-			;;
-		--info)
-			PRINT_FQ_INFO="yes"
-			;;
-		*)
-			ARGS+=("$arg")
-			;;
-	esac
+	if [ "${SEEN_DOUBLE_DASH}" -eq 0 ]; then
+		case "$arg" in
+			--fixed) FIXED="yes" ;;
+			--info)  PRINT_FQ_INFO="yes" ;;
+			--)      SEEN_DOUBLE_DASH=1; ARGS+=("$arg") ;;
+			*)       ARGS+=("$arg") ;;
+		esac
+	else
+		ARGS+=("$arg")
+	fi
 done
 
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"

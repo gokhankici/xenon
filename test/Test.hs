@@ -65,7 +65,7 @@ getIodineArgs ta UnitTest{..} templateIA =
   { IA.fileName   = verilogFile
   , IA.annotFile  = fromMaybe (IA.defaultAnnotFile verilogFile) annotFile
   , IA.noSave     = True
-  , IA.verbose    = ta ^. verbose
+  , IA.verbosity  = if ta ^. verbose then IA.Loud else IA.Normal
   }
 
 spec :: TestArgs -> IA.IodineArgs -> Spec

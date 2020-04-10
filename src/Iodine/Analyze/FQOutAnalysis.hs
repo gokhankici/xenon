@@ -63,13 +63,14 @@ data WorklistSt = WorklistSt
 makeLenses ''WorklistR
 makeLenses ''WorklistSt
 
-type CTVarsDisagree = [(Int, Int, Vars)]
+type VarsDisagree = [(Int, Int, Vars)]
 
 data FQOutAnalysisOutput = FQOutAnalysisOutput
   { firstNonCtVars :: Vars
   , ctVars         :: VarsMap
   , aeVars         :: VarsMap
-  , ctVarsDisagree :: CTVarsDisagree
+  , ctVarsDisagree :: VarsDisagree
+  , aeVarsDisagree :: VarsDisagree
   }
   deriving (Eq, Show, Read)
 
@@ -104,6 +105,7 @@ findFirstNonCTVars fpResult af moduleMap summaryMap = do
     m@Module{..}      = moduleMap HM.! topModuleName
     (ctVars, aeVars)  = findCTVars fpResult af moduleMap
     (ctVarsCommon, ctVarsDisagree) = mergeVarsMap m ctVars
+    aeVarsDisagree = snd $ mergeVarsMap m aeVars
     ctNodes  = IS.fromList $ toNode . T.pack <$> toList ctVarsCommon
     topMA    = af ^. afAnnotations . at topModuleName . to fromJust
     srcs     = toList $ mappend inputs $ topMA ^. moduleAnnotations . sources
@@ -128,7 +130,7 @@ findFirstNonCTVars fpResult af moduleMap summaryMap = do
     st = WorklistSt mempty mempty
     r  = WorklistR ctNodes sg
 
-mergeVarsMap :: Module Int -> VarsMap -> (Vars, CTVarsDisagree)
+mergeVarsMap :: Module Int -> VarsMap -> (Vars, VarsDisagree)
 mergeVarsMap Module{..} vsm = ( foldMap fst comparisons
                               , keepDisagreedVars comparisons
                               )

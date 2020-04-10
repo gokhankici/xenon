@@ -65,7 +65,7 @@ import           Text.Printf
 -- Debug Configuration
 -- #############################################################################
 -- | iodine arguments
-enableVerbose = True
+iodineVerbosity = Loud
 disableFQSave = False
 
 -- debugVerilogFile = "benchmarks" </> "yarvi" </> "shared" </> "test-01.v"
@@ -235,13 +235,13 @@ runFixpoint IodineArgs{..} (finfo, (af, mm, sm)) = do
 run :: IO DebugOutput
 run = do
   (ia@IodineArgs{..}, af) <- debugArgs >>= generateIR
-  irFileContents <- readIRFile fileName
+  irFileContents <- readIRFile ia fileName
   r <- tryIOError $ removeFile outputFile
   case r of
     Right _ -> return ()
     Left e -> unless (isDoesNotExistError e) $ E.throwIO e
   res <- debugPipeline af (parse (fileName, irFileContents)) ia
-    & (if verbose then PT.traceToIO else PT.ignoreTrace)
+    & (if verbosity == Loud then PT.traceToIO else PT.ignoreTrace)
     & errorToIOFinal
     & runOutputSem (embed . appendFile outputFile) & embedToFinal & runFinal
   case res of
@@ -270,7 +270,7 @@ debugArgs = do
           { fileName    = debugVerilogFile
           , annotFile   = debugAnnotationFile
           , iverilogDir = "iverilog-parser"
-          , verbose     = enableVerbose
+          , verbosity   = iodineVerbosity
           , noSave      = disableFQSave
           }
     _ -> parseArgsWithError args
@@ -327,7 +327,9 @@ analyze = do
       putStrLn $ replicate 80 '#'
       putStrLn ""
 
-  let isCommonCTVar v = all (elem $ T.unpack v) ctVars
+  let isCommon vm v = all (elem $ T.unpack v) vm
+      isCommonCTVar = isCommon ctVars
+      isCommonAEVar = isCommon aeVars
       dc = defaultDocConfig
            { varColorMap = \_ v -> if isCommonCTVar v then Nothing else Just Red
            , currentDocIndex = Just 0
@@ -342,3 +344,5 @@ analyze = do
 
   for_ ctVarsDisagree $ \(n1, n2, vs) ->
     printf "Variables ct in %d but not in %d: %s\n" n1 n2 (show $ toList vs)
+  for_ aeVarsDisagree $ \(n1, n2, vs) ->
+    printf "Variables ae in %d but not in %d: %s\n" n1 n2 (show $ toList vs)

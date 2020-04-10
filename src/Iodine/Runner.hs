@@ -123,14 +123,10 @@ checkIR :: (IodineArgs, AnnotationFile) -> IO Bool
 -- -----------------------------------------------------------------------------
 checkIR (ia@IodineArgs{..}, af)
   | printIR = do
-      irFileContents <- readIRFile fileName
+      irFileContents <- readIRFile ia fileName
       mNormalizedOutput <-
         normalizeIR af (parse (fileName, irFileContents)) ia
-        & handleTrace
-        & errorToIOFinal
-        & runOutputSem (embed . hPutStrLn stderr)
-        & embedToFinal
-        & runFinal
+        & handleMonads ia
       case mNormalizedOutput of
         Right (_, (normalizedIR, _)) -> printList normalizedIR
         Left e      -> errorHandle e
@@ -162,21 +158,13 @@ checkIR (ia@IodineArgs{..}, af)
       return safe
   where
     computeFInfo = do
-      irFileContents <- readIRFile fileName
-      mFInfo <- pipeline af
-        (parse (fileName, irFileContents)) -- ir reader
-        ia
-        & handleTrace
-        & errorToIOFinal
-        & runOutputSem (embed . hPutStrLn stderr)
-        & embedToFinal
-        & runFinal
+      print verbosity
+      irFileContents <- readIRFile ia fileName
+      let irReader = parse (fileName, irFileContents)
+      mFInfo <- pipeline af irReader ia & handleMonads ia
       case mFInfo of
         Right finfo -> return finfo
         Left e      -> errorHandle e
-
-    handleTrace :: Member (Embed IO) r => Sem (Trace ': r) a -> Sem r a
-    handleTrace = if verbose then traceToIO else ignoreTrace
 
     config :: FC.Config
     config = FC.defConfig { FC.eliminate = FC.Some
@@ -186,13 +174,33 @@ checkIR (ia@IodineArgs{..}, af)
                           , FC.minimize  = delta
                           }
 
-    -- smtFile = fileName <.> "horn" <.> "smt2"
-
     fqoutFile :: FilePath
     fqoutFile =
       let (dir, base) = splitFileName fileName
       in dir </> ".liquid" </> (base <.> "fqout")
 
+handleMonads :: IodineArgs
+             -> Sem '[Error IodineException, Trace, Output String, Embed IO, Final IO] a
+             -> IO (Either IodineException a)
+handleMonads IodineArgs{..} act =
+  act
+  & errorToIOFinal
+  & handleTrace
+  & handleOutput
+  & embedToFinal
+  & runFinal
+  where
+    handleTrace :: Member (Embed IO) r => Sem (Trace ': r) a -> Sem r a
+    handleTrace =
+      if verbosity /= Loud || benchmarkMode
+      then ignoreTrace
+      else traceToIO
+
+    handleOutput :: Member (Embed IO) r => Sem (Output String ': r) a -> Sem r a
+    handleOutput =
+      if verbosity == Quiet || benchmarkMode
+      then ignoreOutput
+      else runOutputSem (embed . hPutStrLn stderr)
 
 printList :: Show a => L a -> IO ()
 printList l = do
@@ -203,12 +211,14 @@ printList l = do
     sep = replicate 80 '-'
 
 
-readIRFile :: String -> IO String
-readIRFile fileName = do
-  fileContents <- TIO.readFile fileName
-  return $ case parseProlog fileName fileContents of
-    Right ms -> unlines $ show <$> ms
-    Left msg -> error msg
+readIRFile :: IodineArgs -> String -> IO String
+readIRFile ia fileName =
+  if prettyProlog ia
+  then do fileContents <- TIO.readFile fileName
+          return $ case parseProlog fileName fileContents of
+                     Right ms -> unlines $ show <$> ms
+                     Left msg -> error msg
+  else readFile fileName
 
 -- -----------------------------------------------------------------------------
 -- Common Functions

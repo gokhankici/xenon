@@ -36,5 +36,6 @@ else:
     cmd += unknown_args
 
 # print(" ".join(str(a) for a in cmd))
+# sys.exit(0)
 r = subprocess.run(cmd, cwd=THIS_DIR)
 sys.exit(r.returncode)

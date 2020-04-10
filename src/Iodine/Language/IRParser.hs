@@ -194,11 +194,7 @@ whole :: Parser a -> Parser a
 whole p = spaceConsumer *> p <* MP.eof
 
 spaceConsumer :: Parser ()
-spaceConsumer = MPL.space (void MPC.spaceChar) lineCmnt blockCmnt
-  where
-    blockCmnt, lineCmnt :: Parser ()
-    blockCmnt = MPL.skipBlockComment "/*" "*/"
-    lineCmnt  = MPL.skipLineComment "%"
+spaceConsumer = void $ MP.many MPC.spaceChar
 
 -- | `symbol s` parses just the string s (and trailing whitespace)
 symbol :: String -> Parser Id
