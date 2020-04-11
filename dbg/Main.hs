@@ -342,7 +342,11 @@ analyze = do
       putStrLn $ replicate 80 '#'
       putStrLn ""
 
+  let ModuleSummary{..} = sm HM.! topModuleName
+      addWriteId v = (v,) $ maybe (-1) IS.findMin $ HM.lookup (T.pack v) threadWriteMap
   for_ ctVarsDisagree $ \(n1, n2, vs) ->
-    printf "Variables ct in %d but not in %d: %s\n" n1 n2 (show $ toList vs)
+    printf "Variables ct in %d but not in %d: %s\n"
+    n1 n2 (show $ addWriteId <$> toList vs)
   for_ aeVarsDisagree $ \(n1, n2, vs) ->
-    printf "Variables ae in %d but not in %d: %s\n" n1 n2 (show $ toList vs)
+    printf "Variables ae in %d but not in %d: %s\n"
+    n1 n2 (show $ addWriteId <$> toList vs)
