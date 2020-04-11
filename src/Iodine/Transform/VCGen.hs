@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -27,6 +26,11 @@ import           Iodine.Transform.TransitionRelation
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Carrier.Reader
+import           Control.Carrier.State.Strict
+import           Control.Effect.Error
+import           Control.Effect.Trace (Trace)
+import           Control.Effect.Writer
 import           Control.Lens
 import           Control.Monad
 import           Data.Bifunctor
@@ -41,12 +45,6 @@ import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Data.Traversable
-import           Polysemy
-import qualified Polysemy.Error as PE
-import qualified Polysemy.Output as PO
-import           Polysemy.Reader
-import           Polysemy.State
-import qualified Polysemy.Trace as PT
 
 -- | State relevant to statements
 data ThreadSt =
@@ -65,35 +63,32 @@ data ThreadSt =
 makeLenses ''ThreadSt
 
 -- | global state
-type G r = Members '[ Reader AnnotationFile
-                    , PE.Error IodineException
-                    , PT.Trace
-                    , Reader ModuleMap
-                    , Reader SummaryMap
-                    , PO.Output String
-                    ] r
+type G sig m = ( Has (Reader AnnotationFile) sig m
+               , Has (Error IodineException) sig m
+               , Has Trace sig m
+               , Has (Reader ModuleMap) sig m
+               , Has (Reader SummaryMap) sig m
+               , Has (Writer Output) sig m
+               , Effect sig
+               )
 
-type G' r = ( G r
-            , Members '[Reader InitialEqualVariables] r
-            )
+type G' sig m = (G sig m, Has (Reader InitialEqualVariables) sig m)
 
 -- | vcgen state  = global effects + next var map
-type FD r  = ( G' r
-             , Members '[ Reader NextVars
-                        , State  HornVariableMap
-                        ] r)
+type FD sig m = (G' sig m, Has (Reader NextVars) sig m, Has (State  HornVariableMap) sig m)
 
 -- | module state = vcgen state + current module
-type FDM r = ( FD r
-             , Members '[ Reader (Module Int)
-                        , Reader (IM.IntMap TI)
-                        , Reader (IM.IntMap ThreadSt)
-                        ] r
-             )
+type FDM sig m = ( FD sig m
+                 , Has (Reader (Module Int)) sig m
+                 , Has (Reader (IM.IntMap TI)) sig m
+                 , Has (Reader (IM.IntMap ThreadSt)) sig m
+                 )
 
 -- | stmt state = module state + current statement state
-type FDS r = (FDM r, Members '[Reader ThreadSt] r)
+type FDS sig m = (FDM sig m, Has (Reader ThreadSt) sig m)
 
+type A = Int
+type M = Module A
 
 {- |
 Verification condition generation creates the following 7 type of horn
@@ -119,7 +114,7 @@ always have the same value.
 7. Non-interference checks: This is used to make sure that the invariants of
 different always blocks are consistent under interference.
 -}
-vcgen :: G r => NormalizeOutput -> Sem r VCGenOutput
+vcgen :: G sig m => NormalizeOutput -> m VCGenOutput
 vcgen (normalizedIR, trNextVariables) = do
   ievs <- computeAllInitialEqualVars normalizedIR
   combine vcgenMod normalizedIR
@@ -129,7 +124,7 @@ vcgen (normalizedIR, trNextVariables) = do
     & runState  (HornVariableMap mempty)
 
 
-vcgenMod :: FD r => Module Int -> Sem r Horns
+vcgenMod :: FD sig m => Module Int -> m Horns
 vcgenMod m@Module {..} = do
   assert (SQ.null gateStmts)
     "Gate statements should have been merged into always* blocks"
@@ -162,7 +157,7 @@ vcgenMod m@Module {..} = do
     singleBlockForEvent = length allEvents == length (nub allEvents)
     threadMap           = foldl' (\tm t -> IM.insert (getData t) t tm) mempty allThreads
 
-moduleClauses :: FDM r => Sem r Horns
+moduleClauses :: FDM sig m => m Horns
 moduleClauses = do
   m@Module{..} <- ask
   simpleCheck <- isModuleSimple m
@@ -179,15 +174,15 @@ moduleClauses = do
       <||> (SQ.singleton <$> summaryConstraint)
       -- <||> debuggingConstraints
 
-isModuleSimple :: Members '[ Reader AnnotationFile
-                           , Reader SummaryMap
-                           ] r
+isModuleSimple :: ( Has (Reader AnnotationFile) sig m
+                  , Has (Reader SummaryMap) sig m
+                  )
                => Module Int
-               -> Sem r Bool
+               -> m Bool
 isModuleSimple m =
   (&&) <$> (not <$> isTopModule' m) <*> asks (isCombinatorial . hmGet 8 (moduleName m))
 
-alwaysBlockClauses :: FDM r => AlwaysBlock Int -> Sem r Horns
+alwaysBlockClauses :: FDM sig m => AlwaysBlock Int -> m Horns
 alwaysBlockClauses ab =
   withAB t
   $ (SQ.singleton <$> initialize ab)
@@ -200,10 +195,10 @@ alwaysBlockClauses ab =
 
 
 -- -------------------------------------------------------------------------------------------------
-initialize :: FDS r => AlwaysBlock Int -> Sem r H
+initialize :: FDS sig m => AlwaysBlock Int -> m H
 -- -------------------------------------------------------------------------------------------------
 initialize ab = do
-  currentModule <- ask
+  currentModule <- ask @M
   let currentModuleName = moduleName currentModule
 
   tagEqVars0 <- getHornVariables ab
@@ -235,9 +230,9 @@ initialize ab = do
 
   let unsanitizedStateVars = readBeforeWrittenVars `HS.difference` valEqVars
   unless (HS.null unsanitizedStateVars) $
-    PO.output $
-    "Variables read before written & not sanitized: "
-    ++ show (currentModuleName, toList unsanitizedStateVars)
+    output [ "Variables read before written & not sanitized: "
+             ++ show (currentModuleName, toList unsanitizedStateVars)
+           ]
 
   trace "initialize" (currentModuleName, getThreadId ab, isTop, isStar ab)
   trace "initialize - zero" (toList zeroTagVars)
@@ -291,7 +286,7 @@ initialize ab = do
      subs |> (HVarVL0 v m, HVarVR0 v m)
 
 
-combinatorialModuleInit :: FDM r => Sem r H
+combinatorialModuleInit :: FDM sig m => m H
 combinatorialModuleInit = do
   m@Module{..} <- ask
   let sti = setThreadId m
@@ -314,7 +309,7 @@ combinatorialModuleInit = do
 
 
 -- -------------------------------------------------------------------------------------------------
-tagSet :: FDS r => AlwaysBlock Int -> Sem r (Maybe H)
+tagSet :: FDS sig m => AlwaysBlock Int -> m (Maybe H)
 -- -------------------------------------------------------------------------------------------------
 tagSet ab = withTopModule $ do
   (Module {..}, srcs, vars) <- tagSetHelper
@@ -355,12 +350,12 @@ tagSet ab = withTopModule $ do
     sti = setThreadId ab
 {- HLINT ignore tagSet -}
 
-tagSetHelper :: FDS r => Sem r (Module Int, Ids, Ids)
+tagSetHelper :: FDS sig m => m (Module Int, Ids, Ids)
 tagSetHelper = (,,) <$> ask @(Module Int) <*> getCurrentSources <*> asks (^. currentVariables)
 
 
 -- -------------------------------------------------------------------------------------------------
-srcTagReset :: FDS r => AlwaysBlock Int -> Sem r (Maybe H)
+srcTagReset :: FDS sig m => AlwaysBlock Int -> m (Maybe H)
 -- -------------------------------------------------------------------------------------------------
 srcTagReset ab = withTopModule $ do
   (Module {..}, srcs, vars) <- tagSetHelper
@@ -402,7 +397,7 @@ srcTagReset ab = withTopModule $ do
       foldl' (\es (v, m) -> es <> (mkEqual <$> mkAllSubs v m n 0)) mempty
 
 -- -------------------------------------------------------------------------------------------------
-next, nextCommon, nextSubClock :: FDS r => AlwaysBlock Int -> Sem r H
+next, nextCommon, nextSubClock :: FDS sig m => AlwaysBlock Int -> m H
 -- -------------------------------------------------------------------------------------------------
 next ab = do
   isTop <- isTopModule
@@ -411,7 +406,7 @@ next ab = do
     else nextSubClock ab
 
 nextCommon ab@AlwaysBlock{..} = do
-  Module {..} <- ask
+  Module {..} <- ask @M
   initialSubs <-
     foldMap (\v -> second sti <$> mkAllSubs v moduleName 0 1)
     <$> getHornVariables ab
@@ -468,7 +463,7 @@ nextSubClock ab@AlwaysBlock{..} = do
          }
 
 -- -------------------------------------------------------------------------------------------------
-sinkCheck :: FDS r => TI -> Sem r Horns
+sinkCheck :: FDS sig m => TI -> m Horns
 -- -------------------------------------------------------------------------------------------------
 sinkCheck thread@(MI _) = do
   snks <- asks (^. currentSinks)
@@ -478,7 +473,7 @@ sinkCheck thread@(MI _) = do
   return mempty
 
 sinkCheck (AB ab) = do
-  Module {..} <- ask
+  Module {..} <- ask @M
   snks        <- asks (^. currentSinks)
   isTop <- isTopModule
   unless (HS.null snks || isTop) $
@@ -501,7 +496,7 @@ sinkCheck (AB ab) = do
 
 
 -- -------------------------------------------------------------------------------------------------
-assertEqCheck :: FDS r => TI -> Sem r Horns
+assertEqCheck :: FDS sig m => TI -> m Horns
 -- -------------------------------------------------------------------------------------------------
 assertEqCheck thread@(MI _) = do
   snks <- asks (^. currentAssertEquals)
@@ -511,7 +506,7 @@ assertEqCheck thread@(MI _) = do
   return mempty
 
 assertEqCheck (AB ab) = do
-  Module {..} <- ask
+  Module {..} <- ask @M
   aes         <- asks (^. currentAssertEquals)
   isTop <- isTopModule
   unless (HS.null aes || isTop) $
@@ -533,7 +528,7 @@ assertEqCheck (AB ab) = do
 
 
 -- -------------------------------------------------------------------------------------------------
-interferenceChecks :: FDM r => L TI -> Sem r Horns
+interferenceChecks :: FDM sig m => L TI -> m Horns
 -- -------------------------------------------------------------------------------------------------
 interferenceChecks abmis = do
   isTop <- isTopModule
@@ -542,11 +537,11 @@ interferenceChecks abmis = do
          & execState @Horns mempty
     else return mempty
 
-interferenceCheck :: (FDM r, Members '[State Horns] r)
-                  => TI -> Sem r ()
+interferenceCheck :: (FDM sig m, Has (State Horns) sig m)
+                  => TI -> m ()
 interferenceCheck (MI _)  = return ()
 interferenceCheck (AB readAB) = do
-  Module{..} <- ask
+  Module{..} <- ask @M
   ModuleSummary{..} <- asks (hmGet 1 moduleName)
   -- trace "threadDependencies" threadDependencies
   let readTid = getThreadId readAB
@@ -566,14 +561,14 @@ interferenceCheck (AB readAB) = do
       MI writeMI ->
         interferenceCheckMI writeMI readAB overlappingVars >>= addHorn
 
-addHorn :: Members '[State Horns] r => H -> Sem r ()
+addHorn :: Has (State Horns) sig m => H -> m ()
 addHorn h = modify (SQ.|> h)
 
-interferenceCheckMI :: FDM r
+interferenceCheckMI :: FDM sig m
                     => ModuleInstance Int -- ^ instance that does the update (writer)
                     -> AlwaysBlock Int    -- ^ always block being updated (reader)
                     -> Ids                -- ^ the variables being updated
-                    -> Sem r H
+                    -> m H
 interferenceCheckMI writeMI readAB overlappingVars = do
   m@Module{..} <- ask
   moduleSummary :: ModuleSummary <- asks (hmGet 9 moduleName)
@@ -633,11 +628,11 @@ interferenceCheckMI writeMI readAB overlappingVars = do
 
 
 -- | return the interference check
-interferenceCheckAB :: FDM r
+interferenceCheckAB :: FDM sig m
                     => AlwaysBlock Int -- ^ always block that does the update (writer)
                     -> AlwaysBlock Int -- ^ always block being updated (reader)
                     -> Ids             -- ^ the variables being updated
-                    -> Sem r H
+                    -> m H
 interferenceCheckAB writeAB readAB overlappingVars= do
   -- trace "interferenceCheckAB" (getData writeAB, getData readAB, toList overlappingVars)
   currentModule <- ask @(Module Int)
@@ -655,11 +650,11 @@ interferenceCheckAB writeAB readAB overlappingVars= do
          , hornData   = ()
          }
 
-interferenceReaderExpr :: FDM r
+interferenceReaderExpr :: FDM sig m
                        => AlwaysBlock Int              -- ^ always block being updated (reader)
                        -> Ids                          -- ^ the variables being updated
                        -> Substitutions                -- ^ substitution map of the write thread
-                       -> Sem r (L HornExpr, HornExpr) -- ^ body & head expression
+                       -> m (L HornExpr, HornExpr) -- ^ body & head expression
 interferenceReaderExpr readAB overlappingVars writeNext = do
   currentModule <- ask @(Module Int)
   let currentModuleName = moduleName currentModule
@@ -701,7 +696,7 @@ interferenceReaderExpr readAB overlappingVars writeNext = do
          , makeKVar readAB subs
          )
 
-moduleAlwaysEquals :: FDM r => Int -> Substitutions -> Sem r (L HornExpr)
+moduleAlwaysEquals :: FDM sig m => Int -> Substitutions -> m (L HornExpr)
 moduleAlwaysEquals varIndex nxt = do
   currentModule <- ask
   let currentModuleName = moduleName currentModule
@@ -720,7 +715,7 @@ moduleAlwaysEquals varIndex nxt = do
 -- | Instantiate the always block with variable index = 1 and thread index equal
 -- to the current module's id. The given set of variables are excluded from the
 -- instantiation.
-instantiateAB :: FDM r => AlwaysBlock Int -> Ids -> Sem r HornExpr
+instantiateAB :: FDM sig m => AlwaysBlock Int -> Ids -> m HornExpr
 instantiateAB ab excludedVars = do
   m@Module{..} <- ask
   let sti = setThreadId m
@@ -730,10 +725,10 @@ instantiateAB ab excludedVars = do
 
 -- | instantiate the given module instance with variable index = 1 and thread
 -- index equal to the current module's
-instantiateMI :: FDM r => ModuleInstance Int -> Sem r HornExpr
+instantiateMI :: FDM sig m => ModuleInstance Int -> m HornExpr
 instantiateMI mi = instantiateMI' mi 1
 
-instantiateMI' :: FDM r => ModuleInstance Int -> Int -> Sem r HornExpr
+instantiateMI' :: FDM sig m => ModuleInstance Int -> Int -> m HornExpr
 instantiateMI' mi@ModuleInstance{..} varIndex = do
   currentModule <- ask
   let currentModuleName = moduleName currentModule
@@ -771,7 +766,7 @@ instantiateMI' mi@ModuleInstance{..} varIndex = do
   return $ HAnd $ fmap fst inputSubs SQ.|> makeKVar targetModule subs
 
 -- -----------------------------------------------------------------------------
-summaryConstraint :: FDM r => Sem r H
+summaryConstraint :: FDM sig m => m H
 -- -----------------------------------------------------------------------------
 summaryConstraint = do
   m@Module{..} <- ask
@@ -791,7 +786,7 @@ summaryConstraint = do
          , hornData   = ()
          }
 
-instantiateAllThreads :: FDM r => Sem r HornExpr
+instantiateAllThreads :: FDM sig m => m HornExpr
 instantiateAllThreads = do
   currentModule <- ask
   instances <-
@@ -818,21 +813,21 @@ newtype NextVars              = NextVars { _nextVars :: IM.IntMap Substitutions 
 newtype HornVariableMap       = HornVariableMap { _getHornVariables :: IM.IntMap Ids }
 newtype InitialEqualVariables = InitialEqualVariables { getInitialEqualVariables :: HM.HashMap Id Ids }
 
-askHornVariables :: (Members '[Reader HornVariableMap] r, MakeKVar t) => t Int -> Sem r Ids
+askHornVariables :: (Has (Reader HornVariableMap) sig m, MakeKVar t) => t Int -> m Ids
 askHornVariables t = (IM.! getThreadId t) <$> asks _getHornVariables
 
-getHornVariables :: (Members '[State HornVariableMap] r, MakeKVar t) => t Int -> Sem r Ids
+getHornVariables :: (Has (State HornVariableMap) sig m, MakeKVar t) => t Int -> m Ids
 getHornVariables t = (IM.! getThreadId t) <$> gets _getHornVariables
 
-setHornVariables :: (Members '[State HornVariableMap] r, MakeKVar t) => t Int -> Ids -> Sem r ()
+setHornVariables :: (Has (State HornVariableMap) sig m, MakeKVar t) => t Int -> Ids -> m ()
 setHornVariables t vs = do
   HornVariableMap m <- get
   let m' = IM.insert (getThreadId t) vs m
   put $ HornVariableMap m'
 
-alwaysEqualEqualities :: FDS r => TI -> Sem r (L HornExpr)
+alwaysEqualEqualities :: FDS sig m => TI -> m (L HornExpr)
 alwaysEqualEqualities t = do
-  Module {..} <- ask
+  Module {..} <- ask @M
   mNextVars <-
     case t of
       AB ab -> Just <$> getNextVars ab
@@ -858,7 +853,7 @@ mkAEEquality v m n = mkEqual <$> pairs
 
 -- | get the last index of each variable after transitioning from variables with
 -- index 0
-getNextVars :: FD r => AlwaysBlock Int -> Sem r Substitutions
+getNextVars :: FD sig m => AlwaysBlock Int -> m Substitutions
 getNextVars ab = do
   nextVarMap <- (IM.! getData ab) <$> asks _nextVars
   hornVars <- getHornVariables ab
@@ -868,13 +863,13 @@ getNextVars ab = do
     nextVarMap hornVars
 
 
-withAB :: FDM r => TI -> Sem (Reader ThreadSt ': r) a -> Sem r a
+withAB :: FDM sig m => TI -> ReaderC ThreadSt m a -> m a
 withAB t act = do
   threadSt :: ThreadSt  <- asks (IM.! getData t)
   act & runReader threadSt
 
 
-computeThreadStM :: G' r => Module Int -> TI -> Sem r ThreadSt
+computeThreadStM :: G' sig m => Module Int -> TI -> m ThreadSt
 computeThreadStM m@Module{..} thread = do
   as <- getAnnotations moduleName
   let filterAs l = HS.intersection (as ^. l) vs
@@ -920,20 +915,21 @@ data FDEQReason = FDEQReason
   , writtenByMI     :: HS.HashSet (Id, Id)
   }
 
-type FDEQ r = ( G r
-              , Members '[ State FDEQSt
-                         , Reader FDEQReadSt
-                         ] r
-              )
+type FDEQ sig m = ( G sig m
+                  , Has (State FDEQSt) sig m
+                  , Has (Reader FDEQReadSt) sig m
+                  )
 
-computeAllInitialEqualVars :: G r => L (Module Int) -> Sem r (HM.HashMap Id Ids)
+type IdsMap = HM.HashMap Id Ids
+
+computeAllInitialEqualVars :: G sig m => L (Module Int) -> m IdsMap
 computeAllInitialEqualVars modules = execState mempty $ for_ modules $ \m@Module{..} -> do
   reasons <- autoInitialEqualVars m
   ies <-
-    execState HS.empty $
+    execState (HS.empty :: Ids) $
     for_ (HM.toList reasons) $ \(v, mr) ->
     case mr of
-      Nothing -> modify (HS.insert v)
+      Nothing -> modify @Ids (HS.insert v)
       Just FDEQReason{..} ->
         if | notNull dependsOnInputs ->
                -- trace "computeAllInitialEqualVars - dependsOnInputs" (moduleName, v, toList dependsOnInputs)
@@ -944,7 +940,7 @@ computeAllInitialEqualVars modules = execState mempty $ for_ modules $ \m@Module
            | notNull writtenByMI -> do
                leftovers <-
                  flip filterM (toList writtenByMI) $ \(miType, miVar) ->
-                 gets (notElem miVar . (HM.! miType))
+                 gets @IdsMap (notElem miVar . (HM.! miType))
                if null leftovers
                  then modify (HS.insert v)
                  else
@@ -952,11 +948,11 @@ computeAllInitialEqualVars modules = execState mempty $ for_ modules $ \m@Module
                  return ()
            | otherwise ->
              trace "computeAllInitialEqualVars - weird" (moduleName, v)
-  modify (at moduleName ?~ ies)
+  modify @IdsMap (at moduleName ?~ ies)
   where
     notNull = not . HS.null
 
-autoInitialEqualVars :: G r => Module Int -> Sem r FDEQSt
+autoInitialEqualVars :: G sig m => Module Int -> m FDEQSt
 autoInitialEqualVars m@Module{..} = do
   ms@ModuleSummary{..} <- asks (hmGet 14 moduleName)
   let (sccG, toSCCNodeMap) = (variableDependenciesSCC, variableDependencySCCNodeMap)
@@ -978,14 +974,14 @@ autoInitialEqualVars m@Module{..} = do
                  Register{..} -> HS.insert variableName rs
                  Wire{} -> rs) mempty variables
 
-autoInitialEqualVarsRunSCCNode :: FDEQ r => Int -> Sem r ()
+autoInitialEqualVarsRunSCCNode :: FDEQ sig m => Int -> m ()
 autoInitialEqualVarsRunSCCNode sccNode = do
   FDEQReadSt{..} <- ask
   let thisSCC = G.context sccG sccNode ^. _3
   for_ (IS.toList thisSCC)
     autoInitialEqualVarsRunOriginalNode
 
-autoInitialEqualVarsRunOriginalNode :: FDEQ r => Int -> Sem r (Maybe FDEQReason)
+autoInitialEqualVarsRunOriginalNode :: FDEQ sig m => Int -> m (Maybe FDEQReason)
 autoInitialEqualVarsRunOriginalNode n = do
   ModuleSummary{..} <- asks ms
   let toVar = (invVariableDependencyNodeMap IM.!)
@@ -1024,7 +1020,7 @@ autoInitialEqualVarsRunOriginalNode n = do
                    mergeReasons
                    <$> traverse autoInitialEqualVarsRunOriginalNode parents
            | otherwise -> return $ Just mempty {dependsOnReg = nNameSet} -- variable is non-sanitized register
-      modify (at nName ?~ st)
+      modify @FDEQSt (at nName ?~ st)
       return st
   where
     eqVarName str = \case
@@ -1073,28 +1069,28 @@ moduleInstancesMap = foldl' handleModule mempty
       in HM.insert moduleInstanceType mis' miMap
 
 
-isTopModule :: Members '[Reader (Module Int),  Reader AnnotationFile] r => Sem r Bool
-isTopModule = ask >>= isTopModule'
+isTopModule :: (Has (Reader (Module Int)) sig m, Has (Reader AnnotationFile) sig m) => m Bool
+isTopModule = ask @M >>= isTopModule'
 
-isTopModule' :: Members '[Reader AnnotationFile] r => Module a -> Sem r Bool
+isTopModule' :: Has (Reader AnnotationFile) sig m => Module a -> m Bool
 isTopModule' Module{..} = do
   topModuleName <- asks @AnnotationFile (^. afTopModule)
   return $ moduleName == topModuleName
 
 
-withTopModule :: FDM r => Sem r (Maybe a) -> Sem r (Maybe a)
+withTopModule :: FDM sig m => m (Maybe a) -> m (Maybe a)
 withTopModule act = do
   top <- isTopModule
   if top then act else return Nothing
 
 
-getCurrentSources :: FDS r => Sem r Ids
+getCurrentSources :: FDS sig m => m Ids
 getCurrentSources = do
   top <- isTopModule
   if top
     then asks (^. currentSources)
     else do vars <- asks (^. currentVariables)
-            inputs <- moduleInputs <$> ask <*> getCurrentClocks
+            inputs <- moduleInputs <$> ask @M <*> getCurrentClocks
             return $ HS.filter (`elem` inputs) vars
 
 updateTagsKeepValues :: Foldable t => Int -> Bool -> t (Id, Id) -> (L HornExpr, L ExprPair)
@@ -1109,11 +1105,11 @@ updateTagsKeepValues n b =
      in (es', ss'))
   (mempty, mempty)
 
-throw :: G r => String -> Sem r a
-throw = PE.throw . IE VCGen
+throw :: G sig m => String -> m a
+throw = throwError . IE VCGen
 
-getCurrentClocks :: FDM r => Sem r Ids
-getCurrentClocks = asks moduleName >>= getClocks
+getCurrentClocks :: FDM sig m => m Ids
+getCurrentClocks = asks @M moduleName >>= getClocks
 
 instance Semigroup FDEQReason where
   v1 <> v2 =

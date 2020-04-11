@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -9,30 +8,29 @@ module Iodine.Language.IRParser (parse) where
 import           Iodine.Language.IR
 import           Iodine.Types
 
+import           Control.Effect.Error
 import           Control.Monad (void)
 import           Data.Char (isLetter, isDigit)
 import           Data.Foldable (toList)
-import           Data.Hashable
 import qualified Data.HashMap.Strict as HM
+import           Data.Hashable
+import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Text.Megaparsec ((<|>))
 import qualified Text.Megaparsec as MP
 import qualified Text.Megaparsec.Char as MPC
 import qualified Text.Megaparsec.Char.Lexer as MPL
-import qualified Data.Sequence as SQ
-import           Polysemy
-import           Polysemy.Error
 
 type Parser = MP.Parsec MP.SourcePos String
 type ParsedIR = L (Module ())
 
-parse :: Member (Error IodineException) r => (FilePath, String) -> Sem r ParsedIR
+parse :: Has (Error IodineException) sig m => (FilePath, String) -> m ParsedIR
 parse (fp, s) = parseWith (many parseModule)
   where
     parseWith p =
       case MP.runParser (whole p) fp s of
         Right e     -> return e
-        Left bundle -> throw (IE IRParser (myParseErrorPretty bundle))
+        Left bundle -> throwError (IE IRParser (myParseErrorPretty bundle))
 
 --------------------------------------------------------------------------------
 -- | IR Parser

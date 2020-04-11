@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -10,6 +9,7 @@ module Iodine.Language.Annotation where
 
 import           Iodine.Types
 
+import           Control.Effect.Reader
 import           Control.Lens
 import           Control.Monad
 import           Data.Aeson
@@ -18,8 +18,6 @@ import qualified Data.ByteString.Lazy as B
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
-import           Polysemy
-import           Polysemy.Reader
 
 data Annotations =
   Annotations { _sources       :: HS.HashSet Id
@@ -146,25 +144,25 @@ toModuleAnnotations m = (^. afAnnotations . to find)
   where
     find = HM.lookupDefault emptyModuleAnnotations m
 
-getModuleAnnotations :: Member (Reader AnnotationFile) r => Id -> Sem r ModuleAnnotations
+getModuleAnnotations :: Has (Reader AnnotationFile) sig m => Id -> m ModuleAnnotations
 getModuleAnnotations = asks . toModuleAnnotations
 
 toAnnotations :: Id -> AnnotationFile -> Annotations
 toAnnotations m = view moduleAnnotations . toModuleAnnotations m
 
-getAnnotations :: Member (Reader AnnotationFile) r => Id -> Sem r Annotations
+getAnnotations :: Has (Reader AnnotationFile) sig m => Id -> m Annotations
 getAnnotations = asks . toAnnotations
 
-getQualifiers :: Member (Reader AnnotationFile) r => Id -> Sem r (L Qualifier)
+getQualifiers :: Has (Reader AnnotationFile) sig m => Id -> m (L Qualifier)
 getQualifiers m = asks (view moduleQualifiers . toModuleAnnotations m)
 
-getSources :: Member (Reader AnnotationFile) r => Id -> Sem r (HS.HashSet Id)
+getSources :: Has (Reader AnnotationFile) sig m => Id -> m (HS.HashSet Id)
 getSources m = (^. sources) <$> getAnnotations m
 
-getSinks :: Member (Reader AnnotationFile) r => Id -> Sem r (HS.HashSet Id)
+getSinks :: Has (Reader AnnotationFile) sig m => Id -> m (HS.HashSet Id)
 getSinks m = (^. sinks) <$> getAnnotations m
 
-getClocks :: Member (Reader AnnotationFile) r => Id -> Sem r (HS.HashSet Id)
+getClocks :: Has (Reader AnnotationFile) sig m => Id -> m (HS.HashSet Id)
 getClocks m = asks (view clocks . toModuleAnnotations m)
 
 annotationVariables :: Annotations -> Ids

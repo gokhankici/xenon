@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -25,6 +24,8 @@ import           Iodine.Language.IR
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Carrier.Reader
+import           Control.Carrier.State.Strict
 import           Control.Lens
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
@@ -32,9 +33,6 @@ import           Data.Graph.Inductive.PatriciaTree (Gr)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.IntSet as IS
-import           Polysemy
-import           Polysemy.State
-import           Polysemy.Reader
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
@@ -65,9 +63,30 @@ statement.
 - (v1, v2, Implicit) \in E iff v1 is a path variable (occurs inside the
   condition of an if statement where v2 is assigned)
 -}
-dependencyGraph :: Members '[Reader ModuleMap, Reader AnnotationFile] r
-                =>  Module Int -> Sem r DependencyGraphSt
-dependencyGraph Module{..} = execState initialState $ do
+dependencyGraph :: ( Has (Reader ModuleMap) sig m
+                   , Has (Reader AnnotationFile) sig m
+                   , Effect sig
+                   )
+                =>  Module Int -> m DependencyGraphSt
+dependencyGraph = fmap fst . runState initialState . dependencyGraphHelper
+  where
+    initialState =
+      DependencyGraphSt
+      { _depGraph    = G.empty
+      , _pathVars    = mempty
+      , _varMap      = mempty
+      , _varCounter  = 0
+      , _varReads    = mempty
+      , _varUpdates  = mempty
+      , _threadGraph = G.empty
+      }
+
+dependencyGraphHelper :: ( Has (Reader ModuleMap) sig m
+                         , Has (Reader AnnotationFile) sig m
+                         , Has (State DependencyGraphSt) sig m
+                         )
+                      =>  Module Int -> m ()
+dependencyGraphHelper Module{..} = do
   for_ variables (getNode . variableName)
   for_ alwaysBlocks dependencyGraphActAB
   for_ moduleInstances dependencyGraphActMI
@@ -81,23 +100,14 @@ dependencyGraph Module{..} = execState initialState $ do
               modify (threadGraph %~ insEdge (writeThread, readThread, ()))
           )
     ) vrs
-  where
-    initialState =
-      DependencyGraphSt
-      { _depGraph    = G.empty
-      , _pathVars    = mempty
-      , _varMap      = mempty
-      , _varCounter  = 0
-      , _varReads    = mempty
-      , _varUpdates  = mempty
-      , _threadGraph = G.empty
-      }
+  return ()
 
-dependencyGraphActMI :: Members '[ Reader ModuleMap
-                                 , Reader AnnotationFile
-                                 , State DependencyGraphSt] r
+dependencyGraphActMI :: ( Has (Reader ModuleMap) sig m
+                        , Has (Reader AnnotationFile) sig m
+                        , Has (State DependencyGraphSt) sig m
+                        )
                      => ModuleInstance Int
-                     -> Sem r ()
+                     -> m ()
 dependencyGraphActMI mi@ModuleInstance{..} = do
   let miThreadId = getData mi
   modify (threadGraph %~ G.insNode (miThreadId, ()))
@@ -111,22 +121,22 @@ dependencyGraphActMI mi@ModuleInstance{..} = do
   for_ miWrites $ \writtenVar ->
     modify (varUpdates %~ addToSet writtenVar miThreadId)
 
-lookupThreads :: Member (State DependencyGraphSt) r
+lookupThreads :: Has (State DependencyGraphSt) sig m
               => Id
               -> Getter DependencyGraphSt (HM.HashMap Id Ints)
-              -> Sem r [Int]
+              -> m [Int]
 lookupThreads v optic =
   gets (concatMap IS.toList . HM.lookup v . (^. optic))
 
-dependencyGraphActAB :: Member (State DependencyGraphSt) r
-                     => AlwaysBlock Int -> Sem r ()
+dependencyGraphActAB :: Has (State DependencyGraphSt) sig m
+                     => AlwaysBlock Int -> m ()
 dependencyGraphActAB ab = do
   modify (threadGraph %~ G.insNode (getData ab, ()))
   runReader (getData ab) $ handleStmt (abStmt ab)
 
-type FD r = Members '[State DependencyGraphSt, Reader Int] r
+type FD sig m = (Has (State DependencyGraphSt) sig m, Has (Reader Int) sig m)
 
-handleStmt :: FD r => Stmt a -> Sem r ()
+handleStmt :: FD sig m => Stmt a -> m ()
 handleStmt Skip{..}  = return ()
 handleStmt Block{..} = traverse_ handleStmt blockStmts
 handleStmt Assignment{..} =
@@ -155,15 +165,15 @@ handleStmt IfStmt{..} = do
   traverse_ handleStmt [ifStmtThen, ifStmtElse]
   modify $ pathVars .~ oldPathVars
 
-type DGSt r = Members '[State DependencyGraphSt] r
+type DGSt sig m = Has (State DependencyGraphSt) sig m
 
-addEdge :: DGSt r => (Int, Int, VarDepEdgeType) -> Sem r ()
+addEdge :: DGSt sig m => (Int, Int, VarDepEdgeType) -> m ()
 addEdge edge = modify $ depGraph %~ insEdge edge
 
-getNodes :: DGSt r => HS.HashSet Id -> Sem r IS.IntSet
+getNodes :: DGSt sig m => HS.HashSet Id -> m IS.IntSet
 getNodes = fmap IS.fromList . traverse getNode . HS.toList
 
-getNode :: DGSt r => Id -> Sem r Int
+getNode :: DGSt sig m => Id -> m Int
 getNode v = do
   res <- gets (^. varMap . to (HM.lookup v))
   case res of

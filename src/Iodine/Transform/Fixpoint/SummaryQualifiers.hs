@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StrictData      #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -18,8 +17,10 @@ import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Horn
 import           Iodine.Types
-import           Iodine.Utils
+import           Iodine.Utils (trace, hmGet)
 
+import           Control.Carrier.State.Strict
+import           Control.Effect.Reader
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -33,17 +34,13 @@ import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import qualified Language.Fixpoint.Types as FT
-import           Polysemy
-import           Polysemy.Reader
-import           Polysemy.State
-import qualified Polysemy.Trace as PT
 
 -- -----------------------------------------------------------------------------
 -- Summaries for combinatorial modules
 -- -----------------------------------------------------------------------------
 
 -- | if all inputs are ct and some of them are public, define the output color
-addSimpleModuleQualifiers :: FD r => Module Int -> Sem r ()
+addSimpleModuleQualifiers :: FD sig m => Module Int -> m ()
 addSimpleModuleQualifiers m =
   (zip [0..] <$> asks (HM.toList . portDependencies . (HM.! moduleName m))) >>=
     traverse_
@@ -120,13 +117,13 @@ mkSimpleModuleQualifierHelper m qualifierName inputs valEqInputs rhsName rhsType
 -- Summaries for sub modules
 -- -----------------------------------------------------------------------------
 
-addSummaryQualifiers :: FD r => Module Int -> Sem r ()
+addSummaryQualifiers :: FD sig m => Module Int -> m ()
 addSummaryQualifiers m@Module{..} = do
   addSimpleModuleQualifiers m
   traverse_ (addSummaryQualifiersAB moduleName) alwaysBlocks
 
 
-addSummaryQualifiersAB :: FD r => Id -> AlwaysBlock Int -> Sem r ()
+addSummaryQualifiersAB :: FD sig m => Id -> AlwaysBlock Int -> m ()
 addSummaryQualifiersAB moduleName ab = do
   sqvs <- summaryQualifierVariablesAB moduleName ab
   for_ (HM.toList sqvs) $ \(v, lqds) -> flip SQ.traverseWithIndex lqds $ \n qds -> do
@@ -160,14 +157,14 @@ addSummaryQualifiersAB moduleName ab = do
 type QDM  = HM.HashMap Id QualifierDependencies
 type QDMs = HM.HashMap Id (L QualifierDependencies)
 
-summaryQualifierVariablesAB :: Members '[ Reader SummaryMap
-                                        , Reader (HM.HashMap Id (Module Int))
-                                        , Reader AnnotationFile
-                                        , PT.Trace
-                                        ] r
+summaryQualifierVariablesAB :: ( Has (Reader SummaryMap) sig m
+                               , Has (Reader (HM.HashMap Id M)) sig m
+                               , Has (Reader AnnotationFile) sig m
+                               , Effect sig
+                               )
                             => Id -- ^ module name
                             -> AlwaysBlock Int
-                            -> Sem r QDMs
+                            -> m QDMs
 summaryQualifierVariablesAB moduleName ab = do
   ModuleSummary{..} <- asks (hmGet 2 moduleName)
   abVars <- getUpdatedVariables (AB ab)
@@ -187,8 +184,8 @@ summaryQualifierVariablesAB moduleName ab = do
       for_ (G.lpre variableDependencies v) $ \(u, l) -> do
         let uName = toVar u
         unless (v == u) $ do
-          oldQD <- fromMaybe mempty <$> gets (^.at vName)
-          modify (at vName ?~ addParent l uName oldQD)
+          oldQD <- fromMaybe mempty <$> gets @QDM (^.at vName)
+          modify @QDM (at vName ?~ addParent l uName oldQD)
 
     m2 <-
       execState (mempty :: QDM) $
@@ -197,19 +194,19 @@ summaryQualifierVariablesAB moduleName ab = do
       for_ (G.lpre variableDependencies v) $ \(u, l) -> do
         let uName = toVar u
         unless (v == u) $ do
-          muQD <- gets (^.at uName)
-          oldQD <- fromMaybe mempty <$> gets (^.at vName)
+          muQD <- gets @QDM (^.at uName)
+          oldQD <- fromMaybe mempty <$> gets @QDM (^.at vName)
           case muQD of
             Nothing -> -- u is a root node
-              modify (at vName ?~ addParent l uName oldQD)
+              modify @QDM (at vName ?~ addParent l uName oldQD)
             Just uQD ->
               case l of
                 Implicit -> do
                   let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
                       newQD   = oldQD & (implicitVars <>~ uQDVars)
-                  modify (at vName ?~ newQD)
+                  modify @QDM (at vName ?~ newQD)
                 Explicit ->
-                  modify (at vName ?~ uQD <> oldQD)
+                  modify @QDM (at vName ?~ uQD <> oldQD)
 
     return $ mergeQDMaps m1 m2
     else do
@@ -226,18 +223,18 @@ summaryQualifierVariablesAB moduleName ab = do
             for_ (toVars sccU) $ \u -> do
             -- if variableDependencies `G.hasLEdge` (u, v, l)
             let uName = toVar u
-            mUQD <- gets (^.at uName)
-            oldQD <- fromMaybe mempty <$> gets (^.at vName)
+            mUQD <- gets @QDM (^.at uName)
+            oldQD <- fromMaybe mempty <$> gets @QDM (^.at vName)
             case (mUQD, l) of
               (Nothing, _) ->
-                modify (at vName ?~ addParent l uName oldQD)
+                modify @QDM (at vName ?~ addParent l uName oldQD)
               (Just uQD, Implicit) -> do
                 let uQDVars = (uQD ^. implicitVars) <> (uQD ^. explicitVars)
                     newQD = oldQD & implicitVars %~ mappend uQDVars
-                modify (at vName ?~ newQD)
+                modify @QDM (at vName ?~ newQD)
               (Just uQD, Explicit) ->
-                modify (at vName ?~ oldQD <> uQD)
-      modify (HM.filterWithKey (\k _ -> k `elem` abVars))
+                modify @QDM (at vName ?~ oldQD <> uQD)
+      modify @QDM (HM.filterWithKey (\k _ -> k `elem` abVars))
 
     m2 <-
       execState (mempty :: QDM) $
@@ -247,8 +244,8 @@ summaryQualifierVariablesAB moduleName ab = do
         for_ (G.lpre g sccV) $ \(sccU, l) ->
           for_ (toVars sccU) $ \u -> do
           let uName = toVar u
-          oldQD <- fromMaybe mempty <$> gets (^.at vName)
-          modify (at vName ?~ addParent l uName oldQD)
+          oldQD <- fromMaybe mempty <$> gets @QDM (^.at vName)
+          modify @QDM (at vName ?~ addParent l uName oldQD)
 
     return $ mergeQDMaps m1 m2
 

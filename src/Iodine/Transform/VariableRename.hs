@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StrictData #-}
@@ -15,18 +14,17 @@ import           Iodine.Language.IR
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Carrier.Reader
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
-import           Polysemy
-import           Polysemy.Reader
 
 newtype St = St { getModuleInputs :: HM.HashMap Id Ids }
 
-type FD a r  = Members '[Reader St] r
-type FDM a r = (FD a r, Members '[Reader Ids] r)
+type FD sig m  = Has (Reader St) sig m
+type FDM sig m = (FD sig m, Has (Reader Ids) sig m)
 
 inputPrefix, nonInputPrefix :: Id
 inputPrefix    = "I_"
@@ -47,12 +45,12 @@ variableRename af modules = run $ runReader (St mInputs) $
                        then HS.insert (variableName $ portVariable p) is
                        else is) mempty ports
 
-handleAnnotationFile :: FD a r => AnnotationFile -> Sem r AnnotationFile
+handleAnnotationFile :: FD sig m => AnnotationFile -> m AnnotationFile
 handleAnnotationFile af = do
   annots' <- HM.traverseWithKey handleModuleAnnotations (af ^. afAnnotations)
   return $ af & afAnnotations .~ annots'
 
-handleModuleAnnotations :: FD a r => Id -> ModuleAnnotations -> Sem r ModuleAnnotations
+handleModuleAnnotations :: FD sig m => Id -> ModuleAnnotations -> m ModuleAnnotations
 handleModuleAnnotations moduleName ModuleAnnotations{..} = do
   mInputs <- asks (HM.lookup moduleName . getModuleInputs)
   case mInputs of
@@ -64,7 +62,7 @@ handleModuleAnnotations moduleName ModuleAnnotations{..} = do
       <*> traverse handleQualifier _moduleQualifiers
       <*> traverseSet fix _clocks
 
-handleAnnotations :: FDM a r => Annotations -> Sem r Annotations
+handleAnnotations :: FDM sig m => Annotations -> m Annotations
 handleAnnotations Annotations{..} =
   Annotations
   <$> traverseSet fix _sources
@@ -74,12 +72,12 @@ handleAnnotations Annotations{..} =
   <*> traverseSet fix _assertEquals
   <*> traverseSet fix _tagEquals
 
-handleQualifier :: FDM a r => Qualifier -> Sem r Qualifier
+handleQualifier :: FDM sig m => Qualifier -> m Qualifier
 handleQualifier (QImplies v vs) = QImplies <$> fix v <*> traverse fix vs
 handleQualifier (QIff v vs)     = QIff <$> fix v <*> traverse fix vs
 handleQualifier (QPairs vs)     = QPairs <$> traverse fix vs
 
-handleModule :: FD a r => Module a -> Sem r (Module a)
+handleModule :: FD sig m => Module a -> m (Module a)
 handleModule Module{..} = do
   inputs <- asks (hmGet 2 moduleName . getModuleInputs)
   moduleInstances' <- traverse (fixMI moduleName) moduleInstances
@@ -93,15 +91,15 @@ handleModule Module{..} = do
     <*> return moduleInstances'
     <*> return moduleData
 
-fixPort :: FDM a r => Port -> Sem r Port
+fixPort :: FDM sig m => Port -> m Port
 fixPort (Input i)  = Input <$> fixVariable i
 fixPort (Output o) = Output <$> fixVariable o
 
-fixVariable :: FDM a r => Variable -> Sem r Variable
+fixVariable :: FDM sig m => Variable -> m Variable
 fixVariable (Wire v)     = Wire <$> fix v
 fixVariable (Register r) = Register <$> fix r
 
-fixStmt :: FDM a r => Stmt a -> Sem r (Stmt a)
+fixStmt :: FDM sig m => Stmt a -> m (Stmt a)
 fixStmt Block{..} = Block <$> traverse fixStmt blockStmts <*> return stmtData
 fixStmt Assignment{..} =
   Assignment assignmentType
@@ -116,7 +114,7 @@ fixStmt IfStmt{..} =
   <*> return stmtData
 fixStmt Skip{..} = return $ Skip{..}
 
-fixExpr :: FDM a r => Expr a -> Sem r (Expr a)
+fixExpr :: FDM sig m => Expr a -> m (Expr a)
 fixExpr Constant{..} = return $ Constant{..}
 fixExpr Variable{..} = do
   varName' <- fix varName
@@ -135,19 +133,19 @@ fixExpr Select{..} =
   <*> traverse fixExpr selectIndices
   <*> return exprData
 
-fixAB :: FDM a r => AlwaysBlock a -> Sem r (AlwaysBlock a)
+fixAB :: FDM sig m => AlwaysBlock a -> m (AlwaysBlock a)
 fixAB AlwaysBlock{..} =
   AlwaysBlock
   <$> fixEvent abEvent
   <*> fixStmt abStmt
   <*> return abData
 
-fixEvent :: FDM a r => Event a -> Sem r (Event a)
+fixEvent :: FDM sig m => Event a -> m (Event a)
 fixEvent PosEdge{..} = PosEdge <$> fixExpr eventExpr
 fixEvent NegEdge{..} = NegEdge <$> fixExpr eventExpr
 fixEvent Star        = return Star
 
-fixMI :: FD a r => Id -> ModuleInstance a -> Sem r (ModuleInstance a)
+fixMI :: FD sig m => Id -> ModuleInstance a -> m (ModuleInstance a)
 fixMI currentModuleName ModuleInstance{..} = do
   currentInputs <- asks (hmGet 3 currentModuleName . getModuleInputs)
   targetInputs <- asks (hmGet 4 moduleInstanceType . getModuleInputs)
@@ -161,7 +159,7 @@ fixMI currentModuleName ModuleInstance{..} = do
     (HM.toList moduleInstancePorts)
   return $ ModuleInstance{moduleInstancePorts = ports', ..}
 
-fix :: FDM a r => Id -> Sem r Id
+fix :: FDM sig m => Id -> m Id
 fix v = fix' v <$> ask
 
 fix' :: Id -> Ids -> Id
@@ -170,5 +168,5 @@ fix' v inputs =
   then inputPrefix <> v
   else nonInputPrefix <> v
 
-traverseSet :: (Id -> Sem r Id) -> Ids -> Sem r Ids
+traverseSet :: Monad m => (Id -> m Id) -> Ids -> m Ids
 traverseSet mi = foldM (\s' i -> (`HS.insert` s') <$> mi i) mempty

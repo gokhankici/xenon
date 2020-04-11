@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE StrictData      #-}
@@ -19,6 +18,10 @@ import           Iodine.Transform.VCGen
 import           Iodine.Types
 
 import           Control.DeepSeq
+import           Control.Effect.Error
+import           Control.Effect.Reader
+import           Control.Effect.State
+import           Control.Effect.Trace
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -29,42 +32,40 @@ import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics hiding ( moduleName, to )
 import qualified Language.Fixpoint.Types as FT
-import           Polysemy
-import qualified Polysemy.Error as PE
-import           Polysemy.Reader
-import           Polysemy.State
-import qualified Polysemy.Trace as PT
 import qualified Text.PrettyPrint.HughesPJ as PP
 
 -- -----------------------------------------------------------------------------
 -- type definitions
 -- -----------------------------------------------------------------------------
 
+type A = Int
+type M = Module A
+
 type FInfo = FT.FInfo HornClauseId
-type ModuleMap = HM.HashMap Id (Module Int)
+type ModuleMap = HM.HashMap Id M
 
-type G r   = Members '[ Reader AnnotationFile
-                      , PE.Error IodineException
-                      , PT.Trace
-                      , Reader ModuleMap
-                      , Reader SummaryMap
-                      ] r
+type G sig m = ( Has (Reader AnnotationFile) sig m
+               , Has (Error IodineException) sig m
+               , Has Trace sig m
+               , Has (Reader ModuleMap) sig m
+               , Has (Reader SummaryMap) sig m
+               , Effect sig
+               )
 
-type FD r  = ( G r
-             , Members '[ State St
-                        , Reader HornVariableMap
-                        ] r
-             )
+type FD sig m  = ( G sig m
+                 , Has (State St) sig m
+                 , Has (Reader HornVariableMap) sig m
+                 )
 
-type FDC r = ( FD r
-             , Member (State FT.IBindEnv) r
-             )
+type FDC sig m = ( FD sig m
+                 , Has (State FT.IBindEnv) sig m
+                 )
 
-type QFD r = Members '[ PT.Trace
-                      , PE.Error IodineException
-                      , Reader (Module Int)
-                      , State St
-                      ] r
+type QFD sig m = ( Has Trace sig m
+                 , Has (Error IodineException) sig m
+                 , Has (Reader M) sig m
+                 , Has (State St) sig m
+                 )
 -- -----------------------------------------------------------------------------
 -- solver state
 -- -----------------------------------------------------------------------------
@@ -87,7 +88,7 @@ makeLenses ''St
 
 -- | We create a binding for true and false values, and use them in the horn
 -- clauses instead of the boolean type directly.
-setConstants :: FD r => Sem r ()
+setConstants :: FD sig m => m ()
 setConstants = forM_ constants $ uncurry addBinding
  where
   b val = mkBool (FT.PIff (FT.eVar vSymbol) val)
@@ -96,7 +97,7 @@ setConstants = forM_ constants $ uncurry addBinding
 
 -- | return the id of the variable. if the variable does not exist, add it to
 -- the environment first.
-getVariableId :: FD r => Bool -> HornExpr -> Sem r FT.BindId
+getVariableId :: FD sig m => Bool -> HornExpr -> m FT.BindId
 getVariableId isParam v = do
   mid <- HM.lookup name <$> gets (^. invBindMap)
   case mid of
@@ -110,7 +111,7 @@ getVariableId isParam v = do
 
 
 -- | add the variable name and its sort to the current bind environment
-addBinding :: FD r => Id -> FT.SortedReft -> Sem r FT.BindId
+addBinding :: FD sig m => Id -> FT.SortedReft -> m FT.BindId
 addBinding name sr = do
   be <- gets (^. bindEnvironment)
   let (n, be') = FT.insertBindEnv (symbol name) sr be
@@ -132,7 +133,7 @@ toFSort HornBool = FT.boolSort
 
 
 -- | read the current state and create the query for the fixpoint solver
-toFInfo :: FD r => Sem r FInfo
+toFInfo :: FD sig m => m FInfo
 toFInfo =
   FT.fi
     <$> (toList <$> gets (^. hornConstraints))
@@ -192,18 +193,18 @@ getVarPrefix hVarType hVarRun =
 
 
 -- | update the state with the given fixpoint qualifier
-addQualifier :: Member (State St) r => FT.Qualifier -> Sem r ()
+addQualifier :: Has (State St) sig m => FT.Qualifier -> m ()
 addQualifier q = modify (& qualifiers %~ (|> q))
 
 
 -- | return the current constraint id and increment it later
-freshConstraintId :: FD r => Sem r Integer
+freshConstraintId :: FD sig m => m Integer
 freshConstraintId =
   gets (^. constraintCounter) <* modify (& constraintCounter +~ 1)
 
 
 -- | return the current qualifier id and increment it later
-freshQualifierId :: Member (State St) r => Sem r Int
+freshQualifierId :: Has (State St) sig m => m Int
 freshQualifierId =
   gets (^. qualifierCounter) <* modify (& qualifierCounter +~ 1)
 
@@ -232,8 +233,8 @@ mkBool :: FT.Expr -> FT.SortedReft
 mkBool e = FT.RR FT.boolSort (FT.reft vSymbol e)
 
 
-throw :: Member (PE.Error IodineException) r => String -> Sem r a
-throw = PE.throw . IE Query
+throw :: Has (Error IodineException) sig m => String -> m a
+throw = throwError . IE Query
 
 
 -- | make a KVar for the given invariant id

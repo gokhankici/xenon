@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -14,6 +13,9 @@ import           Iodine.Language.IR
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Carrier.State.Strict
+import           Control.Effect.Error
+import           Control.Effect.Reader
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -23,12 +25,8 @@ import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
-import           Data.List (elem, intercalate)
+import           Data.List (intercalate)
 import qualified Data.Sequence as SQ
-import           Polysemy
-import           Polysemy.Error
-import           Polysemy.Reader
-import           Polysemy.State
 
 type A = Int
 type DepGraph = Gr () ()
@@ -42,20 +40,22 @@ data St =
 
 makeLenses ''St
 
-type OldG r = Members '[ Reader AnnotationFile
-                       , Reader ModuleMap
-                       , Error IodineException] r
-type G r = (OldG r, Members '[State Int] r)
+type OldG sig m = ( Has (Reader AnnotationFile) sig m
+                  , Has (Reader ModuleMap) sig m
+                  , Has (Error IodineException) sig m
+                  , Effect sig
+                  )
+type G sig m = (OldG sig m, Has (State Int) sig m)
 
 -- -----------------------------------------------------------------------------
-merge :: OldG r => L (Module A) -> Sem r (L (Module A))
+merge :: OldG sig m => L (Module A) -> m (L (Module A))
 -- -----------------------------------------------------------------------------
 merge modules = evalState (getMaxThreadId modules + 1) $
                 traverse mergeModule modules
 
 -- | make gate statements a always* block, and merge with the rest
 -- assumes that module id is greater than the ids of its thread
-mergeModule :: G r => Module A -> Sem r (Module A)
+mergeModule :: G sig m => Module A -> m (Module A)
 mergeModule Module {..} = do
   gateBlocks <- traverse  makeStarBlock gateStmts
   alwaysBlocks' <- mergeAlwaysBlocks $ alwaysBlocks <> gateBlocks
@@ -70,7 +70,7 @@ All blocks with the same non-star event are merged into a single block (with
 random ordering). For the always* blocks, a dependency graph is created first
 and then they are merged according to their order in the directed-acyclic graph.
 -}
-mergeAlwaysBlocks :: G r => L (AlwaysBlock A) -> Sem r (L (AlwaysBlock A))
+mergeAlwaysBlocks :: G sig m => L (AlwaysBlock A) -> m (L (AlwaysBlock A))
 mergeAlwaysBlocks as =
   foldlM' mempty (HM.toList eventMap) $ \acc (e, eAs) -> do
     ab' <-
@@ -88,17 +88,17 @@ Merge every always* block into a single one. The statements that belong to the
 same connected components are ordered according to their topological sort.
 However, the order between connected components are random.
 -}
-mergeAlwaysStarBlocks :: G r => L (AlwaysBlock A) -> Sem r (AlwaysBlock A)
+mergeAlwaysStarBlocks :: G sig m => L (AlwaysBlock A) -> m (AlwaysBlock A)
 mergeAlwaysStarBlocks as = do
   (depGraph, stmtIds) <- buildDependencyGraph (abStmt <$> as)
   unless (G.noNodes depGraph == SQ.length as) $
-    throw . IE Merge  $ "graph size does not match up with the initial statements"
+    throwError . IE Merge  $ "graph size does not match up with the initial statements"
   let components = G.components depGraph
       graphs = (\ns -> G.nfilter (`elem` ns) depGraph) <$> components
   stmts' <- foldlM' mempty graphs $ \acc g -> do
     let stmtOrder = GQ.topsort g
     when (hasCycle g) $
-      throw . IE Merge $
+      throwError . IE Merge $
         "star dependency graph has a loop:\n" ++
         intercalate "\n" (show . (stmtIds IM.!) <$> stmtOrder)
     return $ (stmtIds IM.!) <$> stmtOrder
@@ -121,14 +121,14 @@ mergeAlwaysEventBlocks e as = AlwaysBlock e stmt' (getFirstData as)
         _                 -> Block stmts emptyStmtData
 
 type ModuleMap = HM.HashMap Id (Module A)
-type FD r = Members '[State St, Reader ModuleMap] r
+type FD sig m = (Has (State St) sig m, Has (Reader ModuleMap) sig m)
 
 {- |
 builds a dependency graph where (s1, s2) \in G iff there exists a variable v
 such that s1 updates v and s2 reads v
 -}
-buildDependencyGraph :: Member (Reader ModuleMap) r
-                     => L (Stmt A) -> Sem r (DepGraph, StmtMap)
+buildDependencyGraph :: (Effect sig, Has (Reader ModuleMap) sig m)
+                     => L (Stmt A) -> m (DepGraph, StmtMap)
 buildDependencyGraph stmts =
   traverse_ update stmts
   & runState initialState
@@ -156,7 +156,7 @@ buildDependencyGraph stmts =
       writeMap
 
     -- create a new id for the given statement, and update its read & write set
-    update :: FD r => Stmt A -> Sem r ()
+    update :: FD sig m => Stmt A -> m ()
     update s = do
       n <- gets (^. stmtCounter)
       modify $
@@ -165,7 +165,7 @@ buildDependencyGraph stmts =
       updateN n s
 
     -- update read & write sets for the given statement id
-    updateN :: FD r => Int -> Stmt A -> Sem r ()
+    updateN :: FD sig m => Int -> Stmt A -> m ()
     updateN n Block {..} = traverse_ (updateN n) blockStmts
     updateN n Assignment {..} = do
       forM_ (getVariables assignmentLhs) (insertToWrites n)
@@ -185,7 +185,7 @@ buildDependencyGraph stmts =
 initialState :: St
 initialState = St mempty mempty 0 mempty
 
-makeStarBlock :: G r => Stmt A -> Sem r (AlwaysBlock A)
+makeStarBlock :: G sig m => Stmt A -> m (AlwaysBlock A)
 makeStarBlock stmts = AlwaysBlock Star stmts <$> getFreshId
 
 {- |
@@ -211,8 +211,8 @@ getFirstData :: L (AlwaysBlock a) -> a
 getFirstData (ab SQ.:<| _) = getData ab
 getFirstData _ = undefined
 
-getFreshId :: G r => Sem r Int
-getFreshId = get <* modify (+ 1)
+getFreshId :: G sig m => m Int
+getFreshId = get <* modify @Int (+ 1)
 
 getMaxThreadId :: Ord a => L (Module a) -> a
 getMaxThreadId = maximum . fmap goM

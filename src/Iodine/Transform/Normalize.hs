@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -21,16 +20,15 @@ where
 import           Iodine.Language.IR
 import           Iodine.Types
 
+import           Control.Carrier.Reader
+import           Control.Carrier.State.Strict
+import           Control.Effect.Error
 import           Control.Lens
 import           Control.Monad
 import           Data.Functor
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import qualified Data.Sequence as SQ
-import           Polysemy
-import           Polysemy.Error
-import           Polysemy.Reader
-import           Polysemy.State
 
 
 -- #############################################################################
@@ -60,17 +58,10 @@ data StmtSt =
 makeLenses ''St
 makeLenses ''StmtSt
 
-type FD r  = Members '[ State St ] r
-type FDM r = Members '[ State St
-                      , Reader ModuleName
-                      ] r
-type FDS r = Members '[ State St
-                      , Reader ModuleName
-                      , State StmtSt
-                      ] r
-type FDR r = Members '[ State St
-                      , Reader StmtSt
-                      ] r
+type FD sig m  = (Has (State St) sig m, Effect sig)
+type FDM sig m = (FD sig m, Has (Reader ModuleName) sig m)
+type FDS sig m = (FDM sig m, Has (State StmtSt) sig m)
+type FDR sig m = (FD sig m, Has (Reader StmtSt) sig m)
 
 newtype ModuleName = ModuleName { getModuleName :: Id }
 
@@ -87,16 +78,16 @@ assigned only in one of the branches of an if statement, the missing assignment
 is added to the corresponding branch. This way the substitutions that implement
 the transition relation in the kvars become simple.
 -}
-normalize :: Members '[Error IodineException] r
-          => L (Module Int) -> Sem r NormalizeOutput
+normalize :: (Has (Error IodineException) sig m, Effect sig)
+          => L (Module Int) -> m NormalizeOutput
 normalize modules = traverse normalizeModule modules & runNormalize
 
 -- | Run normalize on all the statements inside the given module.
-normalizeModule :: (FD r, Members '[Error IodineException] r)
-                => Module Int -> Sem r (Module Int)
+normalizeModule :: (FD sig m, Has (Error IodineException) sig m)
+                => Module Int -> m (Module Int)
 normalizeModule Module {..} = runReader (ModuleName moduleName) $ do
   unless (SQ.null gateStmts) $
-    throw $ IE Normalize "gateStmts should be empty here"
+    throwError $ IE Normalize "gateStmts should be empty here"
   Module moduleName ports variables constantInits
     <$> return mempty
     <*> traverse normalizeAB alwaysBlocks
@@ -104,7 +95,7 @@ normalizeModule Module {..} = runReader (ModuleName moduleName) $ do
     <*> return moduleData
 
 -- | Run normalize on all the statements inside the given always block.
-normalizeAB :: FDM r => AlwaysBlock Int -> Sem r (AlwaysBlock Int)
+normalizeAB :: FDM sig m => AlwaysBlock Int -> m (AlwaysBlock Int)
 normalizeAB ab@AlwaysBlock{..} = do
   abEvent' <- normalizeEvent abEvent
   abStmt' <- normalizeStmtTop ab
@@ -116,7 +107,7 @@ normalizeAB ab@AlwaysBlock{..} = do
 
 -- | Normalize the event of an always block. This just assigns zero to the
 -- expressions that appear under an event.
-normalizeEvent :: FD r => Event a -> Sem r (Event Int)
+normalizeEvent :: FD sig m => Event a -> m (Event Int)
 normalizeEvent =
   -- normalizing event does not require statement state
   runReader initialStmtSt . \case
@@ -126,7 +117,7 @@ normalizeEvent =
 
 -- | Normalize a module instance. This just assigns zero to the expressions that
 -- appear in port assignments.
-normalizeModuleInstance :: FD r => ModuleInstance Int -> Sem r (ModuleInstance Int)
+normalizeModuleInstance :: FD sig m => ModuleInstance Int -> m (ModuleInstance Int)
 normalizeModuleInstance ModuleInstance{..} = do
   ports' <- traverse normalizeExpr moduleInstancePorts & runReader initialStmtSt
   return $ ModuleInstance {moduleInstancePorts = ports', ..}
@@ -138,7 +129,7 @@ normalizeModuleInstance ModuleInstance{..} = do
 This function should be used to normalize the top level statements. For
 statements that appear inside the code block, use 'normalizeStmt'.
 -}
-normalizeStmtTop :: FDM r => AlwaysBlock Int -> Sem r (Stmt Int)
+normalizeStmtTop :: FDM sig m => AlwaysBlock Int -> m (Stmt Int)
 normalizeStmtTop ab = do
   (stmtSt, stmt') <- normalizeStmt (abStmt ab) & runState initialStmtSt
   let stmtSubs = HM.union (stmtSt ^. lastBlocking) (stmtSt ^. lastNonBlocking)
@@ -154,7 +145,7 @@ Normalizes the given statement.
 * 'normalizeBranches' implements the most of the logic needed to normalize if
   conditions.
 -}
-normalizeStmt :: FDS r => Stmt Int -> Sem r (Stmt Int)
+normalizeStmt :: FDS sig m => Stmt Int -> m (Stmt Int)
 normalizeStmt = \case
   Block {..} ->
     Block <$> traverse normalizeStmt blockStmts <*> return stmtData
@@ -176,7 +167,7 @@ normalizeStmt = \case
   Skip{..} -> return $ Skip{..}
 
   where
-    normalizeStmtExpr :: FDS r => Expr a -> Sem r (Expr Int)
+    normalizeStmtExpr :: FDS sig m => Expr a -> m (Expr Int)
     normalizeStmtExpr e = do
       stmtSt <- get @StmtSt
       normalizeExpr e & runReader stmtSt
@@ -187,10 +178,10 @@ updated differently, extra assignments are added to the corresponding branches.
 This way, the id of the variable that represents the current value becomes equal
 in both sides.
 -}
-normalizeBranches :: FDS r
+normalizeBranches :: FDS sig m
                   => Stmt Int                   -- ^ then branch
                   -> Stmt Int                   -- ^ else branch
-                  -> Sem r (Stmt Int, Stmt Int) -- ^ normalized then & else branches
+                  -> m (Stmt Int, Stmt Int) -- ^ normalized then & else branches
 normalizeBranches thenS elseS = do
   stInit <- get @StmtSt
   thenS' <- normalizeStmt thenS
@@ -224,10 +215,10 @@ blocking and non-blocking maps are almost the same, this function is used to
 implement both of them.
 -}
 type BBResult = (VarId, L (Stmt Int), L (Stmt Int))
-balanceBranches :: FDM r
+balanceBranches :: FDM sig m
                 => AssignmentType
                 -> (VarId, VarId) -- ^ variable id maps of the branches
-                -> Sem r BBResult -- ^ merged variable id map, and extra
+                -> m BBResult -- ^ merged variable id map, and extra
                                   -- assignment statements needed for the
                                   -- branches
 balanceBranches t (varMap1, varMap2) = do
@@ -262,7 +253,7 @@ balanceBranches t (varMap1, varMap2) = do
 Normalizes the expression. It assigns the index of the last non-blocking
 assignment to the variables, and zero for the rest of the expression types. It
 -}
-normalizeExpr :: FDR r => Expr a -> Sem r (Expr Int)
+normalizeExpr :: FDR sig m => Expr a -> m (Expr Int)
 normalizeExpr = \case
   Constant {..} -> Constant constantValue <$> freshId ExprId
 
@@ -297,7 +288,7 @@ initialSt = St 0 0 mempty
 initialStmtSt :: StmtSt
 initialStmtSt = StmtSt mempty mempty mempty
 
-runNormalize :: Sem (State St ': r) a -> Sem r (a, TRSubs)
+runNormalize :: Monad m => StateC St m a -> m (a, TRSubs)
 runNormalize act = do
   (st, res) <- act & runState initialSt
   return (res, st ^. trSubs)
@@ -306,12 +297,10 @@ runNormalize act = do
 -- 0 is assigned to each stmt
 assignThreadIds :: Traversable t => t (Module a) -> t (Module Int)
 assignThreadIds modules =
-  run $ evalState 0 $ traverse freshModule modules
+  run $ evalState @Int 0 $ traverse freshModule modules
   where
-    getFreshId :: Members '[State Int] r => Sem r Int
-    getFreshId = get <* modify (+ 1)
+    getFreshId = get <* modify @Int (+ 1)
 
-    freshModule :: Members '[State Int] r => Module a -> Sem r (Module Int)
     freshModule Module{..} =
       Module moduleName ports variables
       (fmap ($> 0) <$> constantInits)
@@ -320,7 +309,6 @@ assignThreadIds modules =
       <*> traverse freshMI moduleInstances
       <*> getFreshId
 
-    freshStmt :: Members '[State Int] r => Stmt a -> Sem r (Stmt Int)
     freshStmt Block{..} =
       Block <$> traverse freshStmt blockStmts <*> return 0
     freshStmt Assignment{..} =
@@ -333,11 +321,9 @@ assignThreadIds modules =
       <*> return 0
     freshStmt Skip{} = return $ Skip 0
 
-    freshAB :: Members '[State Int] r => AlwaysBlock a -> Sem r (AlwaysBlock Int)
     freshAB AlwaysBlock{..} =
       AlwaysBlock (0 <$ abEvent) <$> freshStmt abStmt <*> getFreshId
 
-    freshMI :: Members '[State Int] r => ModuleInstance a -> Sem r (ModuleInstance Int)
     freshMI ModuleInstance{..} =
       ModuleInstance
       moduleInstanceType moduleInstanceName
@@ -346,34 +332,34 @@ assignThreadIds modules =
 
 data IdType = FunId | ExprId
 
-freshId :: FD r => IdType -> Sem r Int
+freshId :: FD sig m => IdType -> m Int
 freshId = \case
   -- modules, always blocks and statements share the same counter
   FunId  -> incrCount funId
   ExprId -> incrCount exprId
   where
-    incrCount :: FD r => Lens St St Int Int -> Sem r Int
+    incrCount :: FD sig m => Lens St St Int Int -> m Int
     incrCount l = gets (^. l) <* modify (l +~ 1)
 
-freshVariable :: FDS r => Expr a -> Sem r (Expr Int)
+freshVariable :: FDS sig m => Expr a -> m (Expr Int)
 freshVariable var = do
   modify $ varMaxIds %~ HM.alter (Just . maybe 1 (+ 1)) name
   Variable name (varModuleName var) <$> gets (^. varMaxIds . to (HM.! name))
   where
     name = varName var
 
-getLastBlocking :: FDR r => Id -> Sem r Int
+getLastBlocking :: FDR sig m => Id -> m Int
 getLastBlocking name =
   asks @StmtSt (^. lastBlocking . to (HM.lookupDefault 0 name))
 
-updateLastBlocking :: FDS r => Expr Int -> Sem r ()
+updateLastBlocking :: FDS sig m => Expr Int -> m ()
 updateLastBlocking var =
   modify $ lastBlocking %~ HM.insert name varId
   where
     name  = varName var
     varId = exprData var
 
-updateLastNonBlocking :: FDS r => Expr Int -> Sem r ()
+updateLastNonBlocking :: FDS sig m => Expr Int -> m ()
 updateLastNonBlocking var =
   modify $ lastNonBlocking %~ HM.insert name varId
   where

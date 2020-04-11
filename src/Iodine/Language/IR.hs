@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -44,6 +43,8 @@ import           Iodine.Language.Annotation
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Carrier.State.Strict
+import           Control.Effect.Reader
 import           Control.Lens hiding (op)
 import           Data.Bifunctor
 import           Data.Foldable
@@ -55,9 +56,6 @@ import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           GHC.Generics hiding (moduleName)
-import           Polysemy
-import           Polysemy.Reader
-import           Polysemy.State
 import qualified Text.PrettyPrint as PP
 
 data Variable =
@@ -533,19 +531,20 @@ moduleInputs, moduleOutputs :: Module a -> Ids -> Ids
 moduleAllInputs :: Module a -> Ids
 moduleAllInputs m = moduleInputs m mempty
 
+type Ids2 = (Ids,Ids)
 -- | given a module, module's clocks and an instance of it, returns the
 -- variables that are read and written by the instance.
 moduleInstanceReadsAndWrites :: Module a -> Ids -> ModuleInstance a -> (Ids, Ids)
 moduleInstanceReadsAndWrites m mClks mi = run $ execState (mempty, mempty) $ do
   for_ miInputs $ \inputPort ->
     for_ (getVariables $ moduleInstancePorts mi HM.! inputPort) $ \v ->
-    modify (_1 %~ HS.insert v)
+    modify @Ids2 (_1 %~ HS.insert v)
   for_ miOutputs $ \outputPort -> do
     let portExpr    = moduleInstancePorts mi HM.! outputPort
         updatedVars = getUpdatedVars portExpr
         readVars    = getVariables portExpr `HS.difference` updatedVars
-    for_ readVars    $ \v -> modify (_1 %~ HS.insert v)
-    for_ updatedVars $ \v -> modify (_2 %~ HS.insert v)
+    for_ readVars    $ \v -> modify @Ids2 (_1 %~ HS.insert v)
+    for_ updatedVars $ \v -> modify @Ids2 (_2 %~ HS.insert v)
   where
     miInputs = moduleInputs m mClks
     miOutputs = moduleOutputs m mClks
@@ -581,32 +580,32 @@ getReadOnlyVariables s =
   let (readVars, writtenVars) = go s & execState (mempty, mempty) & run
   in readVars `HS.difference` writtenVars
   where
-    go :: Stmt a -> Sem '[State (Ids, Ids)] ()
+    go :: Has (State (Ids, Ids)) sig m => Stmt a -> m ()
     go Block{..} = traverse_ go blockStmts
     go Skip{}    = return ()
     go Assignment{..} = do
-      modify $ _2 %~ HS.insert (varName assignmentLhs)
+      modify @Ids2 $ _2 %~ HS.insert (varName assignmentLhs)
       newReadVars <- HS.difference (getVariables assignmentRhs)
-                     <$> gets (view _2)
-      modify $ _1 %~ HS.union newReadVars
+                     <$> gets @Ids2 (view _2)
+      modify @Ids2 $ _1 %~ HS.union newReadVars
     go IfStmt{..} = do
       newReadVars <- HS.difference (getVariables ifStmtCondition)
-                     <$> gets (view _2)
-      modify $ _1 %~ HS.union newReadVars
-      st <- get
+                     <$> gets @Ids2 (view _2)
+      modify @Ids2 $ _1 %~ HS.union newReadVars
+      st <- get @Ids2
       go ifStmtThen
-      (rThen, wThen) <- get
+      (rThen, wThen) <- get @Ids2
       put st
       go ifStmtElse
       (rElse, wElse) <- get
-      put (rThen <> rElse, wThen <> wElse)
+      put @Ids2 (rThen <> rElse, wThen <> wElse)
 
 
-getUpdatedVariables :: Members '[ Reader (HM.HashMap Id (Module Int))
-                                , Reader AnnotationFile
-                                ] r
+getUpdatedVariables :: ( Has (Reader (HM.HashMap Id (Module Int))) sig m
+                       , Has (Reader AnnotationFile) sig m
+                       )
                     => Thread Int
-                    -> Sem r Ids
+                    -> m Ids
 getUpdatedVariables = \case
   AB ab -> go $ abStmt ab
   MI mi@ModuleInstance{..} -> do

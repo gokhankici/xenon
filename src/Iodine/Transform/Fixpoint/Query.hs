@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StrictData      #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -21,15 +20,14 @@ import           Iodine.Transform.Horn
 import           Iodine.Transform.VCGen
 import           Iodine.Types
 
+import           Control.Carrier.Reader
+import           Control.Carrier.State.Strict
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Sequence as SQ
 import qualified Language.Fixpoint.Types as FT
-import           Polysemy
-import           Polysemy.Reader
-import           Polysemy.State
 
 -- -----------------------------------------------------------------------------
 -- generate a query for the liquid-fixpoint solver
@@ -37,7 +35,7 @@ import           Polysemy.State
 
 -- | Given the verification conditions, generate the query to be sent to the
 -- fixpoint solver
-constructQuery :: G r => L (Module Int) -> VCGenOutput -> Sem r FInfo
+constructQuery :: G sig m => L (Module Int) -> VCGenOutput -> m FInfo
 constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ do
   setConstants
   traverse_ generateConstraint horns
@@ -62,7 +60,7 @@ constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ d
 -- -----------------------------------------------------------------------------
 
 -- | Create the fixpoint version of the horn clause
-generateConstraint :: FD r => Horn () -> Sem r ()
+generateConstraint :: FD sig m => Horn () -> m ()
 generateConstraint Horn {..} = do
   (env, (bodyExpr, headExpr)) <-
     (,) <$> convertExpr hornBody <*> convertExpr hornHead
@@ -76,17 +74,17 @@ generateConstraint Horn {..} = do
 
 
 -- | Create a well formedness constraint for every statement of the module
-generateWFConstraints :: FD r => Module Int -> Sem r ()
+generateWFConstraints :: FD sig m => Module Int -> m ()
 generateWFConstraints m@Module{..} = do
   generateWFConstraint moduleName m
   traverse_ (generateWFConstraint moduleName) alwaysBlocks
 
 
 -- | Create a well formedness constraint for the given statement
-generateWFConstraint :: (FD r, MakeKVar t)
+generateWFConstraint :: (FD sig m, MakeKVar t)
                      => Id      -- ^ module name
                      -> t Int
-                     -> Sem r ()
+                     -> m ()
 generateWFConstraint threadModuleName thread = do
   varNames <- askHornVariables thread
   let hornVars = setThreadId thread
@@ -108,7 +106,7 @@ generateWFConstraint threadModuleName thread = do
 
 -- | return the fixpoint name of the variable after updating the current bind
 -- environment
-convertHVar :: FDC r => Bool -> HornExpr -> Sem r FT.Expr
+convertHVar :: FDC sig m => Bool -> HornExpr -> m FT.Expr
 convertHVar isParam var@HVar{..} = do
   n <- getVariableId isParam var
   modify (FT.insertsIBindEnv [n])
@@ -116,7 +114,7 @@ convertHVar isParam var@HVar{..} = do
 convertHVar _ _ =
   throw "convertHVar must be called with a Horn variable"
 
-convertExpr :: FDC r => HornExpr -> Sem r FT.Expr
+convertExpr :: FDC sig m => HornExpr -> m FT.Expr
 
 -- | create a global constant in the environment
 convertExpr (HConstant c) = do

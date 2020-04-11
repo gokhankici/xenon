@@ -53,7 +53,7 @@ runTestTree ta templateIA = \case
     ia <- getIodineArgs ta u templateIA
     if ta ^. dryRun
       then printf "sb && ./iodine %s %s\n" (IA.fileName ia) (IA.annotFile ia)
-      else withSilence $ R.run ia `shouldReturn` expected
+      else withSilence $ R.runner ia `shouldReturn` expected
     where
       expected    = testType == Succ
       withSilence = if ta ^. verbose then id else silence

@@ -1,4 +1,5 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
+
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,7 +8,7 @@
 
 module Iodine.Runner
   ( generateIR
-  , run
+  , runner
   , main
   , readIRFile
   ) where
@@ -21,9 +22,14 @@ import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Horn
 import           Iodine.Types
 
+import           Control.Carrier.Error.Either
+import           Control.Carrier.Lift
+import           Control.Carrier.Trace.Print
+import           Control.Carrier.Writer.Strict
 import qualified Control.Exception as E
 import           Control.Lens (view)
 import           Control.Monad
+import           Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy as B
 import           Data.Foldable
 import           Data.Function
@@ -36,10 +42,6 @@ import qualified Language.Fixpoint.Solver as F
 import qualified Language.Fixpoint.Types as FT
 import qualified Language.Fixpoint.Types.Config as FC
 import qualified Language.Fixpoint.Types.Constraints as FCons
-import           Polysemy hiding (run)
-import           Polysemy.Error
-import           Polysemy.Output
-import           Polysemy.Trace
 import           System.Directory
 import           System.Environment
 import           System.Exit
@@ -56,14 +58,14 @@ main :: IO ()
 -- | Parses the command line arguments automatically, and runs the tool.
 -- If the program is not constant time, the process exists with a non-zero return code.
 main = do
-  safe <- getArgs >>= parseArgsWithError >>= run
+  safe <- getArgs >>= parseArgsWithError >>= runner
   unless safe exitFailure
 
 -- -----------------------------------------------------------------------------
-run :: IodineArgs -> IO Bool
+runner :: IodineArgs -> IO Bool
 -- -----------------------------------------------------------------------------
 -- | Runs the verification process, and returns 'True' if the program is constant time.
-run a = generateIR a >>= checkIR
+runner a = generateIR a >>= checkIR
 
 -- -----------------------------------------------------------------------------
 generateIR :: IodineArgs -> IO (IodineArgs, AnnotationFile)
@@ -161,7 +163,9 @@ checkIR (ia@IodineArgs{..}, af)
       print verbosity
       irFileContents <- readIRFile ia fileName
       let irReader = parse (fileName, irFileContents)
-      mFInfo <- pipeline af irReader ia & handleMonads ia
+      mFInfo <- pipeline af irReader ia
+                & handleTrace ia
+                & handleMonads ia
       case mFInfo of
         Right finfo -> return finfo
         Left e      -> errorHandle e
@@ -180,27 +184,23 @@ checkIR (ia@IodineArgs{..}, af)
       in dir </> ".liquid" </> (base <.> "fqout")
 
 handleMonads :: IodineArgs
-             -> Sem '[Error IodineException, Trace, Output String, Embed IO, Final IO] a
+             -> WriterC Output (ErrorC IodineException (LiftC IO)) a
              -> IO (Either IodineException a)
-handleMonads IodineArgs{..} act =
-  act
-  & errorToIOFinal
-  & handleTrace
-  & handleOutput
-  & embedToFinal
-  & runFinal
-  where
-    handleTrace :: Member (Embed IO) r => Sem (Trace ': r) a -> Sem r a
-    handleTrace =
-      if verbosity /= Loud || benchmarkMode
-      then ignoreTrace
-      else traceToIO
+handleMonads ia act = runM $ runError $ handleOutput ia act
 
-    handleOutput :: Member (Embed IO) r => Sem (Output String ': r) a -> Sem r a
-    handleOutput =
-      if verbosity == Quiet || benchmarkMode
-      then ignoreOutput
-      else runOutputSem (embed . hPutStrLn stderr)
+handleTrace :: IodineArgs -> TraceC m a -> m a
+handleTrace IodineArgs{..} =
+  if verbosity /= Loud || benchmarkMode
+  then runTraceIgnore
+  else runTrace
+
+handleOutput :: MonadIO m => IodineArgs -> WriterC Output m a -> m a
+handleOutput IodineArgs{..} act =
+  if verbosity == Quiet || benchmarkMode
+  then snd <$> runWriter act
+  else do (logs, result) <- runWriter act
+          liftIO (traverse_ (hPutStrLn stderr) logs)
+          return result
 
 printList :: Show a => L a -> IO ()
 printList l = do

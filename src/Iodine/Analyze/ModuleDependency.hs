@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -14,8 +13,9 @@ where
 
 import           Iodine.Language.IR
 import           Iodine.Types
--- import           Iodine.Utils
 
+import           Control.Carrier.State.Strict
+import           Control.Carrier.Trace.Ignoring
 import           Control.Lens
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
@@ -24,12 +24,6 @@ import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import           Data.Maybe
-import           Polysemy
-import           Polysemy.State
-import qualified Polysemy.Trace as PT
-
--- import qualified Debug.Trace as DT
--- import qualified Data.Text as T
 
 type DepGraph = Gr () Int
 
@@ -86,7 +80,7 @@ usedByGraph modules = (g, moduleNodes)
     st =
       traverse_ handleModule modules
       & execState initialState
-      & PT.ignoreTrace -- PT.runTraceList
+      & runTrace
       & run
     initialState =
       St { _depGraph      = G.empty
@@ -95,18 +89,18 @@ usedByGraph modules = (g, moduleNodes)
          }
 
 
-type FD r = Members '[State St, PT.Trace] r
+type FD sig m = (Has (State St) sig m, Has Trace sig m)
 
-handleModule :: FD r => Module a -> Sem r ()
+handleModule :: FD sig m => Module a -> m ()
 handleModule Module{..} = do
   moduleNode <- getNode moduleName
-  PT.trace $ show moduleName ++ " -> " ++ show moduleNode
+  trace $ show moduleName ++ " -> " ++ show moduleNode
   for_ moduleInstances $ \ModuleInstance{..} ->
     ((, moduleNode) <$> getNode moduleInstanceType) >>= addEdge
-  st <- get
-  PT.trace $ show moduleName ++ " st : " ++ show st
+  st <- get @St
+  trace $ show moduleName ++ " st : " ++ show st
 
-addEdge :: FD r => (Int, Int) -> Sem r ()
+addEdge :: FD sig m => (Int, Int) -> m ()
 addEdge e = modify $ depGraph %~ updateCount e
 
 updateCount :: Num b => (Int, Int) -> Gr a b -> Gr a b
@@ -116,7 +110,7 @@ updateCount e@(fromNode, toNode) g =
        in G.insEdge (fromNode, toNode, n + 1) $ G.delEdge e g
   else G.insEdge (fromNode, toNode, 1) g
 
-getNode :: FD r => Id -> Sem r Int
+getNode :: FD sig m => Id -> m Int
 getNode v = do
   res <- gets (^. moduleMap . to (HM.lookup v))
   case res of

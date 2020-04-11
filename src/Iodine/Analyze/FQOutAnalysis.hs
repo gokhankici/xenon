@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -19,6 +18,8 @@ import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Utils
 
+import           Control.Carrier.Reader
+import           Control.Carrier.State.Strict
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -35,9 +36,6 @@ import           Data.String
 import qualified Data.Text as T
 import qualified Language.Fixpoint.Types as FT
 import qualified Language.Fixpoint.Types.Constraints as FCons
-import           Polysemy
-import           Polysemy.Reader
-import           Polysemy.State
 import           System.IO
 import qualified Text.PrettyPrint.HughesPJ.Compat as PP
 import           Text.Printf
@@ -155,11 +153,11 @@ mergeVarsMap Module{..} vsm = ( foldMap fst comparisons
 
 
 
-worklist :: Members '[ Reader WorklistR
-                     , State  WorklistSt
-                     ] r
+worklist :: ( Has (Reader WorklistR) sig m
+            , Has (State  WorklistSt) sig m
+            )
          => [Node] -- ^ worklist
-         -> Sem r ()
+         -> m ()
 worklist [] = return ()
 worklist (sccNode:rest) = do
   g <- asks (^.sccG)

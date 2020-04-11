@@ -8,7 +8,6 @@ copyright:           "2018 Rami Gokhan Kici"
 
 extra-source-files:
 - README.md
-- ChangeLog.md
 
 synopsis:            Generates the transition relation & verification conditions from a Verilog IR
 category:            Hardware Verification
@@ -43,12 +42,18 @@ default-extensions:
 - ConstraintKinds
 - DataKinds
 - FlexibleContexts
+- FlexibleInstances
+- FunctionalDependencies
+- GeneralizedNewtypeDeriving
 - LambdaCase
+- MultiParamTypeClasses
 - PolyKinds
 - RankNTypes
 - ScopedTypeVariables
 - TypeApplications
+- TypeFamilies
 - TypeOperators
+- UndecidableInstances
 
 dependencies:
 - base >= 4.7 && < 5
@@ -58,8 +63,11 @@ dependencies:
 - containers
 - deepseq
 - directory
+- dlist
 - fgl
 - filepath
+- fused-effects
+- fused-effects-lens
 - hashable
 - hspec
 - hspec-core
@@ -67,11 +75,10 @@ dependencies:
 - liquid-fixpoint
 - megaparsec
 - mtl
-- polysemy
-- polysemy-plugin
 - pretty
 - process
 - text
+- transformers
 - unordered-containers
 - vector
 

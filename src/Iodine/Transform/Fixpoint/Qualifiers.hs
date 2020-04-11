@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StrictData      #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -18,13 +17,12 @@ import           Iodine.Transform.Horn
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Effect.Reader
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
 import qualified Data.HashSet as HS
 import qualified Language.Fixpoint.Types as FT
-import           Polysemy
-import           Polysemy.Reader
 
 
 {-|
@@ -60,7 +58,7 @@ defaultQualifiers =
 
 -- | Creates the fixpoint qualifier based on the description given in the
 -- annotation file
-generateQualifiers :: QFD r => Qualifier -> Sem r ()
+generateQualifiers :: QFD sig m => Qualifier -> m ()
 
 {-|
 For the following annotation:
@@ -74,7 +72,7 @@ the following qualifier is generated:
 VLT_lvar => VLT_rvar1 || VLT_rvar2 || ...
 -}
 generateQualifiers (QImplies lhs rhss) = do
-  m <- asks moduleName
+  m <- asks @M moduleName
   let q n = makeQualifierN ("CustomImp_" ++ show n) m LeftRun
             lhs FT.PImp rhss
   q <$> freshQualifierId >>= addQualifier
@@ -92,7 +90,7 @@ the following qualifier is generated for every (vi, vj) pair:
 VLT_v1 <=> VLT_v2
 -}
 generateQualifiers (QPairs vs) =
-  (varPairs <$> asks moduleName) >>=
+  (varPairs <$> asks @M moduleName) >>=
   traverse_ (\pair ->
                (q pair <$> freshQualifierId) >>=
                addQualifier)
@@ -118,7 +116,7 @@ the following qualifiers are generated:
 2. VRT_lvar <=> VRT_rvar1 || VRT_rvar2 || ...
 -}
 generateQualifiers (QIff lhs rhss) = do
-  m <- asks moduleName
+  m <- asks @M moduleName
   let q n = makeQualifierN ("CustomIff_" ++ show n) m LeftRun
             lhs FT.PIff rhss
   q <$> freshQualifierId >>= addQualifier
@@ -129,7 +127,7 @@ Creates the following qualifiers based on the annotations:
 
 1. Create a qualifier equating the tags of every source pairs
 -}
-generateAutoQualifiers :: FD r => AnnotationFile -> Sem r ()
+generateAutoQualifiers :: FD sig m => AnnotationFile -> m ()
 generateAutoQualifiers af = forM_ sourcePairs $ \(s1, s2) ->
   mkQ (mkVar s1) (mkVar s2) <$> freshQualifierId >>= addQualifier
   where

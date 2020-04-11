@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -26,24 +25,26 @@ import           Iodine.Transform.VCGen
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Carrier.Reader
+import           Control.Effect.Error
+import           Control.Effect.Trace
+import           Control.Effect.Writer
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
-import           Polysemy
-import           Polysemy.Error
-import           Polysemy.Output
-import           Polysemy.Reader
-import           Polysemy.Trace
 
 normalizeIR
-  :: Members '[Error IodineException, Trace, Output String] r
-  => AnnotationFile                          -- ^ annotation file
-  -> Sem r (L (Module ()))                   -- ^ ir parser
-  -> IA.IodineArgs                           -- ^ iodine args
-  -> Sem r (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
+  :: ( Has (Error IodineException) sig m
+     , Has (Writer Output) sig m
+     , Effect sig
+     )
+  => AnnotationFile                      -- ^ annotation file
+  -> m (L (Module ()))                   -- ^ ir parser
+  -> IA.IodineArgs                       -- ^ iodine args
+  -> m (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
 normalizeIR af irReader ia = do
   -- (af', allIR) <- variableRename af . assignThreadIds <$> irReader
   let af' = af
@@ -69,11 +70,15 @@ IR ----+                                    ModuleSummary
 Annot ---> SanityCheck -> Merge -> Normalize -> VCGen -> Query
 -}
 pipeline
-  :: Members '[Error IodineException, Trace, Output String] r
-  => AnnotationFile                      -- ^ annotation file
-  -> Sem r (L (Module ()))               -- ^ ir parser
-  -> IA.IodineArgs                       -- ^ iodine args
-  -> Sem r (FInfo, IM.IntMap ThreadType) -- ^ fixpoint query to run
+  :: ( Has (Error IodineException) sig m
+     , Has Trace sig m
+     , Has (Writer Output) sig m
+     , Effect sig
+     )
+  => AnnotationFile                  -- ^ annotation file
+  -> m (L (Module ()))               -- ^ ir parser
+  -> IA.IodineArgs                   -- ^ iodine args
+  -> m (FInfo, IM.IntMap ThreadType) -- ^ fixpoint query to run
 pipeline af irReader ia = do
   (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
   let normalizedIRMap = mkModuleMap normalizedIR

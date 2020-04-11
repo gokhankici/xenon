@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -15,13 +14,12 @@ import           Iodine.Transform.Horn
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Carrier.State.Strict
 import           Control.Lens
 import           Data.Foldable
 import qualified Data.HashSet as HS
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
-import           Polysemy
-import           Polysemy.State
 import           Text.Read (readEither)
 
 type S = Stmt Int
@@ -112,16 +110,17 @@ heq, hiff :: HornExpr -> HornExpr -> HornExpr
 heq  = HBinary HEquals
 hiff = HBinary HIff
 
+type Exprs = HS.HashSet (Expr Int)
 {- |
 Given a list of expressions, this returns a list of variables that appear in the
 expressions without any duplicates.
 -}
 keepVariables :: L (Expr Int) -> L (Expr Int)
-keepVariables es = goEs es & evalState HS.empty & run
+keepVariables es = goEs es & evalState @Exprs HS.empty & run
   where
-    goE :: Member (State (HS.HashSet (Expr Int))) r
+    goE :: Has (State (HS.HashSet (Expr Int))) sig m
         => Expr Int
-        -> Sem r (L (Expr Int))
+        -> m (L (Expr Int))
     goE Constant{..}   = return mempty
     goE v@Variable{..} = do hasVar <- gets $ HS.member v
                             if hasVar
@@ -133,9 +132,9 @@ keepVariables es = goEs es & evalState HS.empty & run
     goE Str{..}        = return mempty
     goE Select{..}     = goEs $ selectVar <| selectIndices
 
-    goEs :: Member (State (HS.HashSet (Expr Int))) r
+    goEs :: Has (State (HS.HashSet (Expr Int))) sig m
          => L (Expr Int)
-         -> Sem r (L (Expr Int))
+         -> m (L (Expr Int))
     goEs = fmap (foldl' (<>) mempty) . traverse goE
 
 

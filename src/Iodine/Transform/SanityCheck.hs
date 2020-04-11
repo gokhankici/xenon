@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -14,6 +13,11 @@ import           Iodine.Language.IR
 import           Iodine.Types
 import           Iodine.Utils
 
+import           Control.Algebra
+import           Control.Carrier.Reader
+import           Control.Carrier.State.Strict
+import           Control.Effect.Error
+import           Control.Effect.Writer
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -23,11 +27,6 @@ import           Data.List
 import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
-import           Polysemy
-import qualified Polysemy.Error as PE
-import qualified Polysemy.Output as PO
-import           Polysemy.Reader
-import           Polysemy.State
 import           Text.Printf
 
 type A  = Int
@@ -40,30 +39,24 @@ type K1 = (Id, Id)
 type S1 = HS.HashSet K1
 type ModuleMap = HM.HashMap Id M
 
-data UniqueUpdateCheck m a where
-  CheckPrevious :: S1 -> UniqueUpdateCheck m ()
+type SC sig m = ( Has (Error IodineException) sig m    -- sanity error
+                , Has (Reader (L M)) sig m             -- parsed IR
+                , Has (Reader AnnotationFile) sig m    -- parsed annotation file
+                , Has (Writer Output) sig m            -- output to stderr
+                , Has (Reader ModuleMap) sig m
+                , Effect sig
+                )
 
-makeSem ''UniqueUpdateCheck
-
-type SC r = Members '[ PE.Error IodineException   -- sanity error
-                     , Reader (L M)               -- parsed IR
-                     , Reader AnnotationFile      -- parsed annotation file
-                     , PO.Output String           -- output to stderr
-                     , Reader ModuleMap
-                     ] r
-
-type FD r = ( SC r
-            , Members '[ Reader M
-                       , Reader MA
-                       ] r
-            )
+type FD sig m = ( SC sig m
+                , Has (Reader M) sig m
+                , Has (Reader MA) sig m
+                )
 
 -- | Type alias for the Sanity Check Monad
-type SCM r a  = SC r => Sem (Reader MA ': Reader M ': r) a
-type SCMI r a = SC r => Sem (Reader M ': r) a
+type SCMI sig m = (SC sig m , Has (Reader M) sig m)
 
 -- -----------------------------------------------------------------------------
-sanityCheck :: SC r => Sem r ()
+sanityCheck :: SC sig m => m ()
 -- -----------------------------------------------------------------------------
 sanityCheck =
   sequence_ [ checkAssignmentsAreToLocalVariables
@@ -72,36 +65,36 @@ sanityCheck =
             , checkVariables
             ]
 
-checkHelper :: SC r
-            => (S -> SCM r ()) -- ^ checks the statement
-            -> Sem r ()
+checkHelper :: (Has (Reader (L M)) sig m)
+            => (S -> ReaderC MA (ReaderC M m) ())
+            -> m ()
 checkHelper goS = checkHelper' goS (\_ -> return ())
 
-checkHelper' :: SC r
-             => (S -> SCM r ())  -- ^ checks the statement
-             -> (MI-> SCMI r ()) -- ^ checks the module instance
-             -> Sem r ()
+checkHelper' :: (Has (Reader (L M)) sig m)
+             => (S -> ReaderC MA (ReaderC M m) ())
+             -> (MI -> ReaderC M m ())
+             -> m ()
 checkHelper' goS goMI = ask @(L M) >>= traverse_ (checkModule goS goMI)
 
-checkModule :: SC r
-            => (S -> SCM r ())
-            -> (MI -> SCMI r ())
+checkModule :: (Has (Reader (L M)) sig m)
+            => (S -> ReaderC MA (ReaderC M m) ())
+            -> (MI -> ReaderC M m ())
             -> M
-            -> Sem r ()
+            -> m ()
 checkModule goS goMI m@Module{..} =
   ( do traverse_ goS gateStmts
-         & runReader @MA Nothing
+         & runReader Nothing
        let goAB ab@AlwaysBlock{..} =
              goS abStmt & runReader (Just ab)
        traverse_ goAB alwaysBlocks
        traverse_ goMI moduleInstances
   ) & runReader m
 
-getModuleName :: FD r => Sem r Id
-getModuleName = asks moduleName
+getModuleName :: FD sig m => m Id
+getModuleName = asks @M moduleName
 
 -- -----------------------------------------------------------------------------
-checkAssignmentsAreToLocalVariables :: SC r => Sem r ()
+checkAssignmentsAreToLocalVariables :: SC sig m => m ()
 -- Check that all assignments in a single module are to the variables
 -- of that module
 -- -----------------------------------------------------------------------------
@@ -113,9 +106,10 @@ checkAssignmentsAreToLocalVariables =
       let stmt = Assignment{ stmtData = emptyStmtData, .. }
       in throw $ printf "%s :: lhs is not from the module %s" (show stmt) moduleName
 
-handleAssignment :: (AssignmentType -> Expr a -> Expr a -> Sem r ())
+handleAssignment :: Monad m
+                 => (AssignmentType -> Expr a -> Expr a -> m ())
                  -> Stmt a
-                 -> Sem r ()
+                 -> m ()
 handleAssignment handler = go
   where
     gos = traverse_ go
@@ -126,7 +120,7 @@ handleAssignment handler = go
     go Skip{..}           = pure ()
 
 -- -----------------------------------------------------------------------------
-checkSameAssignmentType :: SC r => Sem r ()
+checkSameAssignmentType :: SC sig m => m ()
 -- check that always blocks with * events only have blocking assignments, and
 -- the ones with @posedge or @negedge has non-blocking assignments
 -- -----------------------------------------------------------------------------
@@ -157,12 +151,12 @@ checkSameAssignmentType =
              _                       -> pure ()
 
 -- -----------------------------------------------------------------------------
-checkUniqueUpdateLocationOfVariables :: SC r => Sem r ()
+checkUniqueUpdateLocationOfVariables :: SC sig m => m ()
 -- -----------------------------------------------------------------------------
+
 checkUniqueUpdateLocationOfVariables =
   checkHelper' (checkPrevious . asgnVars) handleModuleInstance
-  & runUniqueUpdateCheck
-  & evalState HS.empty
+  & evalState (UniqueUpdateCheck HS.empty)
 
   where
     asgnVars :: Stmt a -> S1
@@ -171,11 +165,11 @@ checkUniqueUpdateLocationOfVariables =
     asgnVars Assignment{..} = HS.singleton (varName assignmentLhs, varModuleName assignmentLhs)
     asgnVars Skip{..}       = mempty
 
-handleModuleInstance :: SC r
+handleModuleInstance :: (SCMI sig m, Has (State UniqueUpdateCheck) sig m)
                      => MI
-                     -> Sem (Reader M ': UniqueUpdateCheck ': r) ()
+                     -> m ()
 handleModuleInstance mi@ModuleInstance{..} = do
-  currentModuleName <- asks moduleName
+  currentModuleName <- asks @M moduleName
   targetModule <- asks (HM.! moduleInstanceType)
   checkMIArguments targetModule mi
   targetModuleClocks <- getClocks moduleInstanceType
@@ -186,7 +180,7 @@ handleModuleInstance mi@ModuleInstance{..} = do
   let (_, miWrites) = moduleInstanceReadsAndWrites targetModule targetModuleClocks mi
   checkPrevious $ HS.map (, currentModuleName) miWrites
 
-checkMIArguments :: SC r => M -> MI -> Sem r ()
+checkMIArguments :: SC sig m => M -> MI -> m ()
 checkMIArguments m mi@ModuleInstance{..} =
   unless (HS.null $ inputVars `HS.intersection` outputVars) $
   throw $ printf "Module instance has overlapping variables in between input and output ports:\n%s" (prettyShow mi)
@@ -199,17 +193,22 @@ checkMIArguments m mi@ModuleInstance{..} =
     isOutput = (`elem` outputs)
     outputs  = moduleOutputs m mempty
 
-runUniqueUpdateCheck :: SC r => Sem (UniqueUpdateCheck ': r) a -> Sem (State S1 ': r) a
-runUniqueUpdateCheck = reinterpret $ \case
-  CheckPrevious assignments -> do
-    oldAssignments <- get @S1
-    modify (HS.union assignments)
-    newAssignments <- get @S1
-    when (HS.size oldAssignments + HS.size assignments /= HS.size newAssignments) $
-      throw $ printf "found multiple assignments to variables from %s" (show $ toList assignments)
+newtype UniqueUpdateCheck = UniqueUpdateCheck { getUUCState :: S1 }
+
+checkPrevious :: ( Has (State UniqueUpdateCheck) sig m
+                 , Has (Error IodineException) sig m
+                 )
+              => S1 -> m ()
+checkPrevious assignments = do
+  oldAssignments <- gets getUUCState
+  let newAssignments = oldAssignments `HS.union` assignments
+  put (UniqueUpdateCheck newAssignments)
+  when (HS.size oldAssignments + HS.size assignments /= HS.size newAssignments) $
+    throw $ printf "found multiple assignments to variables from %s" (show $ toList assignments)
+
 
 -- -----------------------------------------------------------------------------
-checkVariables :: SC r => Sem r ()
+checkVariables :: SC sig m => m ()
 -- -----------------------------------------------------------------------------
 checkVariables =
   ask @(L M) >>= traverse_
@@ -278,17 +277,17 @@ checkVariables =
         let nonInputAEs = (af ^. alwaysEquals) `HS.difference` inputs
         unless (HS.null nonInputAEs) $ do
           let sep = replicate 80 '#'
-          PO.output sep
-          PO.output "non-input always_eq variables are given:"
-          PO.output (intercalate ", " $ T.unpack <$> toList nonInputAEs)
-          PO.output sep
-
+          output [ sep
+                 , "non-input always_eq variables are given:"
+                 , (intercalate ", " $ T.unpack <$> toList nonInputAEs)
+                 , sep
+                 ]
     )
   where
     s1 `subset` s2 = HS.null (HS.difference s1 s2)
 
-throw :: Member (PE.Error IodineException) r => String -> Sem r a
-throw = PE.throw . IE SanityCheck
+throw :: Has (Error IodineException) sig m => String -> m a
+throw = throwError . IE SanityCheck
 
 emptyStmtData :: A
 emptyStmtData = 0

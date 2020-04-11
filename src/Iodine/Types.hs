@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# LANGUAGE ConstraintKinds   #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE StrictData        #-}
@@ -9,10 +8,12 @@ import           Control.Exception
 import qualified Data.Sequence as SQ
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
+import           Data.DList
 
 type Id  = T.Text
 type Ids = HS.HashSet Id
 type L   = SQ.Seq
+type Output = DList String
 
 data IodineExceptionType =
     IRParser
