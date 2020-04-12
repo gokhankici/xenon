@@ -101,6 +101,9 @@ twoPairs :: L a -> L (a, a)
 twoPairs SQ.Empty      = mempty
 twoPairs (a SQ.:<| as) = ((a, ) <$> as) <> twoPairs as
 
+-- >>> twoPairs $ SQ.fromList [1..4]
+-- fromList [(1,2),(1,3),(1,4),(2,3),(2,4),(3,4)]
+
 insEdge :: (Eq b, G.DynGraph gr) => G.LEdge b -> gr a b -> gr a b
 insEdge e g =
   if G.hasLEdge g e
@@ -134,9 +137,15 @@ hmGet n k m =
                       ]
     Just v -> v
 
+-- >>> hmGetEmpty "2" $ HM.fromList [("1", [1]), ("2", [2])]
+-- [2]
+-- >>> hmGetEmpty "20" $ HM.fromList [("1", [1]), ("2", [2])]
+-- []
 hmGetEmpty :: (Eq k, Hashable k, Monoid v) => k -> HM.HashMap k v -> v
 hmGetEmpty k m = fromMaybe mempty $ HM.lookup k m
 
+-- >>> mkMap show [1..10]
+-- fromList [("7",7),("1",1),("10",10),("4",4),("5",5),("2",2),("3",3),("8",8),("9",9),("6",6)]
 mkMap :: (Foldable t, Hashable k, Eq k)
       => (a -> k)
       -> t a
