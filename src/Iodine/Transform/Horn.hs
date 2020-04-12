@@ -15,6 +15,7 @@ import           Control.DeepSeq
 import           Control.Lens ((|>))
 import           Data.Bifunctor
 import           Data.Foldable
+import           Data.Hashable
 import qualified Data.Text as T
 import           GHC.Generics
 import qualified Language.Fixpoint.Types as FT
@@ -30,7 +31,7 @@ data Horn a =
        deriving (Show, Functor)
 
 
-data HornBinaryOp = HEquals | HNotEquals | HImplies | HIff
+data HornBinaryOp = HEquals | HNotEquals | HImplies | HIff deriving (Eq, Generic)
 
 data HornType = Init
               | TagSet
@@ -45,12 +46,12 @@ data HornType = Init
               deriving (Eq, Show, Generic, Read)
 
 data HornVarType = Tag | Value
-                   deriving (Eq, Show)
+                   deriving (Eq, Show, Generic)
 
 data HornVarRun  = LeftRun | RightRun
-                   deriving (Eq, Show)
+                   deriving (Eq, Show, Generic)
 
-data HornAppReturnType = HornInt | HornBool
+data HornAppReturnType = HornInt | HornBool deriving (Eq, Show, Generic)
 
 data HornExpr =
   HConstant Id
@@ -77,7 +78,23 @@ data HornExpr =
   | KVar { hKVarId   :: Int
          , hKVarSubs :: L (HornExpr, HornExpr)
          }
+  deriving (Eq, Generic)
 
+instance Hashable HornVarType
+instance Hashable HornVarRun
+
+instance Hashable HornExpr where
+  hashWithSalt n (HConstant v) = hashWithSalt n v
+  hashWithSalt n (HBool b)     = hashWithSalt n b
+  hashWithSalt _ (HInt n)      = n
+  hashWithSalt n HVar{..}      = hashWithSalt n ( hVarName
+                                                , hVarModule
+                                                , hVarIndex
+                                                , hVarType
+                                                , hVarRun
+                                                , hThreadId
+                                                )
+  hashWithSalt _ _ = undefined
 
 class MakeKVar m where
   getThreadId :: m Int -> Int

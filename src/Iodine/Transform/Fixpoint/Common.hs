@@ -81,7 +81,8 @@ data St = St { _hornConstraints           :: HM.HashMap Integer (FT.SubC HornCla
 
              , _constraintCounter         :: Integer
              , _qualifierCounter          :: Int
-             , _invBindMap                :: HM.HashMap Id FT.BindId
+             , _invVarBindMap             :: HM.HashMap (Bool, HornExpr) (FT.BindId, FT.Expr)
+             , _invConstBindMap           :: HM.HashMap HornExpr (FT.BindId, FT.Expr)
              }
 
 makeLenses ''St
@@ -89,35 +90,48 @@ makeLenses ''St
 -- | We create a binding for true and false values, and use them in the horn
 -- clauses instead of the boolean type directly.
 setConstants :: FD sig m => m ()
-setConstants = forM_ constants $ uncurry addBinding
+setConstants = forM_ constants $ uncurry addConstBinding
  where
   b val = mkBool (FT.PIff (FT.eVar vSymbol) val)
-  constants = [("tru", b FT.PTrue), ("fals", b FT.PFalse)]
+  constants = [(HBool True, b FT.PTrue), (HBool False, b FT.PFalse)]
 
 
 -- | return the id of the variable. if the variable does not exist, add it to
 -- the environment first.
-getVariableId :: FD sig m => Bool -> HornExpr -> m FT.BindId
-getVariableId isParam v = do
-  mid <- HM.lookup name <$> gets (^. invBindMap)
+getVariableId :: FD sig m => Bool -> HornExpr -> m (FT.BindId, FT.Expr)
+getVariableId isParam e = do
+  mid <- gets (^. invVarBindMap . at (isParam, e))
   case mid of
-    Just n  -> return n
-    Nothing -> addBinding name sr
- where
-  name = getFixpointName isParam v
-  sr   = case hVarType v of
-    Value -> mkInt FT.PTrue
-    Tag   -> mkBool FT.PTrue
+    Just res  -> return res
+    Nothing -> addBinding isParam e sr
+  where
+    sr = case hVarType e of
+           Value -> mkInt FT.PTrue
+           Tag   -> mkBool FT.PTrue
+
+
+addConstBinding :: FD sig m => HornExpr -> FT.SortedReft -> m ()
+addConstBinding e sr = do
+  let name = case e of
+               HBool True  -> "tru"
+               HBool False -> "fals"
+               _           -> error "unreachable"
+  be <- gets (^. bindEnvironment)
+  let (n, be') = FT.insertBindEnv (symbol name) sr be
+  modify $ (bindEnvironment .~ be')
+         . (invConstBindMap . at e ?~ (n, FT.eVar name))
 
 
 -- | add the variable name and its sort to the current bind environment
-addBinding :: FD sig m => Id -> FT.SortedReft -> m FT.BindId
-addBinding name sr = do
+addBinding :: FD sig m => Bool -> HornExpr -> FT.SortedReft -> m (FT.BindId, FT.Expr)
+addBinding isParam e sr = do
   be <- gets (^. bindEnvironment)
   let (n, be') = FT.insertBindEnv (symbol name) sr be
-  modify (bindEnvironment .~ be')
-  modify (invBindMap . at name ?~ n)
-  return n
+  let value = (n, FT.eVar name)
+  modify $ (bindEnvironment .~ be')
+         . (invVarBindMap . at (isParam, e) ?~ value)
+  return value
+  where name = getFixpointName isParam e
 
 
 hornTypeToFP :: HornVarType -> (FT.Expr -> FT.Expr -> FT.Expr, FT.Sort)
@@ -163,24 +177,18 @@ toFInfo =
 
 -- | get the bind name used for the variable in the query
 -- varno <> type prefix <> varname <> modulename <> threadno
-getFixpointName, getFixpointVarPrefix, getFixpointTypePrefix  :: Bool -> HornExpr -> Id
+getFixpointName :: Bool -> HornExpr -> Id
 getFixpointName isParam v =
-  getFixpointVarPrefix isParam v <> threadno
-  where
-    threadno = "T" <> T.pack (show $ hThreadId v)
-getFixpointVarPrefix isParam v =
-  getFixpointTypePrefix isParam v <> varname <> "_" -- <>  modulename <> "_"
-  where
-    -- modulename = "M_" <> hVarModule v
-    -- varname = "V_" <> hVarName v
-    varname = hVarName v
-getFixpointTypePrefix isParam v =
   varno <> prefix
+    <> varname <> "_" -- <>  modulename <> "_"
+    <> threadno
   where
     varno = if isParam || hVarIndex v == 0
             then ""
             else "N" <> T.pack (show $ hVarIndex v) <> "_"
     prefix = getVarPrefix (hVarType v) (hVarRun v)
+    varname = hVarName v
+    threadno = "T" <> T.pack (show $ hThreadId v)
 
 
 getVarPrefix :: HornVarType -> HornVarRun -> Id

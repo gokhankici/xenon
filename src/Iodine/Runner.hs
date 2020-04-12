@@ -23,7 +23,6 @@ import           Iodine.Transform.Horn
 import           Iodine.Types
 
 import           Control.Carrier.Error.Either
-import           Control.Carrier.Lift
 import           Control.Carrier.Trace.Print
 import           Control.Carrier.Writer.Strict
 import qualified Control.Exception as E
@@ -184,15 +183,15 @@ checkIR (ia@IodineArgs{..}, af)
       in dir </> ".liquid" </> (base <.> "fqout")
 
 handleMonads :: IodineArgs
-             -> WriterC Output (ErrorC IodineException (LiftC IO)) a
+             -> WriterC Output (ErrorC IodineException IO) a
              -> IO (Either IodineException a)
-handleMonads ia act = runM $ runError $ handleOutput ia act
+handleMonads ia act = runError $ handleOutput ia act
 
 handleTrace :: IodineArgs -> TraceC m a -> m a
 handleTrace IodineArgs{..} =
   if verbosity /= Loud || benchmarkMode
   then runTraceIgnore
-  else runTrace
+  else runTracePrint
 
 handleOutput :: MonadIO m => IodineArgs -> WriterC Output m a -> m a
 handleOutput IodineArgs{..} act =

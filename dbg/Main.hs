@@ -30,7 +30,6 @@ import           Iodine.Types
 import           Iodine.Utils
 
 import           Control.Carrier.Error.Either
-import           Control.Carrier.Lift
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Carrier.Trace.Print (Trace)
@@ -201,7 +200,7 @@ type D sig m = ( G sig m
                , Has (Reader IRs) sig m
                )
 
-type IRReaderM = PT.TraceC (WriterC Output (ErrorC IodineException (LiftC IO)))
+type IRReaderM = PT.TraceC (WriterC Output (ErrorC IodineException IO))
 debugPipeline :: AnnotationFile -> IRReaderM (L (Module ())) -> IodineArgs -> IRReaderM PipelineData
 debugPipeline af irReader ia = do
   (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
@@ -241,10 +240,9 @@ runner = do
   (ia@IodineArgs{..}, af) <- debugArgs >>= generateIR
   irFileContents <- readIRFile ia fileName
   res <- debugPipeline af (parse (fileName, irFileContents)) ia
-         & (if verbosity == Loud then PT.runTrace else PT.runTraceIgnore)
+         & (if verbosity == Loud then PT.runTracePrint else PT.runTraceIgnore)
          & (\act -> runWriter act >>= appendToOutput)
          & runError
-         & runM
   case res of
     Left (err :: IodineException) -> E.throwIO err
     Right out -> (snd out,) <$> runPipeline ia out

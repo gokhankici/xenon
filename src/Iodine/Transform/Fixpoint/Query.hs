@@ -25,7 +25,7 @@ import           Control.Carrier.State.Strict
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
-import qualified Data.HashMap.Strict as HM
+import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Language.Fixpoint.Types as FT
 
@@ -51,7 +51,7 @@ constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ d
         else addSummaryQualifiers m
   toFInfo
   where
-    initialState = St mempty mempty mempty mempty defaultQualifiers 0 0 mempty
+    initialState = St mempty mempty mempty mempty defaultQualifiers 0 0 mempty mempty
 
 
 
@@ -108,9 +108,9 @@ generateWFConstraint threadModuleName thread = do
 -- environment
 convertHVar :: FDC sig m => Bool -> HornExpr -> m FT.Expr
 convertHVar isParam var@HVar{..} = do
-  n <- getVariableId isParam var
+  (n, fpVar) <- getVariableId isParam var
   modify (FT.insertsIBindEnv [n])
-  return $ FT.eVar (getFixpointName isParam var)
+  return fpVar
 convertHVar _ _ =
   throw "convertHVar must be called with a Horn variable"
 
@@ -127,12 +127,10 @@ convertExpr (HConstant c) = do
   sym       = symbol constName
 
 -- | return the corresponding binding for True or False
-convertExpr (HBool b) = do
-  be <- gets (^. invBindMap)
-  let n = be HM.! name
+convertExpr e@(HBool _) = do
+  (n, v) <- fromJust <$> gets (^. invConstBindMap . at e)
   modify (FT.insertsIBindEnv [n])
-  return $ FT.eVar name
-  where name = if b then "tru" else "fals"
+  return v
 
 convertExpr (HInt i) = return . FT.ECon . FT.I . toInteger $ i
 
