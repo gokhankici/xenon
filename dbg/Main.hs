@@ -60,6 +60,7 @@ import           System.FilePath.Posix
 import           System.IO
 import           System.IO.Error
 import           Text.PrettyPrint.HughesPJ (render)
+import qualified Text.PrettyPrint.HughesPJ as PP
 import           Text.Printf
 
 -- #############################################################################
@@ -348,9 +349,40 @@ analyze = do
 
   let ModuleSummary{..} = sm HM.! topModuleName
       addWriteId v = (v,) $ maybe (-1) IS.findMin $ HM.lookup (T.pack v) threadWriteMap
-  for_ ctVarsDisagree $ \(n1, n2, vs) ->
-    printf "Variables ct in %d but not in %d: %s\n"
-    n1 n2 (show $ addWriteId <$> toList vs)
-  for_ aeVarsDisagree $ \(n1, n2, vs) ->
-    printf "Variables ae in %d but not in %d: %s\n"
-    n1 n2 (show $ addWriteId <$> toList vs)
+
+  for_ ctVarsDisagree $ \(n1, n2, vs) -> do
+    let varWithUpdateThreads = addWriteId <$> toList vs
+    printf "Variables ct in %d but not in %d:\n%s\n" n1 n2 (prettyList varWithUpdateThreads)
+    printf "Vars not updated by %d:\n%s\n" n1 (prettyList $ filter ((/= n1) . snd) varWithUpdateThreads)
+    putStrLn $ replicate 80 '-'
+
+  for_ aeVarsDisagree $ \(n1, n2, vs) -> do
+    let varWithUpdateThreads = addWriteId <$> toList vs
+    printf "Variables ae in %d but not in %d:\n%s\n" n1 n2 (prettyList varWithUpdateThreads)
+    printf "Vars not updated by %d:\n%s\n" n1 (prettyList $ filter ((/= n1) . snd) varWithUpdateThreads)
+    putStrLn $ replicate 80 '-'
+
+prettyList :: (Show a, Foldable t) => t a -> String
+prettyList l = PP.render d
+  where
+  d = PP.sep $ [ PP.lbrack
+               , PP.sep $ PP.punctuate PP.comma $ (PP.text . show) <$> toList l
+               , PP.rbrack
+               ]
+
+printThreadGraph :: IO ()
+printThreadGraph = do
+  dbgo <- readDebugOutput
+  let mn = dbgo ^. _1 . _1 . afTopModule
+  let g = dbgo ^. _1 . _3 . at "yarvi" . to (fromJust . fmap threadDependencies)
+  writeFile "graph.dot" $ printGraph g show
+
+printThreads :: IO ()
+printThreads = do
+  dbgo <- readDebugOutput
+  let mn = dbgo ^. _1 . _1 . afTopModule
+  let Module{..} = fromJust $ dbgo ^. _1 . _2 . at mn
+      h :: IR.Doc a => a Int -> IO ()
+      h = putStrLn . head . lines . prettyShow
+  traverse_ h alwaysBlocks
+  traverse_ h moduleInstances

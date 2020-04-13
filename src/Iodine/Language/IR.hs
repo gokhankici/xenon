@@ -36,6 +36,7 @@ module Iodine.Language.IR
   , colorId
   , prettyShow
   , prettyShowWithConfig
+  , Doc(..)
   )
 where
 

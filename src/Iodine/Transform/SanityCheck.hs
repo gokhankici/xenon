@@ -182,7 +182,7 @@ handleModuleInstance mi@ModuleInstance{..} = do
 
 checkMIArguments :: SC sig m => M -> MI -> m ()
 checkMIArguments m mi@ModuleInstance{..} =
-  unless (HS.null $ inputVars `HS.intersection` outputVars) $
+  when (inputVars `intersects` outputVars) $
   throw $ printf "Module instance has overlapping variables in between input and output ports:\n%s" (prettyShow mi)
   where
     (inputVars, outputVars) =

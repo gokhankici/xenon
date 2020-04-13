@@ -468,7 +468,7 @@ sinkCheck :: FDS sig m => TI -> m Horns
 sinkCheck thread@(MI _) = do
   snks <- asks (^. currentSinks)
   writtenVars <- getUpdatedVariables thread
-  unless (HS.null $ snks `HS.intersection` writtenVars) $
+  when (snks `intersects` writtenVars) $
     throw "not implemented sink check of module instance outputs yet"
   return mempty
 
@@ -501,7 +501,7 @@ assertEqCheck :: FDS sig m => TI -> m Horns
 assertEqCheck thread@(MI _) = do
   snks <- asks (^. currentAssertEquals)
   writtenVars <- getUpdatedVariables thread
-  unless (HS.null $ snks `HS.intersection` writtenVars) $
+  when (snks `intersects` writtenVars) $
     throw "not implemented value assert check of module instance outputs yet"
   return mempty
 
