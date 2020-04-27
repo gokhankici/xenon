@@ -9,17 +9,18 @@ O0 = True
 
 def get_args():
     argparser = argparse.ArgumentParser(prog="iodine", add_help=False)
-    argparser.add_argument("-b", "--build", action="store_true")
-    argparser.add_argument("--profile", action="store_true")
-    argparser.add_argument("--debug", action="store_true")
+    argparser.add_argument("-b", "--build", help="Build the project", action="store_true")
+    argparser.add_argument("--profile", help="Run in profiling mode", action="store_true")
+    argparser.add_argument("--debug", help="Run the debugging script", action="store_true")
+    argparser.add_argument("--help", "-h", action="store_true")
     args, unknown_args = argparser.parse_known_args()
     for i, arg in enumerate(unknown_args):
         p = Path(arg)
         if p.is_file():
             unknown_args[i] = p.resolve()
-    return args, unknown_args
+    return argparser, args, unknown_args
 
-args, unknown_args = get_args()
+argparser, args, unknown_args = get_args()
 
 THIS_DIR = Path(__file__).resolve().parent
 IVERILOG_DIR = THIS_DIR / "iverilog-parser"
@@ -28,14 +29,18 @@ EXE_NAME = "iodine-debug" if args.debug else "iodine"
 STACK_RUN_CMD = ["stack", "exec", EXE_NAME]
 STACK_PROFILE_ARGS = ["--profile", "--work-dir", ".stack-work-profile"] if args.profile else []
 
-if args.build:
-    cmd = STACK_BUILD_CMD + STACK_PROFILE_ARGS
+if args.help:
+    subprocess.run(STACK_RUN_CMD + ["--", "--help"], cwd=THIS_DIR)
+    print(f"{'-' * 80}\nExtra arguments:")
+    argparser.print_help()
 else:
-    cmd = STACK_RUN_CMD + STACK_PROFILE_ARGS
-    cmd += ["--", "--iverilog-dir", IVERILOG_DIR]
-    cmd += unknown_args
-
-# print(" ".join(str(a) for a in cmd))
-# sys.exit(0)
-r = subprocess.run(cmd, cwd=THIS_DIR)
-sys.exit(r.returncode)
+    if args.build:
+        cmd = STACK_BUILD_CMD + STACK_PROFILE_ARGS
+    else:
+        cmd = STACK_RUN_CMD + STACK_PROFILE_ARGS
+        cmd += ["--", "--iverilog-dir", IVERILOG_DIR]
+        cmd += unknown_args
+    # print(" ".join(str(a) for a in cmd))
+    # sys.exit(0)
+    r = subprocess.run(cmd, cwd=THIS_DIR)
+    sys.exit(r.returncode)

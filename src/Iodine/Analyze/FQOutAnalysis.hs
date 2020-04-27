@@ -81,9 +81,7 @@ findFirstNonCTVars fpResult af moduleMap summaryMap = do
         worklist wl
       firstNonCtVars =
         IS.foldl' (\acc n -> HS.insert (toVar n) acc) mempty firstNonCtVarNodes
-  let maybeLookup e l = if e `elem` l
-                        then Just e
-                        else Nothing
+  let maybeLookup e l = if e `elem` l then Just e else Nothing
       colorMapHelper vm c n v =
         c <$ (IM.lookup n vm >>= maybeLookup (T.unpack v))
   let docConfig =

@@ -261,7 +261,21 @@ instance ShowIndex Int where
 docIndex :: ShowIndex a => a -> PP.Doc
 docIndex = PP.text . showIndex
 
-data DocColor = Red | Blue | Green
+data DocColor = Red | Blue | Green deriving Eq
+
+minDocColor :: DocColor
+minDocColor = minimum [Red, Blue, Green]
+
+instance Ord DocColor where
+  compare c1 c2 =
+    if   c1 == c2
+    then EQ
+    else case (c1, c2) of
+      (Red, _)    -> LT
+      (_,  Green) -> LT
+      (Green, _ ) -> GT
+      (Blue, Red) -> GT
+      _           -> error "unreachable"
 
 colorId :: DocColor -> Id -> String
 colorId c v = "\x1b[1m" <> colorPrefix <> s <> "\x1b[0m"
@@ -449,8 +463,9 @@ instance Doc ModuleInstance where
       args = docArgs ps
       docArgs =
         HM.foldlWithKey'
-        (\acc v e-> (id2Doc v PP.<+> PP.equals PP.<+> doc c e) : acc)
+        (\acc v e-> (id2Doc v PP.<+> PP.equals PP.<+> doc fixedC e) : acc)
         []
+      fixedC = c { currentDocIndex = Just a }
 
 instance Doc AlwaysBlock where
   doc c (AlwaysBlock e s a) =
@@ -472,7 +487,7 @@ instance Doc Module where
         vcatNL [ vcatSimple ports
                , vcatSimple variables
                , vcatNS cNoIndex gateStmts
-               , vcatNS cNoIndex moduleInstances
+               , vcatNS cMIIndex moduleInstances
                , vcatNS cNoIndex alwaysBlocks
                ]
       args =
@@ -490,6 +505,12 @@ instance Doc Module where
           go (a:as) = a : PP.text "" : go as
 
       cNoIndex = c{currentDocIndex = Nothing}
+      cMIIndex = c{varColorMap =
+                      let getColor [] = Just minDocColor
+                          getColor cs = Just $ maximum cs
+                          abIndices   = getData <$> toList alwaysBlocks
+                      in \_ v -> getColor $ catMaybes $ (\a -> varColorMap c a v) <$> abIndices
+                  }
 
 iodineRender :: PP.Doc -> String
 iodineRender = PP.renderStyle sty

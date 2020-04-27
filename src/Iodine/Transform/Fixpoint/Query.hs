@@ -184,3 +184,9 @@ convertExpr KVar {..} =
       return (sym, rhs')
   )
   hKVarSubs
+
+convertExpr HIte{..} =
+  FT.EIte
+  <$> convertExpr hIteCond
+  <*> convertExpr hIteThen
+  <*> convertExpr hIteElse

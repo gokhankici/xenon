@@ -1,6 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
@@ -279,7 +278,7 @@ checkVariables =
           let sep = replicate 80 '#'
           output [ sep
                  , "non-input always_eq variables are given:"
-                 , (intercalate ", " $ T.unpack <$> toList nonInputAEs)
+                 , intercalate ", " $ T.unpack <$> toList nonInputAEs
                  , sep
                  ]
     )

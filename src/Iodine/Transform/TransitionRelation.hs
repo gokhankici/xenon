@@ -76,8 +76,10 @@ val r = \case
   UF {..}     ->
     let ufName = T.pack $ show ufOp <> show exprData
     in ufVal r ufName HornInt ufArgs
-  IfExpr {..} -> ufVal r name HornInt (ifExprCondition |:> ifExprThen |> ifExprElse)
-    where name = mkUFName exprData
+  IfExpr {..} -> HIte { hIteCond = mkHIteCond r ifExprCondition
+                      , hIteThen = val r ifExprThen
+                      , hIteElse = val r ifExprElse
+                      }
   Str {..}    -> notSupported
   Select {..} -> ufVal r name HornInt (selectVar <| selectIndices)
     where name = mkUFName exprData
@@ -102,13 +104,21 @@ tag r = \case
                         , hThreadId  = 0
                         }
   UF {..}     -> ufTag r ufArgs
-  IfExpr {..} -> ufTag r (ifExprCondition |:> ifExprThen |> ifExprElse)
+  IfExpr {..} -> HIte { hIteCond = mkHIteCond r ifExprCondition
+                      , hIteThen = ufTag r $ ifExprCondition |:> ifExprThen
+                      , hIteElse = ufTag r $ ifExprCondition |:> ifExprElse
+                      }
   Str {..}    -> HBool False
   Select {..} -> ufTag r (selectVar <| selectIndices)
 
-heq, hiff :: HornExpr -> HornExpr -> HornExpr
+heq, hne, hiff :: HornExpr -> HornExpr -> HornExpr
 heq  = HBinary HEquals
+hne  = HBinary HNotEquals
 hiff = HBinary HIff
+
+-- | make the condition to be used for the horn expressions from the IR
+mkHIteCond :: HornVarRun -> Expr Int -> HornExpr
+mkHIteCond r c = val r c `hne` HInt 0
 
 type Exprs = HS.HashSet (Expr Int)
 {- |

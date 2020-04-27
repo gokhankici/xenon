@@ -42,11 +42,12 @@ data ModuleAnnotations =
   ModuleAnnotations { _moduleAnnotations :: Annotations
                     , _moduleQualifiers  :: L Qualifier
                     , _clocks            :: HS.HashSet Id
+                    , _canInline         :: Bool
                     }
   deriving (Show, Read)
 
 emptyModuleAnnotations :: ModuleAnnotations
-emptyModuleAnnotations = ModuleAnnotations emptyAnnotations mempty mempty
+emptyModuleAnnotations = ModuleAnnotations emptyAnnotations mempty mempty False
 
 data AnnotationFile =
   AnnotationFile { _afAnnotations :: HM.HashMap Id ModuleAnnotations -- ^ module -> annotations
@@ -111,8 +112,9 @@ instance FromJSON ModuleAnnotations where
     <$> o .:? "annotations" .!= emptyAnnotations
     <*> o .:? "qualifiers"  .!= mempty
     <*> parseClock o "clock"
+    <*> o .:? "inline"      .!= False
     where
-      objKeys = ["annotations", "qualifiers", "clock", "blocklist"]
+      objKeys = ["annotations", "qualifiers", "clock", "inline", "blocklist"]
 
 instance FromJSON AnnotationFile where
   parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "history", "blocklist"] $ \o ->

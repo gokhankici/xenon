@@ -39,7 +39,7 @@ intersects :: HS.HashSet Id -> HS.HashSet Id -> Bool
 intersects s1 s2 = go (HS.toList s1)
  where
   go []       = False
-  go (a : as) = if HS.member a s2 then True else go as
+  go (a : as) = HS.member a s2 || go as
 
 notSupported :: a
 notSupported = error "not supported"

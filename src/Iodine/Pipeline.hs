@@ -17,11 +17,12 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Query
 import           Iodine.Transform.InitVars
+import           Iodine.Transform.Inline
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
--- import           Iodine.Transform.VariableRename
+import           Iodine.Transform.VariableRename
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -36,6 +37,13 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
 
+{- |
+1. Give unique id to all things.
+2. Run sanity check
+3. Inline if requested
+4. Merge the blocks
+5. Normalize
+-}
 normalizeIR
   :: ( Has (Error IodineException) sig m
      , Has (Writer Output) sig m
@@ -46,18 +54,17 @@ normalizeIR
   -> IA.IodineArgs                       -- ^ iodine args
   -> m (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
 normalizeIR af irReader ia = do
-  -- (af', allIR) <- variableRename af . assignThreadIds <$> irReader
-  let af' = af
-  allIR <- assignThreadIds <$> irReader
-  let topModuleName = af' ^. afTopModule
-      ir            = topsortModules topModuleName allIR
-      irMap         = mkModuleMap ir
+  let topModuleName = af ^. afTopModule
+  initialIR <- topsortModules topModuleName <$> irReader
+  let (af', ir) = variableRename af $ assignThreadIds initialIR
+      irMap     = mkModuleMap ir
   normalizedOutput <- runReader af' $ do
     unless (IA.benchmarkMode ia) $
       sanityCheck
       & runReader ir
       & runReader irMap
-    (merge ir & runReader irMap) >>= normalize
+    runReader irMap (inlineInstances ir >>= merge)
+      >>= normalize
   return (af', normalizedOutput)
 
 

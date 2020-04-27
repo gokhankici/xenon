@@ -19,7 +19,7 @@ for arg in $@; do
 done
 
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
-# TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
+TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/472-mips-pipelined/neg-mux3_test_02.v"
 # TEST="benchmarks/472-mips-pipelined/rom32-test-1.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
@@ -29,7 +29,7 @@ done
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/mult_test.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/scarv_cop_palu.v"
 # TEST="benchmarks/yarvi/shared/test-01.v"
-TEST="benchmarks/yarvi/shared/yarvi.v"
+# TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="examples/verilog/stall.v"
 # TEST="test/verilog/neg/neg-test-2-v0.v"
 # TEST="test/verilog/pos/merge-02.v"

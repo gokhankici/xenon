@@ -3,47 +3,48 @@
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Iodine.Transform.VariableRename
-  ( variableRename
-  , inputPrefix
-  , nonInputPrefix
-  ) where
+module Iodine.Transform.VariableRename (variableRename) where
 
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
-import           Iodine.Utils
 
-import           Control.Carrier.Reader
 import           Control.Lens
 import           Control.Monad
-import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 
-newtype St = St { getModuleInputs :: HM.HashMap Id Ids }
 
-type FD sig m  = Has (Reader St) sig m
-type FDM sig m = (FD sig m, Has (Reader Ids) sig m)
 
-inputPrefix, nonInputPrefix :: Id
-inputPrefix    = "I_"
-nonInputPrefix = "NI_"
+-- newtype St = St { getModuleInputs :: HM.HashMap Id Ids }
 
--- | renames all the variables in the program to aid the speed of verification
+-- type FD sig m  = Has (Reader St) sig m
+-- type FDM sig m = (FD sig m, Has (Reader Ids) sig m)
+
+-- inputPrefix, nonInputPrefix :: Id
+-- inputPrefix    = "I_"
+-- nonInputPrefix = "NI_"
+
+type FD sig m  = Monad m
+type FDM sig m = Monad m
+
+varPrefix :: Id
+varPrefix = "_"
+
+-- | renames all the variables in the program
 variableRename :: Traversable t
                => AnnotationFile                 -- ^ all annotations
                -> t (Module a)                   -- ^ all modules
                -> (AnnotationFile, t (Module a)) -- ^ updated annotations and modules
-variableRename af modules = run $ runReader (St mInputs) $
+variableRename af modules = runIdentity $ -- run $ runReader (St mInputs) $
   (,) <$> handleAnnotationFile af <*> traverse handleModule modules
-  where
-    mInputs =
-      foldl' (\mm m -> HM.insert (moduleName m) (inputPorts m) mm) mempty modules
-    inputPorts Module{..} =
-      foldl' (\is p -> if isInput p
-                       then HS.insert (variableName $ portVariable p) is
-                       else is) mempty ports
+  -- where
+  --   mInputs =
+  --     foldl' (\mm m -> HM.insert (moduleName m) (inputPorts m) mm) mempty modules
+  --   inputPorts Module{..} =
+  --     foldl' (\is p -> if isInput p
+  --                      then HS.insert (variableName $ portVariable p) is
+  --                      else is) mempty ports
 
 handleAnnotationFile :: FD sig m => AnnotationFile -> m AnnotationFile
 handleAnnotationFile af = do
@@ -51,16 +52,18 @@ handleAnnotationFile af = do
   return $ af & afAnnotations .~ annots'
 
 handleModuleAnnotations :: FD sig m => Id -> ModuleAnnotations -> m ModuleAnnotations
-handleModuleAnnotations moduleName ModuleAnnotations{..} = do
-  mInputs <- asks (HM.lookup moduleName . getModuleInputs)
+handleModuleAnnotations _moduleName ModuleAnnotations{..} = do
+  -- mInputs <- asks (HM.lookup moduleName . getModuleInputs)
+  let mInputs = Just []
   case mInputs of
     Nothing -> return ModuleAnnotations{..}
-    Just inputs ->
-      runReader inputs $
+    Just _inputs ->
+      -- runReader inputs $
       ModuleAnnotations
       <$> handleAnnotations _moduleAnnotations
       <*> traverse handleQualifier _moduleQualifiers
       <*> traverseSet fix _clocks
+      <*> return _canInline
 
 handleAnnotations :: FDM sig m => Annotations -> m Annotations
 handleAnnotations Annotations{..} =
@@ -79,16 +82,15 @@ handleQualifier (QPairs vs)     = QPairs <$> traverse fix vs
 
 handleModule :: FD sig m => Module a -> m (Module a)
 handleModule Module{..} = do
-  inputs <- asks (hmGet 2 moduleName . getModuleInputs)
-  moduleInstances' <- traverse (fixMI moduleName) moduleInstances
-  runReader inputs $
-    Module moduleName
+  -- inputs <- asks (hmGet 2 moduleName . getModuleInputs)
+  -- runReader inputs $
+  Module moduleName
     <$> traverse fixPort ports
     <*> traverse fixVariable variables
     <*> traverse (\(v, e) -> (,) <$> fix v <*> fixExpr e) constantInits
     <*> traverse fixStmt gateStmts
     <*> traverse fixAB alwaysBlocks
-    <*> return moduleInstances'
+    <*> traverse (fixMI moduleName) moduleInstances
     <*> return moduleData
 
 fixPort :: FDM sig m => Port -> m Port
@@ -115,7 +117,8 @@ fixStmt IfStmt{..} =
 fixStmt Skip{..} = return $ Skip{..}
 
 fixExpr :: FDM sig m => Expr a -> m (Expr a)
-fixExpr Constant{..} = return $ Constant{..}
+fixExpr e@Constant{} = return e
+fixExpr e@Str{} = return e
 fixExpr Variable{..} = do
   varName' <- fix varName
   return $ Variable{varName = varName', ..}
@@ -126,7 +129,6 @@ fixExpr IfExpr{..} =
   <*> fixExpr ifExprThen
   <*> fixExpr ifExprElse
   <*> return exprData
-fixExpr Str{..} = return $ Str{..}
 fixExpr Select{..} =
   Select
   <$> fixExpr selectVar
@@ -146,27 +148,30 @@ fixEvent NegEdge{..} = NegEdge <$> fixExpr eventExpr
 fixEvent Star        = return Star
 
 fixMI :: FD sig m => Id -> ModuleInstance a -> m (ModuleInstance a)
-fixMI currentModuleName ModuleInstance{..} = do
-  currentInputs <- asks (hmGet 3 currentModuleName . getModuleInputs)
-  targetInputs <- asks (hmGet 4 moduleInstanceType . getModuleInputs)
+fixMI _currentModuleName ModuleInstance{..} = do
+  -- currentInputs <- asks (hmGet 3 currentModuleName . getModuleInputs)
+  -- targetInputs <- asks (hmGet 4 moduleInstanceType . getModuleInputs)
   ports' <-
     foldM
     (\ports (p, e) -> do
-        p' <- fix p & runReader targetInputs
-        e' <- fixExpr e & runReader currentInputs
+        p' <- fix p -- & runReader targetInputs
+        e' <- fixExpr e -- & runReader currentInputs
         return $ HM.insert p' e' ports)
     mempty
     (HM.toList moduleInstancePorts)
   return $ ModuleInstance{moduleInstancePorts = ports', ..}
 
-fix :: FDM sig m => Id -> m Id
-fix v = fix' v <$> ask
+-- fix :: FDM sig m => Id -> m Id
+-- fix v = fix' v <$> ask
 
-fix' :: Id -> Ids -> Id
-fix' v inputs =
-  if v `elem` inputs
-  then inputPrefix <> v
-  else nonInputPrefix <> v
+-- fix' :: Id -> Ids -> Id
+-- fix' v inputs =
+--   if v `elem` inputs
+--   then inputPrefix <> v
+--   else nonInputPrefix <> v
+
+fix :: Monad m => Id -> m Id
+fix v = return $ varPrefix <> v
 
 traverseSet :: Monad m => (Id -> m Id) -> Ids -> m Ids
 traverseSet mi = foldM (\s' i -> (`HS.insert` s') <$> mi i) mempty

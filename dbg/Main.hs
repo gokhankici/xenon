@@ -242,7 +242,7 @@ runner = do
   irFileContents <- readIRFile ia fileName
   res <- debugPipeline af (parse (fileName, irFileContents)) ia
          & (if verbosity == Loud then PT.runTracePrint else PT.runTraceIgnore)
-         & (\act -> runWriter act >>= appendToOutput)
+         & (runWriter >=> appendToOutput)
          & runError
   case res of
     Left (err :: IodineException) -> E.throwIO err
@@ -288,7 +288,7 @@ m ! k =
     Nothing -> error $ printf "Could not find %s in %s" (show k) (show $ HM.keys m)
     Just v -> v
 
-trace' :: (Has (PT.Trace) sig m, Show a) => String -> a -> m ()
+trace' :: (Has PT.Trace sig m, Show a) => String -> a -> m ()
 trace' msg a = PT.trace (msg ++ " " ++ show a)
 
 analyze :: IO ()
@@ -365,16 +365,16 @@ analyze = do
 prettyList :: (Show a, Foldable t) => t a -> String
 prettyList l = PP.render d
   where
-  d = PP.sep $ [ PP.lbrack
-               , PP.sep $ PP.punctuate PP.comma $ (PP.text . show) <$> toList l
-               , PP.rbrack
-               ]
+  d = PP.sep [ PP.lbrack
+             , PP.sep $ PP.punctuate PP.comma $ PP.text . show <$> toList l
+             , PP.rbrack
+             ]
 
 printThreadGraph :: IO ()
 printThreadGraph = do
   dbgo <- readDebugOutput
   let mn = dbgo ^. _1 . _1 . afTopModule
-  let g = dbgo ^. _1 . _3 . at "yarvi" . to (fromJust . fmap threadDependencies)
+  let g = dbgo ^. _1 . _3 . at "yarvi" . to (threadDependencies . fromJust)
   writeFile "graph.dot" $ printGraph g show
 
 printThreads :: IO ()

@@ -9,9 +9,9 @@ import           Iodine.Language.IR
 import           Iodine.Types
 
 import           Control.Effect.Error
-import           Control.Monad (void)
 import           Data.Char (isLetter, isDigit)
 import           Data.Foldable (toList)
+import           Data.Functor
 import qualified Data.HashMap.Strict as HM
 import           Data.Hashable
 import qualified Data.Sequence as SQ
@@ -139,7 +139,7 @@ parseStmt =
                         <*> (comma *> parseStmt)
                         <*> (comma *> parseStmt)
                         <*> parseData) <|>
-  (rWord "skip" *> return (Skip ()))
+  (rWord "skip" $> Skip ())
   where
     parseAsn k t = parseTerm k $
                    Assignment t
@@ -161,7 +161,7 @@ parseEvent :: Parser (Event ())
 parseEvent =
   parseTerm "posedge" (PosEdge <$> parseExpr) <|>
   parseTerm "negedge" (NegEdge <$> parseExpr) <|>
-  (rWord "star" *> return Star)
+  (rWord "star" $> Star)
 
 parseAlwaysBlock :: Parser (AlwaysBlock ())
 parseAlwaysBlock =

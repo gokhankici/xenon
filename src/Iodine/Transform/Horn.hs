@@ -78,6 +78,10 @@ data HornExpr =
   | KVar { hKVarId   :: Int
          , hKVarSubs :: L (HornExpr, HornExpr)
          }
+  | HIte { hIteCond :: HornExpr
+         , hIteThen :: HornExpr
+         , hIteElse :: HornExpr
+         }
   deriving (Eq, Generic)
 
 instance Hashable HornVarType
@@ -132,6 +136,10 @@ updateVarIndex f = \case
   HConstant c -> HConstant c
   HInt n      -> HInt n
   HBool b     -> HBool b
+  HIte{..}    -> HIte { hIteCond = go hIteCond
+                      , hIteThen = go hIteThen
+                      , hIteElse = go hIteElse
+                      }
   where go = updateVarIndex f
 
 -- | update the thread index with the given function
@@ -150,6 +158,10 @@ updateThreadId f = \case
   HConstant c -> HConstant c
   HInt n      -> HInt n
   HBool b     -> HBool b
+  HIte{..}    -> HIte { hIteCond = go hIteCond
+                      , hIteThen = go hIteThen
+                      , hIteElse = go hIteElse
+                      }
   where go = updateThreadId f
 
 mkEqual :: (HornExpr, HornExpr) -> HornExpr
@@ -187,6 +199,10 @@ instance Show HornExpr where
         HConstant c -> text c
         HBool b     -> PP.text $ show b
         HInt n      -> PP.int n
+        HIte{..}    -> PP.parens $
+                       go hIteCond PP.<+> PP.text "?" PP.<+>
+                       go hIteThen PP.<+> PP.text ":" PP.<+>
+                       go hIteElse
         HVar{..}    ->
           let prefix = case (hVarType, hVarRun) of
                          (Tag, LeftRun)    -> "TL"
