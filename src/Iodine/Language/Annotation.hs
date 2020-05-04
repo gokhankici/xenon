@@ -114,10 +114,10 @@ instance FromJSON ModuleAnnotations where
     <*> parseClock o "clock"
     <*> o .:? "inline"      .!= False
     where
-      objKeys = ["annotations", "qualifiers", "clock", "inline", "blocklist"]
+      objKeys = ["annotations", "qualifiers", "clock", "inline", "blocklist", "qualifiers-history"]
 
 instance FromJSON AnnotationFile where
-  parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "history", "blocklist"] $ \o ->
+  parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "history", "blocklist", "qualifiers", "qualifiers-history"] $ \o ->
     AnnotationFile
     <$> o .:  "modules"
     <*> o .:  "top_module"

@@ -15,6 +15,7 @@ module Iodine.Runner
 
 import           Iodine.IodineArgs
 import           Iodine.Language.Annotation
+import           Iodine.Language.IR (prettyShow)
 import           Iodine.Language.IRParser
 import           Iodine.Language.PrologParser
 import           Iodine.Pipeline
@@ -79,8 +80,6 @@ generateIR IodineArgs{..} = do
                           }
   runIVL topModule
   return (result, af)
-
-
   where
     -- run ivlpp preprocessor on the given verilog file
     runPreProcessor = withCurrentDirectory verilogDir $ do
@@ -129,7 +128,10 @@ checkIR (ia@IodineArgs{..}, af)
         normalizeIR af (parse (fileName, irFileContents)) ia
         & handleMonads ia
       case mNormalizedOutput of
-        Right (_, (normalizedIR, _)) -> printList normalizedIR
+        Right (_, (normalizedIR, _)) -> do traverse_ (putStrLn . toStr) normalizedIR
+                                           putStrLn sep
+                                        where toStr a = prettyShow a ++ "\n"
+                                              sep = replicate 80 '-'
         Left e      -> errorHandle e
       return True
   | onlyVCGen = do computeFInfo >>= FCons.saveQuery config . fst
@@ -200,15 +202,6 @@ handleOutput IodineArgs{..} act =
   else do (logs, result) <- runWriter act
           liftIO (traverse_ (hPutStrLn stderr) logs)
           return result
-
-printList :: Show a => L a -> IO ()
-printList l = do
-  traverse_ (putStrLn . toStr) l
-  putStrLn  sep
-  where
-    toStr a = show a ++ "\n"
-    sep = replicate 80 '-'
-
 
 readIRFile :: IodineArgs -> String -> IO String
 readIRFile ia fileName =
