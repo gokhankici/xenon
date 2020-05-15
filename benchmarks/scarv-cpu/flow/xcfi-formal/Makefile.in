@@ -1,0 +1,96 @@
+
+XCFI_SRC_DIR    = $(FRV_HOME)/verif/rvfi
+XCFI_WORK       = $(FRV_WORK)/xcfi
+
+XCFI_COMMON     = $(XCFI_SRC_DIR)/fi_fairness.sv \
+                  $(XCFI_SRC_DIR)/xcfi_insn_checker.sv \
+                  $(XCFI_SRC_DIR)/xcfi_macros.sv \
+                  $(XCFI_SRC_DIR)/xcfi_testbench.v \
+                  $(XCFI_SRC_DIR)/xcfi_wrapper.sv \
+                  $(XCRYPTO_RTL)/xc_sha3/xc_sha3_ftb.v \
+                  $(XCRYPTO_RTL)/xc_sha256/xc_sha256_ftb.v \
+                  $(XCRYPTO_RTL)/xc_aessub/xc_aessub_ftb.v \
+                  $(XCRYPTO_RTL)/xc_aesmix/xc_aesmix_ftb.v
+
+
+XCFI_MODELS     = $(notdir $(basename $(shell find $(XCFI_SRC_DIR)/models -name '*.v')))
+XCFI_INSNS      = $(filter insn_%,$(XCFI_MODELS))
+XCFI_PROPS      = $(filter-out insn_%,$(XCFI_MODELS))
+
+XCFI_INSN_DEFS  = -DXCFI_CHECK_INSTRS=1
+XCFI_PROP_DEFS  = 
+
+XCFI_SBY_TGTS   = 
+
+XCFI_SBY_LOGS   = 
+
+XCFI_SBY_BMC_SRC= $(FRV_HOME)/flow/xcfi-formal/bmc.sby.template
+XCFI_SBY_COV_SRC= $(FRV_HOME)/flow/xcfi-formal/cov.sby.template
+
+define map_sby_cov
+    $(addsuffix _cov.sby,$(addprefix $(XCFI_WORK)/,${1}))
+endef
+
+define map_sby_bmc
+    $(addsuffix _bmc.sby,$(addprefix $(XCFI_WORK)/,${1}))
+endef
+
+define map_log_cov
+    $(addsuffix _cov/logfile.txt,$(addprefix $(XCFI_WORK)/,${1}))
+endef
+
+define map_log_bmc
+    $(addsuffix _bmc/logfile.txt,$(addprefix $(XCFI_WORK)/,${1}))
+endef
+
+#
+# 1 - Name of the proof.
+# 2 - Extra defines for the target.
+#
+define add_xcfi_target
+
+$(call map_sby_bmc,${1}) : $(XCFI_SRC_DIR)/models/${1}.v $(XCFI_COMMON)
+	@mkdir -p $(dir $${@})
+	@cp $(XCFI_SBY_BMC_SRC) $${@}
+	@echo "read_verilog  ${2} -sv $${^}" >> $${@}
+	@echo "read_verilog -DRVFI -sv $(CPU_RTL_SRCS)" >> $${@}
+	@echo "prep -flatten -nordff -top xcfi_testbench" >> $${@}
+	@echo "chformal -early" >> $${@}
+
+
+$(call map_sby_cov,${1}): $(XCFI_SRC_DIR)/models/${1}.v $(XCFI_COMMON)
+	@mkdir -p $(dir $${@})
+	@cp $(XCFI_SBY_COV_SRC) $${@}
+	@echo "read_verilog ${2} -sv $${^}" >> $${@}
+	@echo "read_verilog -DRVFI -sv $(CPU_RTL_SRCS)" >> $${@}
+	@echo "prep -flatten -nordff -top xcfi_testbench" >> $${@}
+	@echo "chformal -early" >> $${@}
+
+$(call map_log_bmc,${1}) : $(call map_sby_bmc,${1}) $(call map_log_cov,${1})
+	sby -f $${<}
+
+$(call map_log_cov,${1}) : $(call map_sby_cov,${1})
+	sby -f $${<}
+
+XCFI_SBY_TGTS += $(call map_sby_cov,${1}) $(call map_sby_bmc,${1})
+XCFI_SBY_LOGS += $(call map_log_cov,${1}) $(call map_log_bmc,${1})
+
+endef
+
+#
+# Add all instruction checks.
+$(foreach PROOF,$(XCFI_INSNS),\
+    $(eval $(call add_xcfi_target,${PROOF},$(XCFI_INSN_DEFS))))
+
+#
+# Add generic consistency checks.
+$(foreach PROOF,$(XCFI_PROPS),\
+    $(eval $(call add_xcfi_target,${PROOF},$(XCFI_PROP_DEFS))))
+
+xcfi-prepare: $(XCFI_SBY_TGTS)
+
+xcfi-clean:
+	rm -rf $(XCFI_WORK)/*
+
+xcfi-run: $(XCFI_SBY_LOGS)
+	
