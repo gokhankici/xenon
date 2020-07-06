@@ -21,3 +21,10 @@ cplex.json
 /debug-*
 /ir
 /out
+
+fixpoint-trace.json
+
+graph.dot
+graph.png
+iodine.prof.html*
+/output

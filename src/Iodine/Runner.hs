@@ -177,6 +177,7 @@ checkIR (ia@IodineArgs{..}, af)
                           , FC.srcFile   = fileName
                           , FC.metadata  = True
                           , FC.minimize  = delta
+                          , FC.solverTrace = True
                           }
 
     fqoutFile :: FilePath

@@ -49,5 +49,8 @@ include $(FRV_HOME)/flow/embench/Makefile.in
 include $(FRV_HOME)/src/fsbl/Makefile.in
 include $(FRV_HOME)/verif/unit/Makefile.in
 
+print-verilog-files:
+	@echo $(CPU_RTL_SRCS)
+
 clean:
 	rm -rf work/*
