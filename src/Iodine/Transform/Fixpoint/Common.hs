@@ -49,7 +49,7 @@ type G sig m = ( Has (Reader AnnotationFile) sig m
                , Has Trace sig m
                , Has (Reader ModuleMap) sig m
                , Has (Reader SummaryMap) sig m
-               , Effect sig
+               -- , Effect sig
                )
 
 type FD sig m  = ( G sig m

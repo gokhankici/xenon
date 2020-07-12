@@ -43,7 +43,7 @@ type SC sig m = ( Has (Error IodineException) sig m    -- sanity error
                 , Has (Reader AnnotationFile) sig m    -- parsed annotation file
                 , Has (Writer Output) sig m            -- output to stderr
                 , Has (Reader ModuleMap) sig m
-                , Effect sig
+                -- , Effect sig
                 )
 
 type FD sig m = ( SC sig m

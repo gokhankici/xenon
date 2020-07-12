@@ -43,7 +43,7 @@ makeLenses ''St
 type OldG sig m = ( Has (Reader AnnotationFile) sig m
                   , Has (Reader ModuleMap) sig m
                   , Has (Error IodineException) sig m
-                  , Effect sig
+                  -- , Effect sig
                   )
 type G sig m = (OldG sig m, Has (State Int) sig m)
 
@@ -127,7 +127,7 @@ type FD sig m = (Has (State St) sig m, Has (Reader ModuleMap) sig m)
 builds a dependency graph where (s1, s2) \in G iff there exists a variable v
 such that s1 updates v and s2 reads v
 -}
-buildDependencyGraph :: (Effect sig, Has (Reader ModuleMap) sig m)
+buildDependencyGraph :: (Has (Reader ModuleMap) sig m) -- , Effect sig)
                      => L (Stmt A) -> m (DepGraph, StmtMap)
 buildDependencyGraph stmts =
   traverse_ update stmts

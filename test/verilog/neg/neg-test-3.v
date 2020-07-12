@@ -20,8 +20,6 @@ module test(clk);
         not_eq <= not_eq1;
    end
 
-   reg foo1,foo2;
-   
    always @(posedge clk)
       if (cond)
         ex_res <= ex_inst + 1;

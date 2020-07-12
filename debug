@@ -31,6 +31,7 @@ done
 # TEST="benchmarks/yarvi/shared/test-01.v"
 # TEST="benchmarks/yarvi/shared/yarvi.v"
 # TEST="examples/verilog/stall.v"
+# TEST="test/verilog/neg/neg-test-5.v"
 # TEST="test/verilog/neg/neg-test-2-v0.v"
 # TEST="test/verilog/pos/merge-02.v"
 # TEST="test/verilog/pos/merge03.v"

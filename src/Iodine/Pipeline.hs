@@ -47,7 +47,7 @@ import qualified Data.Text as T
 normalizeIR
   :: ( Has (Error IodineException) sig m
      , Has (Writer Output) sig m
-     , Effect sig
+     -- , Effect sig
      )
   => AnnotationFile                      -- ^ annotation file
   -> m (L (Module ()))                   -- ^ ir parser
@@ -80,7 +80,7 @@ pipeline
   :: ( Has (Error IodineException) sig m
      , Has Trace sig m
      , Has (Writer Output) sig m
-     , Effect sig
+     -- , Effect sig
      )
   => AnnotationFile                  -- ^ annotation file
   -> m (L (Module ()))               -- ^ ir parser

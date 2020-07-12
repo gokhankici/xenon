@@ -1,0 +1,16 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "ex_inst"
+        ],
+        "sink": [
+          "wb_wbv"
+        ]
+      },
+      "clock": "clk"
+    }
+  }
+}

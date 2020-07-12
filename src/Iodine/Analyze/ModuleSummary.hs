@@ -87,7 +87,7 @@ data ModuleSummary =
 Create a summary for each given module
 -}
 createModuleSummaries :: ( Has (Reader AnnotationFile) sig m
-                         , Effect sig
+                         -- , Effect sig
                          )
                       => L (Module Int) -- ^ modules (filtered & topologically sorted)
                       -> ModuleMap      -- ^ same modules, in a hash map
@@ -103,7 +103,7 @@ createModuleSummaries orderedModules moduleMap =
 createModuleSummary :: ( Has (Reader AnnotationFile) sig m
                        , Has (State SummaryMap) sig m
                        , Has (Reader ModuleMap) sig m
-                       , Effect sig
+                       -- , Effect sig
                        )
                     => Module Int
                     -> m ModuleSummary
@@ -223,7 +223,7 @@ mapLookup n k m =
 type ThreadMap = IM.IntMap (Thread Int)
 type GAD sig m = ( Has (Reader ModuleSummary) sig m
                  , Has (Reader ThreadMap) sig m
-                 , Effect sig
+                 -- , Effect sig
                  )
 
 -- | returns the transitive closure of the id of the threads that update the

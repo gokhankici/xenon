@@ -1,0 +1,25 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "lib:iodine"
+
+    - path: "app/Main.hs"
+      component: "iodine:exe:iodine"
+
+    - path: "app/Paths_iodine.hs"
+      component: "iodine:exe:iodine"
+
+    - path: "dbg/Main.hs"
+      component: "iodine:exe:iodine-debug"
+
+    - path: "dbg/Paths_iodine.hs"
+      component: "iodine:exe:iodine-debug"
+
+    - path: "prolog-pretty-app/Main.hs"
+      component: "iodine:exe:prolog-pretty"
+
+    - path: "prolog-pretty-app/Paths_iodine.hs"
+      component: "iodine:exe:prolog-pretty"
+
+    - path: "test"
+      component: "iodine:test:iodine-test"

@@ -1,0 +1,238 @@
+name:           iodine
+version:        0.1.0.0
+synopsis:       Generates the transition relation & verification conditions from a Verilog IR
+description:    Please see the README on Github at <https://github.com/gokhankici/iodine#readme>
+category:       Hardware Verification
+homepage:       https://github.com/gokhankici/iodine#readme
+bug-reports:    https://github.com/gokhankici/iodine/issues
+author:         Rami Gokhan Kici
+maintainer:     gokhankici@gmail.com
+copyright:      2018 Rami Gokhan Kici
+license:        MIT
+license-file:   LICENSE
+build-type:     Custom
+extra-source-files:
+    README.md
+cabal-version:  >= 1.10
+
+source-repository head
+  type: git
+  location: https://github.com/gokhankici/iodine
+
+custom-setup
+  setup-depends:
+      Cabal
+    , base
+
+library
+  exposed-modules:
+      Control.Carrier.Trace.Print
+      Iodine.Analyze.DependencyGraph
+      Iodine.Analyze.FQOutAnalysis
+      Iodine.Analyze.ModuleDependency
+      Iodine.Analyze.ModuleSummary
+      Iodine.IodineArgs
+      Iodine.Language.Annotation
+      Iodine.Language.IR
+      Iodine.Language.IRParser
+      Iodine.Language.PrologParser
+      Iodine.Pipeline
+      Iodine.Runner
+      Iodine.Transform.Fixpoint.Common
+      Iodine.Transform.Fixpoint.Qualifiers
+      Iodine.Transform.Fixpoint.Query
+      Iodine.Transform.Fixpoint.SummaryQualifiers
+      Iodine.Transform.Horn
+      Iodine.Transform.InitVars
+      Iodine.Transform.Inline
+      Iodine.Transform.Merge
+      Iodine.Transform.Normalize
+      Iodine.Transform.SanityCheck
+      Iodine.Transform.TransitionRelation
+      Iodine.Transform.VariableRename
+      Iodine.Transform.VCGen
+      Iodine.Types
+      Iodine.Utils
+  other-modules:
+      Paths_iodine
+  hs-source-dirs:
+      src
+  default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cmdargs
+    , containers
+    , deepseq
+    , directory
+    , dlist
+    , fgl
+    , filepath
+    , fused-effects
+    , fused-effects-lens
+    , hashable
+    , hspec
+    , hspec-core
+    , lens
+    , liquid-fixpoint
+    , megaparsec
+    , mtl
+    , pretty
+    , process
+    , text
+    , transformers
+    , unordered-containers
+    , vector
+  default-language: Haskell2010
+
+executable iodine
+  main-is: Main.hs
+  other-modules:
+      Paths_iodine
+  hs-source-dirs:
+      app
+  default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cmdargs
+    , containers
+    , deepseq
+    , directory
+    , dlist
+    , fgl
+    , filepath
+    , fused-effects
+    , fused-effects-lens
+    , hashable
+    , hspec
+    , hspec-core
+    , iodine
+    , lens
+    , liquid-fixpoint
+    , megaparsec
+    , mtl
+    , pretty
+    , process
+    , text
+    , transformers
+    , unordered-containers
+    , vector
+  default-language: Haskell2010
+
+executable iodine-debug
+  main-is: Main.hs
+  other-modules:
+      Paths_iodine
+  hs-source-dirs:
+      dbg
+  default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cmdargs
+    , containers
+    , deepseq
+    , directory
+    , dlist
+    , fgl
+    , filepath
+    , fused-effects
+    , fused-effects-lens
+    , hashable
+    , hspec
+    , hspec-core
+    , iodine
+    , lens
+    , liquid-fixpoint
+    , megaparsec
+    , mtl
+    , pretty
+    , process
+    , text
+    , transformers
+    , unordered-containers
+    , vector
+  default-language: Haskell2010
+
+executable prolog-pretty
+  main-is: Main.hs
+  other-modules:
+      Paths_iodine
+  hs-source-dirs:
+      prolog-pretty-app
+  default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cmdargs
+    , containers
+    , deepseq
+    , directory
+    , dlist
+    , fgl
+    , filepath
+    , fused-effects
+    , fused-effects-lens
+    , hashable
+    , hspec
+    , hspec-core
+    , iodine
+    , lens
+    , liquid-fixpoint
+    , megaparsec
+    , mtl
+    , pretty
+    , process
+    , text
+    , transformers
+    , unordered-containers
+    , vector
+  default-language: Haskell2010
+
+test-suite iodine-test
+  type: exitcode-stdio-1.0
+  main-is: Test.hs
+  other-modules:
+      TestData
+      Paths_iodine
+  hs-source-dirs:
+      test
+  default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , bytestring
+    , cmdargs
+    , containers
+    , deepseq
+    , directory
+    , dlist
+    , fgl
+    , filepath
+    , fused-effects
+    , fused-effects-lens
+    , hashable
+    , hspec
+    , hspec-core
+    , iodine
+    , lens
+    , liquid-fixpoint
+    , megaparsec
+    , mtl
+    , pretty
+    , process
+    , text
+    , transformers
+    , unordered-containers
+    , vector
+  default-language: Haskell2010

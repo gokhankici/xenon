@@ -192,7 +192,7 @@ type ModuleMap = HM.HashMap Id (Module Int)
 type G sig m = ( Has (Error IodineException) sig m
                , Has Trace sig m
                , Has (Writer Output) sig m
-               , Effect sig
+               -- , Effect sig
                )
 type D sig m = ( G sig m
                , Has (Reader AnnotationFile) sig m
@@ -233,6 +233,7 @@ runFixpoint IodineArgs{..} (finfo, (af, mm, sm)) = do
                           , FC.srcFile   = fileName
                           , FC.metadata  = True
                           , FC.minimize  = delta
+                          , FC.solverTrace = True
                           }
 
 

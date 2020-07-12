@@ -160,7 +160,7 @@ type QDMs = HM.HashMap Id (L QualifierDependencies)
 summaryQualifierVariablesAB :: ( Has (Reader SummaryMap) sig m
                                , Has (Reader (HM.HashMap Id M)) sig m
                                , Has (Reader AnnotationFile) sig m
-                               , Effect sig
+                               -- , Effect sig
                                )
                             => Id -- ^ module name
                             -> AlwaysBlock Int

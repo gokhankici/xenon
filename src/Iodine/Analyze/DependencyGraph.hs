@@ -65,7 +65,7 @@ statement.
 -}
 dependencyGraph :: ( Has (Reader ModuleMap) sig m
                    , Has (Reader AnnotationFile) sig m
-                   , Effect sig
+                   -- , Effect sig
                    )
                 =>  Module Int -> m DependencyGraphSt
 dependencyGraph = fmap fst . runState initialState . dependencyGraphHelper

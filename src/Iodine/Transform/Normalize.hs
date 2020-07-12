@@ -58,7 +58,7 @@ data StmtSt =
 makeLenses ''St
 makeLenses ''StmtSt
 
-type FD sig m  = (Has (State St) sig m, Effect sig)
+type FD sig m  = (Has (State St) sig m) --, Effect sig)
 type FDM sig m = (FD sig m, Has (Reader ModuleName) sig m)
 type FDS sig m = (FDM sig m, Has (State StmtSt) sig m)
 type FDR sig m = (FD sig m, Has (Reader StmtSt) sig m)
@@ -78,7 +78,7 @@ assigned only in one of the branches of an if statement, the missing assignment
 is added to the corresponding branch. This way the substitutions that implement
 the transition relation in the kvars become simple.
 -}
-normalize :: (Has (Error IodineException) sig m, Effect sig)
+normalize :: (Has (Error IodineException) sig m) --, Effect sig)
           => L (Module Int) -> m NormalizeOutput
 normalize modules = traverse normalizeModule modules & runNormalize
 

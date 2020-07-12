@@ -6,6 +6,7 @@ import subprocess
 
 PACKAGE_NAME = "iodine"
 O0 = True
+USE_STACK = False
 
 def add_quotes(s):
     i = s.find(" ")
@@ -27,9 +28,21 @@ def run_tests(test_args, stack_args=[]):
     except KeyboardInterrupt:
         return 1
 
+def run_tests_cabal(test_args):
+    cmd = ["cabal", "v2-run", "iodine-test"]
+    if test_args:
+        cmd += ["--"] + test_args
+    try:
+        return subprocess.run(cmd).returncode
+    except KeyboardInterrupt:
+        return 1
+
 if __name__ == "__main__":
-    if os.getenv("PROFILE"):
-        rc = run_tests(sys.argv[1:], stack_args=["--profile", "--work-dir", ".stack-work-profile"])
+    if USE_STACK:
+        if os.getenv("PROFILE"):
+            rc = run_tests(sys.argv[1:], stack_args=["--profile", "--work-dir", ".stack-work-profile"])
+        else:
+            rc = run_tests(sys.argv[1:])
     else:
-        rc = run_tests(sys.argv[1:])
+        rc = run_tests_cabal(sys.argv[1:])
     sys.exit(rc)

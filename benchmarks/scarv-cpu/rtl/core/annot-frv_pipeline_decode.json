@@ -1,0 +1,22 @@
+{
+  "top_module": "frv_pipeline_decode",
+  "modules": {
+    "frv_pipeline_decode": {
+      "annotations": {
+        "source": [
+          "x"
+        ],
+        "sink": [
+          "y"
+        ],
+        "always_eq": [
+          "x"
+        ],
+        "initial_eq": [
+          "Stall"
+        ]
+      },
+      "clock": "g_clk"
+    }
+  }
+}

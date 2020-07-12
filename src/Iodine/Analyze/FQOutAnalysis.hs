@@ -190,8 +190,9 @@ findCTVars fpResult af moduleMap = (ctVars, aeVars)
                      . FT.splitPAnd
     createVarsMap f = foldl'
                       (\acc n ->
-                         let vs = f n (hmGet 0 (toInvName n) invMap)
-                         in IM.insert n vs acc)
+                         case HM.lookup (toInvName n) invMap of
+                           Just x -> IM.insert n (f n x) acc
+                           Nothing -> acc)
                       mempty
                       abIds
     ctVars = createVarsMap $ getVars (bindFilter "TL_") getTagEqs

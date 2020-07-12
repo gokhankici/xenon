@@ -69,7 +69,7 @@ type G sig m = ( Has (Reader AnnotationFile) sig m
                , Has (Reader ModuleMap) sig m
                , Has (Reader SummaryMap) sig m
                , Has (Writer Output) sig m
-               , Effect sig
+               -- , Effect sig
                )
 
 type G' sig m = (G sig m, Has (Reader InitialEqualVariables) sig m)

@@ -1,5 +1,5 @@
+/dist-newstyle/
 .stack-work-profile/
-/iodine.cabal
 .*.pl
 .*.preproc.v
 .*.smt2

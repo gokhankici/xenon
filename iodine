@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 O0 = True
+USE_STACK = False
 
 def get_args():
     argparser = argparse.ArgumentParser(prog="iodine", add_help=False)
@@ -24,10 +25,18 @@ argparser, args, unknown_args = get_args()
 
 THIS_DIR = Path(__file__).resolve().parent
 IVERILOG_DIR = THIS_DIR / "iverilog-parser"
-STACK_BUILD_CMD = ["stack", "build"] + (["--fast"] if O0 else [])
 EXE_NAME = "iodine-debug" if args.debug else "iodine"
-STACK_RUN_CMD = ["stack", "exec", EXE_NAME]
-STACK_PROFILE_ARGS = ["--profile", "--work-dir", ".stack-work-profile"] if args.profile else []
+
+if USE_STACK:
+    STACK_BUILD_CMD = ["stack", "build"] + (["--fast"] if O0 else [])
+    STACK_RUN_CMD = ["stack", "exec", EXE_NAME]
+    STACK_PROFILE_ARGS = ["--profile", "--work-dir", ".stack-work-profile"] if args.profile else []
+    STACK_PROFILE_RUN_ARGS = ["+RTS", "-xc", "-RTS"] if args.profile else []
+else:
+    STACK_BUILD_CMD = ["cabal", "v2-build"] + (["-O0"] if O0 else [])
+    STACK_RUN_CMD = ["cabal", "v2-exec", EXE_NAME]
+    STACK_PROFILE_ARGS = []
+    STACK_PROFILE_RUN_ARGS = []
 
 if args.help:
     subprocess.run(STACK_RUN_CMD + ["--", "--help"], cwd=THIS_DIR)
@@ -40,6 +49,7 @@ else:
         cmd = STACK_RUN_CMD + STACK_PROFILE_ARGS
         cmd += ["--", "--iverilog-dir", IVERILOG_DIR]
         cmd += unknown_args
+        cmd += STACK_PROFILE_RUN_ARGS if USE_STACK else []
     # print(" ".join(str(a) for a in cmd))
     # sys.exit(0)
     r = subprocess.run(cmd, cwd=THIS_DIR)
