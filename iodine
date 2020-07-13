@@ -34,7 +34,7 @@ if USE_STACK:
     STACK_PROFILE_RUN_ARGS = ["+RTS", "-xc", "-RTS"] if args.profile else []
 else:
     STACK_BUILD_CMD = ["cabal", "v2-build"] + (["-O0"] if O0 else [])
-    STACK_RUN_CMD = ["cabal", "v2-exec", EXE_NAME]
+    STACK_RUN_CMD = ["cabal", "v2-run", EXE_NAME]
     STACK_PROFILE_ARGS = []
     STACK_PROFILE_RUN_ARGS = []
 

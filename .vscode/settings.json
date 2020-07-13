@@ -1,9 +1,19 @@
 {
     "files.watcherExclude": {
-        "**/.stack-work/**": true
+        "**/.stack-work/**": true,
+        "**/.stack-work-profile/**": true,
+        "**/dist-newstyle/**": true
     },
-    "ghcSimple.replCommand": "stack --no-terminal --color never repl --no-load iodine:lib iodine:test:iodine-test",
-    "ghcSimple.replScope": "workspace",
-    "ghcSimple.feature.rangeType": false,
-    // "ghcSimple.feature.inlineRepl": false
+
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/.stack-work*": true,
+        "**/dist-newstyle": true,
+        "*.bak": true,
+        "*~": true
+    }
 }

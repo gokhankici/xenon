@@ -2,7 +2,14 @@
 
 ## Installation
 
-### Dependencies
+### Dependencies (old)
+
+- [ghcup](https://www.haskell.org/ghcup/)
+- [z3 v4.8.1](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.1)
+
+Install `ghcup` (GHC version 8.8.3) and run `cabal v2-build`.
+
+### Dependencies (old)
 
 - [stack](https://docs.haskellstack.org/en/stable/README/#how-to-install)
 - [z3 v4.8.1](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.1)

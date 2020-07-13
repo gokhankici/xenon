@@ -1,6 +1,6 @@
 :set -fwarn-unused-binds -fwarn-unused-imports -fwarn-orphans
 :set -XTemplateHaskell
-:set -isrc:test:app-fp
+:set -isrc:test:dbg
 
 :def docs_ const $ return $ unlines [":!stack haddock"]
 :def docs  const $ return $ unlines [":!stack haddock --open"]

@@ -1,1 +1,1 @@
---command=stack ghci iodine:lib iodine:iodine-debug
+--command=cabal v2-repl iodine
