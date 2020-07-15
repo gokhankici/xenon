@@ -10,7 +10,7 @@ for arg in $@; do
 		case "$arg" in
 			--fixed) FIXED="yes" ;;
 			--info)  PRINT_FQ_INFO="yes" ;;
-			--)      SEEN_DOUBLE_DASH=1; ARGS+=("$arg") ;;
+			--)      SEEN_DOUBLE_DASH=1;;
 			*)       ARGS+=("$arg") ;;
 		esac
 	else
@@ -19,7 +19,7 @@ for arg in $@; do
 done
 
 # TEST="benchmarks/472-mips-pipelined/472-mips-fragment.v"
-# TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
+TEST="benchmarks/472-mips-pipelined/mips_pipeline.v"
 # TEST="benchmarks/472-mips-pipelined/neg-mux3_test_02.v"
 # TEST="benchmarks/472-mips-pipelined/rom32-test-1.v"
 # TEST="benchmarks/crypto_cores/sha_core/trunk/rtl/sha256_stub_3.v"
@@ -38,7 +38,7 @@ done
 # TEST="test/verilog/pos/nb-test-01.v"
 # TEST="test/verilog/pos/submodule-02.v"
 # TEST="test/verilog/pos/submodule-04.v"
-TEST="test/verilog/pos/tr-submodule-01.v"
+# TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-12.v"
 
 TEST_DIR="${TEST:h}"

@@ -17,12 +17,12 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Query
 import           Iodine.Transform.InitVars
-import           Iodine.Transform.Inline
+-- import           Iodine.Transform.Inline
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
-import           Iodine.Transform.VariableRename
+-- import           Iodine.Transform.VariableRename
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -56,14 +56,16 @@ normalizeIR
 normalizeIR af irReader ia = do
   let topModuleName = af ^. afTopModule
   initialIR <- topsortModules topModuleName <$> irReader
-  let (af', ir) = variableRename af $ assignThreadIds initialIR
-      irMap     = mkModuleMap ir
+  -- let (af', ir) = variableRename af $ assignThreadIds initialIR
+  let (af', ir) = (af, assignThreadIds initialIR)
+      irMap = mkModuleMap ir
   normalizedOutput <- runReader af' $ do
     unless (IA.benchmarkMode ia) $
       sanityCheck
       & runReader ir
       & runReader irMap
-    runReader irMap (inlineInstances ir >>= merge)
+    -- runReader irMap (inlineInstances ir >>= merge)
+    runReader irMap (merge ir)
       >>= normalize
   return (af', normalizedOutput)
 

@@ -3,17 +3,19 @@
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# OPTIONS_GHC -Wno-unused-matches #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Main where
 
 import           Iodine.Analyze.FQOutAnalysis
 import           Iodine.Analyze.ModuleSummary
+import           Iodine.Analyze.DependencyGraph
 import           Iodine.IodineArgs
 import qualified Iodine.IodineArgs as IA
 import           Iodine.Language.Annotation
@@ -42,6 +44,7 @@ import           Control.Monad.IO.Class
 import           Data.Bifunctor
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
+import qualified Data.Graph.Inductive.Dot as GD
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.Hashable
@@ -52,6 +55,7 @@ import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import qualified Language.Fixpoint.Misc as FM
 import qualified Language.Fixpoint.Solver as F
+import qualified Language.Fixpoint.Solver.Monad as FSM
 import qualified Language.Fixpoint.Types as FT
 import qualified Language.Fixpoint.Types.Config as FC
 import           System.Directory
@@ -62,6 +66,9 @@ import           System.IO.Error
 import           Text.PrettyPrint.HughesPJ (render)
 import qualified Text.PrettyPrint.HughesPJ as PP
 import           Text.Printf
+import           GHC.Generics hiding (to, D, moduleName)
+import qualified Debug.Trace as DT
+import           System.Process
 
 -- #############################################################################
 -- Debug Configuration
@@ -263,10 +270,142 @@ main = do
   writeFile "debug-output" $ show out
   analyze
 
-
 readDebugOutput :: IO DebugOutput
 readDebugOutput = read <$> readFile "debug-output"
 
+readFixpointTrace :: IO FSM.SolverTrace
+readFixpointTrace = FSM.readSolverTrace "fixpoint-trace.json"
+
+calculateSolverTraceDiff :: FSM.SolverTrace -> FSM.SolverTrace
+calculateSolverTraceDiff st = IM.fromList $ filter (not . HM.null . snd) $ diffPairs <$> pairs
+  where
+    mkPairs = zip <$> id <*> tail
+    pairs = mkPairs $ IM.toList st
+    diffPairs ((_, te1), (n2, te2)) = (n2, HM.filter (not . HS.null) $ teDiff te1 te2)
+    qFilter = \case
+      FSM.TracePublic _ -> True
+      FSM.TraceUntainted _ -> True
+      FSM.TraceConstantTime _ -> True
+      FSM.TraceSameTaint _ _ -> False
+      FSM.TraceSummary _ _ -> False
+    teDiff te1 = HM.mapWithKey $ \kv qs2 ->
+      HS.filter qFilter $
+      case HM.lookup kv te1 of
+        Nothing  -> qs2
+        Just qs1 -> HS.difference qs1 qs2
+
+data QualType = Q_CT | Q_PUB deriving (Show, Eq, Generic)
+
+instance Hashable QualType
+
+-- type SolverTraceElement = M.HashMap T.Text Qs
+-- type SolverTrace = IM.IntMap SolverTraceElement
+
+-- variable name -> kvar no -> QualType -> first non ct
+type BetterTraceMap = HM.HashMap T.Text (IM.IntMap (HM.HashMap QualType Int))
+
+firstNonCT :: FSM.SolverTrace -> BetterTraceMap
+firstNonCT = IM.foldlWithKey' handleTraceElem mempty
+  where
+    handleTraceElem acc iterNo = HM.foldl' (handleKVar iterNo) acc
+    handleKVar iterNo          = HS.foldl' (handleQ iterNo)
+    handleQ iterNo acc         = \case
+      FSM.TraceConstantTime tv -> updateAcc tv Q_CT iterNo acc
+      FSM.TracePublic tv       -> updateAcc tv Q_PUB iterNo acc
+      _                        -> acc
+    updateAcc (FSM.TraceVar _ varName kvarNo) qTyp iterNo acc =
+      let qm = HM.fromList [(qTyp, iterNo)]
+
+          f1 Nothing  = IM.fromList [(kvarNo, qm)]
+          f1 (Just m) = IM.alter (Just . f2) kvarNo m
+
+          f2 Nothing    = qm
+          f2 (Just qm2) = HM.alter (Just . f3) qTyp qm2
+
+          f3 Nothing  = iterNo
+          f3 (Just n) = min n iterNo
+
+      in HM.alter (Just . f1) (T.pack varName) acc
+
+
+type TstG = G.Gr Int VarDepEdgeType
+tst :: IO ()
+tst = do
+  ((af, moduleMap, summaryMap), fqoutAnalysisOutput) <- readDebugOutput
+  fpTrace <- readFixpointTrace
+  let btm = firstNonCT $ calculateSolverTraceDiff fpTrace
+  let  topmoduleName = af ^. afTopModule
+
+       snks = HS.toList $
+             view (moduleAnnotations . sinks) $
+             toModuleAnnotations topmoduleName af
+
+       topModule = fromJust $ moduleMap ^. at topmoduleName
+       moduleSummary@ModuleSummary{..} = fromJust $ summaryMap ^. at topmoduleName
+
+       toNode = (variableDependencyNodeMap HM.!)
+       toName = (invVariableDependencyNodeMap IM.!)
+
+       trc :: Show a => String -> a -> a
+       trc msg a = DT.trace (msg ++ show a) a
+
+       getWriteTid :: Id -> Int
+       getWriteTid varName = fromJust $ threadWriteMap ^. at varName
+
+       getCTNo :: Id -> Maybe Int
+       getCTNo varName = do
+         kvs <- trc (printf "getCTNo qs (%s): " varName) $ btm ^. at varName
+         case IM.toList kvs of
+           [(tid, m)] -> m ^. at Q_CT
+           qsList ->
+             case [(tid, iterNo) | (tid, qs) <- qsList, (qt, iterNo) <- HM.toList qs, qt == Q_CT] of
+               []              -> Nothing
+               [(tid, iterNo)] -> Just iterNo
+               iterNos -> error $ "Multiple iterNos: " ++ show iterNos
+
+       insNode n a g = if G.gelem n g then g else G.insNode (n, a) g
+
+       insEdge' e@(n1, n2, edgeType) g =
+         if n1 `elem` G.reachable n2 g
+           then g
+           else insEdge e g
+
+       createSinkTree :: TstG -> Id -> Ids -> (TstG, Ids)
+       createSinkTree g parentName ws | HS.member parentName ws = (g, ws)
+                                      | otherwise =
+         case trc (printf "parentCtNo (%s): " parentName) $ getCTNo parentName of
+           Nothing -> (g, ws)
+           Just parentIterNo ->
+             let parentNode = toNode parentName
+                 childrenNodes =
+                   trc "childrenNodes: " $
+                   getVariableDependencies parentName topModule summaryMap
+                 go acc@(g2, ws2) (childName, edgeType) =
+                   let childNode = toNode childName
+                   in case trc (printf "childCtNo (%s) : " childName) $ getCTNo childName of
+                        Nothing -> acc
+                        Just childIterNo ->
+                          -- FIXME: why iteration counts are weird?
+                          let e = (parentNode, childNode, edgeType)
+                              g3 = insEdge' e $
+                                   insNode parentNode parentIterNo $
+                                   insNode childNode childIterNo g2
+                          in createSinkTree g3 childName ws2
+             in foldl' go (g, HS.insert parentName ws) childrenNodes
+  print snks
+  let snk = head snks
+  print $ btm ^. at snk
+  let dotStr =
+        GD.showDot $
+        GD.fglToDot $
+        G.gmap (\(ps,n,i,ss) ->
+          let lbl = T.unpack (invVariableDependencyNodeMap IM.! n) ++ " " ++ show i
+          in (ps,n,lbl,ss)) $
+        fst $
+        createSinkTree G.empty snk mempty
+  writeFile "graph.dot" dotStr
+  system "dot -Tpdf graph.dot -o graph.pdf"
+  return ()
 
 debugArgs :: IO IodineArgs
 debugArgs = do
@@ -349,7 +488,7 @@ analyze = do
       putStrLn ""
 
   let ModuleSummary{..} = sm HM.! topModuleName
-      addWriteId v = (v,) $ maybe (-1) IS.findMin $ HM.lookup (T.pack v) threadWriteMap
+      addWriteId v = (v,) $ fromMaybe (-1) $ HM.lookup (T.pack v) threadWriteMap
 
   for_ ctVarsDisagree $ \(n1, n2, vs) -> do
     let varWithUpdateThreads = addWriteId <$> toList vs

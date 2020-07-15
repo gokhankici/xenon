@@ -253,10 +253,7 @@ instance ShowIndex () where
   showIndex () = ""
 
 instance ShowIndex Int where
-  showIndex n  =
-    if n > 0
-    then " #" ++ show n
-    else ""
+  showIndex n = " #" ++ show n
 
 docIndex :: ShowIndex a => a -> PP.Doc
 docIndex = PP.text . showIndex

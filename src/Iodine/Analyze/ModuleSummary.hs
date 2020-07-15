@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Iodine.Analyze.ModuleSummary
   ( createModuleSummaries
@@ -14,6 +15,7 @@ module Iodine.Analyze.ModuleSummary
   , explicitVars
   , implicitVars
   , addPortDependencies
+  , getVariableDependencies
   ) where
 
 import           Iodine.Analyze.DependencyGraph hiding (getNode)
@@ -27,6 +29,7 @@ import           Control.Carrier.State.Strict
 import           Control.Effect.Lens (use)
 import           Control.Lens hiding (use)
 import           Control.Monad
+import           Data.Bifunctor
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
 import qualified Data.HashMap.Strict as HM
@@ -63,7 +66,8 @@ data ModuleSummary =
                   threadDependencies :: TDGraph,
 
                   -- | maps variables to threads that update it
-                  threadWriteMap :: HM.HashMap Id IS.IntSet,
+                  -- threadWriteMap :: HM.HashMap Id IS.IntSet,
+                  threadWriteMap :: HM.HashMap Id Int,
 
                   -- | variable dependency map
                   variableDependencies :: VarDepGraph,
@@ -173,7 +177,11 @@ createModuleSummary m@Module{..} = do
     { portDependencies             = portDeps
     , isCombinatorial              = isComb
     , threadDependencies           = dgState ^. threadGraph
-    , threadWriteMap               = dgState ^. varUpdates
+    , threadWriteMap               =
+        let toSingle ts = case IS.toList ts of
+                            [t] -> t
+                            _ -> error $ "multiple update threads: " ++ show ts
+        in toSingle <$> dgState ^. varUpdates
     , variableDependencies         = varDepGraph
     , variableDependencyNodeMap    = varDepMap
     , invVariableDependencyNodeMap = nodeMap
@@ -389,3 +397,35 @@ moduleAnnotsSCC ns =
       else
         return rest
     moduleAnnotsSCC ns'
+
+getVariableDependencies :: Id                     -- ^ variable name
+                        -> Module Int             -- ^ module that contains the variable
+                        -> SummaryMap             -- ^ summary of all modules
+                        -> [(Id, VarDepEdgeType)] -- ^ variable name and dependency type pairs
+getVariableDependencies varName Module{..} summaryMap =
+  if writtenByAB
+  then first toName <$> G.lpre (variableDependencies moduleSummary) (toNode varName)
+  else toVarDeps (portDeps ^. explicitVars) Explicit ++
+       toVarDeps (portDeps ^. implicitVars) Implicit
+  where
+    toNode = (variableDependencyNodeMap moduleSummary HM.!)
+    toName = (invVariableDependencyNodeMap moduleSummary IM.!)
+    moduleSummary = summaryMap HM.! moduleName
+    writeTid = threadWriteMap moduleSummary HM.! varName
+    sameWriteTid :: GetData m => m Int -> Bool
+    sameWriteTid = (== writeTid) . getData
+    writtenByAB = any sameWriteTid alwaysBlocks
+
+    mi = fromJust $ find sameWriteTid moduleInstances
+    miSummary = summaryMap HM.! moduleInstanceType mi
+    portName =
+      fst $ fromJust $
+      find (HS.member varName . getVariables . snd) $
+      HM.toList (moduleInstancePorts mi)
+    portDeps = portDependencies miSummary HM.! portName
+
+    toVarDeps :: Ids -> VarDepEdgeType -> [(Id, VarDepEdgeType)]
+    toVarDeps ps typ =
+      let vs = mconcat $
+               getVariables . (moduleInstancePorts mi HM.!) <$> HS.toList ps
+      in (, typ) <$> HS.toList vs

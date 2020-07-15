@@ -111,7 +111,6 @@ executable iodine
     , hashable
     , hspec
     , hspec-core
-    , iodine
     , lens
     , liquid-fixpoint
     , megaparsec
@@ -122,6 +121,7 @@ executable iodine
     , transformers
     , unordered-containers
     , vector
+    , iodine
   default-language: Haskell2010
 
 executable iodine-debug
@@ -131,7 +131,7 @@ executable iodine-debug
   hs-source-dirs:
       dbg
   default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
-  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -threaded -rtsopts -with-rtsopts=-N -Wno-missing-home-modules
   build-depends:
       aeson
     , base >=4.7 && <5
@@ -142,13 +142,13 @@ executable iodine-debug
     , directory
     , dlist
     , fgl
+    , fgl-visualize
     , filepath
     , fused-effects
     , fused-effects-lens
     , hashable
     , hspec
     , hspec-core
-    , iodine
     , lens
     , liquid-fixpoint
     , megaparsec
@@ -159,6 +159,7 @@ executable iodine-debug
     , transformers
     , unordered-containers
     , vector
+    , iodine
   default-language: Haskell2010
 
 executable prolog-pretty
@@ -185,7 +186,6 @@ executable prolog-pretty
     , hashable
     , hspec
     , hspec-core
-    , iodine
     , lens
     , liquid-fixpoint
     , megaparsec
@@ -196,6 +196,7 @@ executable prolog-pretty
     , transformers
     , unordered-containers
     , vector
+    , iodine
   default-language: Haskell2010
 
 test-suite iodine-test
@@ -224,7 +225,6 @@ test-suite iodine-test
     , hashable
     , hspec
     , hspec-core
-    , iodine
     , lens
     , liquid-fixpoint
     , megaparsec
@@ -235,4 +235,5 @@ test-suite iodine-test
     , transformers
     , unordered-containers
     , vector
+    , iodine
   default-language: Haskell2010

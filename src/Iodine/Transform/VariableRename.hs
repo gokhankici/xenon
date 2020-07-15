@@ -81,7 +81,7 @@ handleQualifier (QIff v vs)     = QIff <$> fix v <*> traverse fix vs
 handleQualifier (QPairs vs)     = QPairs <$> traverse fix vs
 
 handleModule :: FD sig m => Module a -> m (Module a)
-handleModule Module{..} = do
+handleModule Module{..} = -- do
   -- inputs <- asks (hmGet 2 moduleName . getModuleInputs)
   -- runReader inputs $
   Module moduleName

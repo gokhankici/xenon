@@ -210,8 +210,7 @@ initialize ab = do
   -- these variables should stay as free variables
   srcs <- moduleInputs currentModule <$> getClocks currentModuleName
   let readOnlyVars = getReadOnlyVariables stmt <> srcs
-      readBeforeWrittenVars =
-        readBeforeWrittenTo ab mempty
+      readBeforeWrittenVars = readBeforeWrittenTo ab mempty
   let (zeroTagVars, valEqVars, extraSubs) =
         if   isTop
         then (tagEqVars0, valEqVars0, mempty)
@@ -1003,8 +1002,7 @@ autoInitialEqualVarsRunOriginalNode n = do
                  [] ->
                    case HM.lookup nName threadWriteMap of
                      Nothing -> return $ Just mempty -- uninitialized variable
-                     Just ts -> do
-                       let miId = IS.findMin ts
+                     Just miId ->
                        case find ((== miId) . getData) (moduleInstances m) of
                          Nothing ->
                            return Nothing -- variable is initialized with constant value
