@@ -24,7 +24,8 @@ cplex.json
 
 fixpoint-trace.json
 
-graph.dot
-graph.png
+graph*.dot
+graph*.png
+graph*.pdf
 iodine.prof.html*
 /output

@@ -1,0 +1,29 @@
+{
+  "top_module": "test",
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "rw",
+          "rn1",
+          "rn2",
+          "wn",
+          "wd"
+        ],
+        "sink": [
+          "out1",
+          "out2"
+        ],
+        "always_eq": [
+          "rw",
+          "rn2",
+          "wn"
+        ]
+      },
+      "clock": "clk"
+    },
+    "reg_file": {
+      "clock": "clk"
+    }
+  }
+}

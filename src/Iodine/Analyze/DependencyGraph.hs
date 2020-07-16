@@ -27,6 +27,7 @@ import           Iodine.Utils
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Lens
+import           Data.Bifunctor
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
 import           Data.Graph.Inductive.PatriciaTree (Gr)
@@ -136,6 +137,21 @@ dependencyGraphActAB ab = do
 
 type FD sig m = (Has (State DependencyGraphSt) sig m, Has (Reader Int) sig m)
 
+-- returns the (Implicit, Explicit) variables that the given expr depends on
+getVariables' :: Expr a -> (HS.HashSet Id, HS.HashSet Id)
+getVariables' = \case
+  Variable {..} -> (mempty, HS.singleton varName)
+  Constant {..} -> (mempty, mempty)
+  UF {..}       -> (mempty, mfold getVariables ufArgs)
+  IfExpr {..}   ->
+    let cnct (a,b) (c,d) = (a <> c, b <> d)
+    in cnct (getVariables ifExprCondition, mempty) $
+       cnct (getVariables' ifExprThen) (getVariables' ifExprElse)
+  Str {..}      -> (mempty, mempty)
+  Select {..}   ->
+    second (mappend $ mfold getVariables selectIndices) $
+    getVariables' selectVar
+
 handleStmt :: FD sig m => Stmt a -> m ()
 handleStmt Skip{..}  = return ()
 handleStmt Block{..} = traverse_ handleStmt blockStmts
@@ -143,12 +159,13 @@ handleStmt Assignment{..} =
   case assignmentLhs of
     Variable{..} -> do
       lhsNode <- getNode varName
-      let rhsVars = getVariables assignmentRhs
+      let (pathVars2, rhsVars) = getVariables' assignmentRhs
       rhsNodes <- getNodes rhsVars
       for_ (IS.toList rhsNodes) $ \rhsNode ->
         addEdge (rhsNode, lhsNode, Explicit)
       pathNodes <- gets (^. pathVars)
-      for_ (IS.toList pathNodes) $ \pathNode ->
+      pathNodes2 <- IS.fromList <$> traverse getNode (HS.toList pathVars2)
+      for_ (IS.toList $ pathNodes <> pathNodes2) $ \pathNode ->
         addEdge (pathNode, lhsNode, Implicit)
       -- update the thread map
       tid <- ask

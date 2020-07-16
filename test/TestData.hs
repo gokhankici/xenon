@@ -118,17 +118,20 @@ mipsModules = mkCollection "modules" $ go <$> names
             , "alu_ctl"
             , "rom32"
             , "reg_file"
+            , "mux2_test_01"
             , "mux3_test_01"
             , "mux3_test_02"
             , "mem32_test_01"
             , "rom32-test-1"
+            , "reg_file_test_01"
             ]
 
 mipsNegatives :: TestTree
-mipsNegatives = mkCollection "neg" $ (go <$> names) ++ mem32 ++ rom32
+mipsNegatives = mkCollection "neg" $ (go <$> names) ++ mem32 ++ rom32 ++ reg_file
   where
     go name = TF name $ mipsDir </> name <.> "v"
-    names = [ "neg-mux3_test_02"
+    names = [ "neg-mux2_test_01"
+            , "neg-mux3_test_02"
             ]
     mem32 = [ UnitTest { testName    = name
                        , verilogFile = mipsDir </> "mem32_test_01.v"
@@ -144,6 +147,15 @@ mipsNegatives = mkCollection "neg" $ (go <$> names) ++ mem32 ++ rom32
               in (TF name $ mipsDir </> "rom32-test-1.v")
                  { annotFile = Just $ mipsDir </> "annot-" <> name <.> "json" }
             ]
+    reg_file = [ UnitTest { testName    = name
+                          , verilogFile = mipsDir </> "reg_file_test_01.v"
+                          , annotFile   = Just $ mipsDir </> "annot-" <> name <.> "json"
+                          , testType    = Fail
+                          }
+               | name <- [ "neg-reg_file_test_01"
+                         , "neg-reg_file_test_02"
+                         ]
+               ]
 
 mipsStubs :: TestTree
 mipsStubs = mkCollection "stub" $ go <$> names

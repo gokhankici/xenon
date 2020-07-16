@@ -398,10 +398,10 @@ moduleAnnotsSCC ns =
         return rest
     moduleAnnotsSCC ns'
 
-getVariableDependencies :: Id                     -- ^ variable name
-                        -> Module Int             -- ^ module that contains the variable
-                        -> SummaryMap             -- ^ summary of all modules
-                        -> [(Id, VarDepEdgeType)] -- ^ variable name and dependency type pairs
+getVariableDependencies :: Id         -- ^ variable name
+                        -> Module Int -- ^ module that contains the variable
+                        -> SummaryMap -- ^ summary of all modules
+                        -> [(Id, VarDepEdgeType)] -- ^ (written by an always block ?, variable name and dependency type pairs)
 getVariableDependencies varName Module{..} summaryMap =
   if writtenByAB
   then first toName <$> G.lpre (variableDependencies moduleSummary) (toNode varName)
