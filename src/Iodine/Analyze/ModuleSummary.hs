@@ -403,17 +403,20 @@ getVariableDependencies :: Id         -- ^ variable name
                         -> SummaryMap -- ^ summary of all modules
                         -> [(Id, VarDepEdgeType)] -- ^ (written by an always block ?, variable name and dependency type pairs)
 getVariableDependencies varName Module{..} summaryMap =
-  if writtenByAB
-  then first toName <$> G.lpre (variableDependencies moduleSummary) (toNode varName)
-  else toVarDeps (portDeps ^. explicitVars) Explicit ++
-       toVarDeps (portDeps ^. implicitVars) Implicit
+  case mwriteTid of
+    Nothing -> []
+    Just _writeTid ->
+      if writtenByAB
+      then first toName <$> G.lpre (variableDependencies moduleSummary) (toNode varName)
+      else toVarDeps (portDeps ^. explicitVars) Explicit ++
+           toVarDeps (portDeps ^. implicitVars) Implicit
   where
     toNode = (variableDependencyNodeMap moduleSummary HM.!)
     toName = (invVariableDependencyNodeMap moduleSummary IM.!)
     moduleSummary = summaryMap HM.! moduleName
-    writeTid = threadWriteMap moduleSummary HM.! varName
+    mwriteTid = HM.lookup varName $ threadWriteMap moduleSummary
     sameWriteTid :: GetData m => m Int -> Bool
-    sameWriteTid = (== writeTid) . getData
+    sameWriteTid = (== fromJust mwriteTid) . getData
     writtenByAB = any sameWriteTid alwaysBlocks
 
     mi = fromJust $ find sameWriteTid moduleInstances
