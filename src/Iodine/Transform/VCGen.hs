@@ -997,7 +997,7 @@ autoInitialEqualVarsRunOriginalNode n = do
       currentModuleName <- asks (moduleName . m)
       as <- getAnnotations currentModuleName
       FDEQReadSt{..} <- ask
-      let ies      = (as ^. initialEquals) <> (as ^. initialEquals)
+      let ies      = (as ^. initialEquals) <> (as ^. alwaysEquals)
           isIE     = nName `elem` ies
           isWire   = not . (`elem` mRegs)
           isIn     = nName `elem` mInputs

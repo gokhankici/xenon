@@ -31,10 +31,11 @@ import           Iodine.Transform.Fixpoint.Query
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
 import           Iodine.Transform.VCGen
+import           Iodine.Transform.Horn
 import           Iodine.Transform.VariableRename
 import           Iodine.Types
 import           Iodine.Utils
-import           Iodine.Transform.Fixpoint.Common (HornClauseId)
+import           Iodine.Transform.Fixpoint.Common (HornClauseId, hcType)
 
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
@@ -432,7 +433,7 @@ btmLookup btm qt varName = do
         of
           []   -> Nothing
           i:is ->
-            DT.trace (printf "Multiple iterNos for %s: %s" varName (show $ i:is)) $
+            -- DT.trace (printf "Multiple iterNos for %s: %s" varName (show $ i:is)) $
             Just $ foldl' min i is
 
 type TstG = G.Gr Int VarDepEdgeType
@@ -488,25 +489,23 @@ tst = do
 
     getDeps v = getVariableDependencies v topModule summaryMap
 
-    createDepTree :: (Id -> Maybe Int) -> TstG -> Id -> Id -> Ids -> (TstG, Ids)
-    createDepTree getIterNo g currentVarName _parentName ws
-      | HS.member currentVarName ws
+    createDepTree :: (Id -> Maybe Int) -> TstG -> Id -> Ids -> (TstG, Ids)
+    createDepTree getIterNo g parentName ws
+      | HS.member parentName ws
       = (g, ws)
       | otherwise
-      = let parentName = currentVarName in case {- trc (printf "parentCtNo (%s): " currentVarName) $ -} getIterNo parentName of
+      = case {- trc (printf "parentCtNo (%s): " currentVarName) $ -} getIterNo parentName of
         Nothing -> (g, ws)
         Just parentIterNo ->
           let
-            childrenNodes = {- trc (printf "childrenNodes of %s: " currentVarName) $ -} getDeps currentVarName
+            childrenNodes = {- trc (printf "childrenNodes of %s: " currentVarName) $ -} getDeps parentName
             nonCTChildren =
               [ (childName, fromJust childIterNo, depType)
               | (childName, depType) <- childrenNodes
               , let
-                childIterNo =
-                  trc (printf "childCtNo (%s) : " childName) $ getIterNo childName
+                childIterNo = {- trc (printf "childCtNo (%s) : " childName) $ -} getIterNo childName
               , isJust childIterNo
               ]
-            -- FIXME
             go acc@(g2, ws2) (childName, childIterNo, edgeType) =
               if childIterNo <= parentIterNo
               then
@@ -518,19 +517,19 @@ tst = do
                        insNode parentNode parentIterNo $
                        insNode childNode childIterNo g2
                 in
-                  createDepTree getIterNo g3 childName childName ws2
-              else acc -- createDepTree getIterNo g2 childName parentName ws2
-            acc' = (g, HS.insert currentVarName ws)
+                  DT.trace (printf "Adding edge (%s, %s) since %d >= %d" parentName childName parentIterNo childIterNo) $
+                  createDepTree getIterNo g3 childName ws2
+              else acc
+            acc' = (g, HS.insert parentName ws)
           in
             foldl' go acc' nonCTChildren
 
   print snks
   let createSinkTree = createDepTree getCTNo
   let
-    toDotStr = GD.showDot . GD.fglToDot . G.gmap
-      (\(ps, n, i, ss) ->
-        let lbl =
-                T.unpack (invVariableDependencyNodeMap IM.! n) ++ " " ++ show i
+    toDotStr = GD.showDot . GD.fglToDotString . G.gmap
+      (\(ps, n, a, ss) ->
+        let lbl = printf "%s (%s)" (T.unpack (invVariableDependencyNodeMap IM.! n)) a
         in  (ps, n, lbl, ss)
       )
   let isPublic varName =
@@ -552,7 +551,7 @@ tst = do
         ]
   let initTree = foldl' (\g (v, n) -> insNode (toNode v) n g) G.empty
   let nonCtTreeLoop roots initws =
-        let (finalTree, finalWS) = foldl' (\(g, ws) (snk, _) -> createSinkTree g snk snk ws) (initTree roots, initws) roots
+        let (finalTree, finalWS) = foldl' (\(g, ws) (snk, _) -> createSinkTree g snk ws) (initTree roots, initws) roots
             nonCtTreeLeaves = toName <$> getLeaves finalTree
             allNonCtChildrenAreGreater l =
               let lIterNo = fromJust $ getCTNo l
@@ -571,7 +570,7 @@ tst = do
                           ]
              in nonCtTreeLoop roots' (foldl' (flip HS.delete) finalWS (fst <$> roots'))
   let nonCtTree = nonCtTreeLoop [(s,n) | s <- snks, n <- toList (getCTNo s)] mempty
-  writeFile "graph.dot" $ toDotStr nonCtTree
+  writeFile "graph.dot" $ toDotStr $ G.nemap show show nonCtTree
   system "dot -Tpdf graph.dot -o graph.pdf"
 
   let shouldNotHaveCycle g msg =
@@ -583,14 +582,38 @@ tst = do
 
   let createPubTree = createDepTree getPubNo
   let nonPubTreeRoots = [c | l <- getLeaves nonCtTree, c <- HS.toList (hasToBePublic $ toName l)]
-  let nonPubTree =
-        G.grev $ fst $
-        foldl' (\(g, ws) (v, _) -> createPubTree g v v ws) (initTree nonPubTreeRoots, mempty) nonPubTreeRoots
+  let iterToConstraintType iterNo = do
+        constraintNo <- fst <$> fpTrace ^. at iterNo
+        constraintType <- cm ^. at constraintNo
+        return $ hcType constraintType
+  let nonPubTree0 =
+        fst $
+        foldl' (\(g, ws) (v, _) -> createPubTree g v ws) (initTree nonPubTreeRoots, mempty) nonPubTreeRoots
+  let nonPubTreeInitLeaves =
+        [ toName l
+        | l <- getLeaves nonPubTree0
+        , hid <- toList $ iterToConstraintType $ G.lab' $ G.context nonPubTree0 l
+        , hid == Init
+        ]
   printf "NON PUBLIC TREE ROOTS: %s\n" (show nonPubTreeRoots)
-  writeFile "graph2.dot" $ toDotStr nonPubTree
-  system "dot -Tpdf graph2.dot -o graph2.pdf"
-
+  let isReg v = Register v `elem` variables topModule
+  let nonPubTreeLoop :: TstG -> [Id] -> Ids -> TstG
+      nonPubTreeLoop g [] _ = g
+      nonPubTreeLoop g (leaf:leaves) ws | leaf `elem` ws || isReg leaf = nonPubTreeLoop g leaves ws
+      nonPubTreeLoop g (wire:leaves) ws =
+        let _newEdges = [ (wire, v, typ)
+                       | (v, typ) <- getDeps wire
+                       , not (isReg v) ||
+                         (v `notElem` topmoduleAnnots ^. initialEquals && v `notElem` topmoduleAnnots ^. alwaysEquals)
+                       ]
+            newEdges = DT.trace ("new edges: " ++ show _newEdges) [(toNode x, toNode y, z) | (x,y,z) <- _newEdges]
+            g' = foldl' (\acc e@(_,n,_) -> insEdge' e $ insNode n 0 acc) g newEdges
+        in nonPubTreeLoop g' leaves (HS.insert wire ws)
+  let nonPubTree = nonPubTreeLoop nonPubTree0 nonPubTreeInitLeaves mempty
   shouldNotHaveCycle nonPubTree "public tree has a cycle!"
+  writeFile "graph2.dot" $ toDotStr $
+    G.nemap (\n -> (if iterToConstraintType n == Just Init then "Init " else "") <> "#" <> show n) show nonPubTree
+  system "dot -Tpdf graph2.dot -o graph2.pdf"
 
   -- let topmoduleSanitizedVars = topmoduleAnnots ^. initialEquals
   -- let hasToBeSanitized =
