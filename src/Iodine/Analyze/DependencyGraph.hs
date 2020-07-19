@@ -37,7 +37,7 @@ import qualified Data.IntSet as IS
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
-data VarDepEdgeType = Implicit | Explicit deriving (Show, Eq, Read)
+data VarDepEdgeType = Implicit | Explicit deriving (Show, Eq, Read, Ord)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 

@@ -31,17 +31,19 @@
           "b_wr1",
           "b_wr2",
           "b_wr3",
-		  "ex_ld_condition",
+		      "ex_ld_condition",
           "bus_req_read",
           "bus_req_write"
         ],
         "initial_eq": [
           "de_valid_",
           "ex_csrd",
+          "de_inst",
           "ex_inst",
           "ex_restart",
           "ex_valid_",
-          "if_valid_"
+          "if_valid_",
+          "wb_inst"
         ]
       },
       "clock": "clock"

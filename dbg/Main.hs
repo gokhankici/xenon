@@ -38,6 +38,7 @@ import           Iodine.Transform.Fixpoint.Common (HornClauseId)
 
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
+import           Control.Carrier.Lift
 import           Control.Carrier.State.Strict
 import           Control.Carrier.Trace.Print    ( Trace )
 import qualified Control.Carrier.Trace.Print   as PT
@@ -70,6 +71,7 @@ import qualified Language.Fixpoint.Types.Config
 import           System.Directory
 import           System.Environment
 import           System.FilePath.Posix
+import           System.Exit
 import           System.IO
 import           System.IO.Error
 import           Text.PrettyPrint.HughesPJ      ( render )
@@ -86,12 +88,16 @@ import           System.Process
 -- Debug Configuration
 -- #############################################################################
 -- | iodine arguments
+iodineVerbosity :: Verbosity
 iodineVerbosity = Loud
+disableFQSave :: Bool
 disableFQSave = False
 
 -- debugVerilogFile = "benchmarks" </> "yarvi" </> "shared" </> "test-01.v"
 -- debugAnnotationFile = defaultAnnotFile debugVerilogFile
+debugVerilogFile :: FilePath
 debugVerilogFile = "benchmarks" </> "yarvi" </> "shared" </> "yarvi.v"
+debugAnnotationFile :: FilePath
 debugAnnotationFile =
   "benchmarks" </> "yarvi" </> "shared" </> "annot-yarvi_fixed.json"
 
@@ -157,6 +163,7 @@ printThreadDeps = do
   ModuleSummary {..} <- asks @SummaryMap (! "mips_pipeline")
   output [printGraph threadDependencies show]
 
+getCondVars :: (Foldable t, Functor t, Algebra sig m) => t (AlwaysBlock a) -> m Ids
 getCondVars as = execState @Ids mempty $ do
   let goStmt = \case
         Block {..}      -> traverse_ goStmt blockStmts
@@ -168,6 +175,11 @@ getCondVars as = execState @Ids mempty $ do
         Skip{} -> return ()
   traverse_ goStmt (abStmt <$> as)
 
+getMissingInitialEquals :: ( D sig m
+                           , Has (Reader (HM.HashMap Id Ids)) sig m
+                           )
+                        => Module a
+                        -> m (HS.HashSet Id)
 getMissingInitialEquals Module {..} = do
   PT.trace $ printf "getMissingInitialEquals - %s" moduleName
   allInitEqs :: Ids <- asks (HM.! moduleName)
@@ -205,7 +217,9 @@ debug4 :: D sig m => Debug4 sig m
 debug4 vcOut = do
   modules <- ask
   finfo   <- constructQuery modules vcOut
-  (finfo, ) <$> ((,,) <$> ask <*> ask <*> ask)
+  let constraintTypes =
+        IM.fromList $ fmap (bimap fromIntegral FT.sinfo) $ HM.toList $ FT.cm finfo
+  (finfo, constraintTypes, ) <$> ((,,) <$> ask <*> ask <*> ask)
 
 type A = Int
 type M = Module A
@@ -242,18 +256,19 @@ debugPipeline af irReader ia = do
       & runReader normalizedIRMap
       & runReader normalizedIR
 
+runDefaultPipeline :: Monad m => p -> m ()
 runDefaultPipeline _ = return ()
 
+type ConstraintTypes = IM.IntMap HornClauseId
 type FixpointResult = FT.Result (Integer, HornClauseId)
 type ModuleSummaries = HM.HashMap Id [FSM.TraceQualif]
-type PipelineData = (FInfo, PipelineData2)
+type PipelineData = (FInfo, ConstraintTypes, PipelineData2)
 type PipelineData2 = (AnnotationFile, ModuleMap, SummaryMap)
-type RunFixpoint
-  = IodineArgs -> PipelineData -> IO (FixpointResult, FQOutAnalysisOutput, ModuleSummaries)
-type DebugOutput = (PipelineData2, FQOutAnalysisOutput, ModuleSummaries)
+type RunFixpoint = IodineArgs -> PipelineData -> IO (FixpointResult, FQOutAnalysisOutput, ModuleSummaries)
+type DebugOutput = (PipelineData2, ConstraintTypes, FQOutAnalysisOutput, ModuleSummaries)
 
 runFixpoint :: RunFixpoint
-runFixpoint IodineArgs {..} (finfo, (af, mm, sm)) = do
+runFixpoint IodineArgs {..} (finfo, cm, (af, mm, sm)) = do
   result <- F.solve config finfo
   let toSummaries (FT.PAnd es) = catMaybes (FSM.toTraceSummary <$> es)
       toSummaries _            = undefined
@@ -299,7 +314,7 @@ runner = do
     & runError
   case res of
     Left (err :: IodineException) -> E.throwIO err
-    Right out -> (\(r, x, y) -> (FT.isSafe r, (snd out, x, y))) <$> runPipeline ia out
+    Right out@(_, cm, z) -> (\(r, x, y) -> (FT.isSafe r, (z, cm, x, y))) <$> runPipeline ia out
  where
   appendToOutput (logs, result) = do
     unless (null logs) $ liftIO $ withFile "debug-output" WriteMode $ \h ->
@@ -311,7 +326,7 @@ main :: IO ()
 main = do
   (isSafe, out) <- runner
   writeFile "debug-output" $ show out
-  analyze
+  -- analyze
   print isSafe
 
 readDebugOutput :: IO DebugOutput
@@ -320,14 +335,16 @@ readDebugOutput = read <$> readFile "debug-output"
 readFixpointTrace :: IO FSM.SolverTrace
 readFixpointTrace = FSM.readSolverTrace "fixpoint-trace.json"
 
+type SolverTrace = IM.IntMap FSM.SolverTraceElement
+
 calculateSolverTraceDiff :: FSM.SolverTrace -> FSM.SolverTrace
 calculateSolverTraceDiff st =
-  IM.fromList $ filter (not . HM.null . snd) $ diffPairs <$> pairs
+  IM.fromList $ filter (not . HM.null . snd . snd) $ diffPairs <$> pairs
  where
   mkPairs = zip <$> id <*> tail
   pairs   = mkPairs $ IM.toList st
-  diffPairs ((_, te1), (n2, te2)) =
-    (n2, HM.filter (not . HS.null) $ teDiff te1 te2)
+  diffPairs ((_, (_, te1)), (n2, (c2, te2))) =
+    (n2, (c2, HM.filter (not . HS.null) $ teDiff te1 te2))
   qFilter = \case
     FSM.TracePublic       _ -> True
     FSM.TraceUntainted    _ -> True
@@ -336,7 +353,7 @@ calculateSolverTraceDiff st =
     FSM.TraceSummary   _ _  -> False
   teDiff te1 = HM.mapWithKey $ \kv qs2 ->
     HS.filter qFilter $ case HM.lookup kv te1 of
-      Nothing  -> qs2
+      Nothing  -> mempty
       Just qs1 -> HS.difference qs1 qs2
 
 data QualType = Q_CT | Q_PUB deriving (Show, Eq, Generic)
@@ -348,7 +365,6 @@ instance Hashable QualType
 
 -- variable name -> kvar no -> QualType -> first non ct
 type BetterTraceMap = HM.HashMap T.Text (IM.IntMap (HM.HashMap QualType Int))
-
 
 nonCTVars :: Module Int -> BetterTraceMap -> [(Id, Int)]
 nonCTVars Module{..} btm =
@@ -369,7 +385,7 @@ firstNonCTVars m btm =
   in filter ((== minIndex) . snd) sortedIndices
 
 firstNonCT :: FSM.SolverTrace -> BetterTraceMap
-firstNonCT = IM.foldlWithKey' handleTraceElem mempty
+firstNonCT = IM.foldlWithKey' handleTraceElem mempty . fmap snd
  where
   handleTraceElem acc iterNo = HM.foldl' (handleKVar iterNo) acc
   handleKVar iterNo = HS.foldl' (handleQ iterNo)
@@ -390,25 +406,50 @@ firstNonCT = IM.foldlWithKey' handleTraceElem mempty
         f3 (Just n) = min n iterNo
     in  HM.alter (Just . f1) (T.pack varName) acc
 
+toTVName :: FSM.TraceVar -> String
 toTVName (FSM.TraceVar _ tv _) = tv
+
+qualifMentionsVar :: String -> FSM.TraceQualif -> Bool
+qualifMentionsVar varName = \case
+  FSM.TracePublic tv         -> toTVName tv == varName
+  FSM.TraceConstantTime tv   -> toTVName tv == varName
+  FSM.TraceUntainted tv      -> toTVName tv == varName
+  FSM.TraceSameTaint tv1 tv2 -> varName `elem` (toTVName <$> [tv1,tv2])
+  FSM.TraceSummary _ _       -> False
+
+
+btmLookup :: BetterTraceMap -> QualType -> Id -> Maybe Int
+btmLookup btm qt varName = do
+  kvs <- {- trc (printf "getCTNo qs (%s): " varName) $ -} btm ^. at varName
+  case IM.toList kvs of
+    [(tid, m)] -> m ^. at qt
+    qsList ->
+      case
+          [ iterNo
+          | (tid, m) <- qsList
+          , iterNo <- toList $ HM.lookup qt m
+          ]
+        of
+          []   -> Nothing
+          i:is ->
+            DT.trace (printf "Multiple iterNos for %s: %s" varName (show $ i:is)) $
+            Just $ foldl' min i is
 
 type TstG = G.Gr Int VarDepEdgeType
 
 tst :: IO ()
-tst = () <$ _tst
-
-_tst = do
-  ((af, moduleMap, summaryMap), fqoutAnalysisOutput, moduleSummaries) <-
+tst = do
+  ((af, moduleMap, summaryMap), cm, fqoutAnalysisOutput, moduleSummaries) <-
     readDebugOutput
   fpTrace <- readFixpointTrace
-  let lastTraceElem = snd . fromJust $ IM.lookupMax fpTrace
+  let lastTraceElem = snd . snd . fromJust $ IM.lookupMax fpTrace
   let directLookup v =
         let helper = \case
               FSM.TracePublic tv -> toTVName tv == v
               FSM.TraceConstantTime tv -> toTVName tv == v
               _ -> False
         in [ (iterNo, kv, qs')
-           | (iterNo, m) <- IM.toList fpTrace
+           | (iterNo, (_, m)) <- IM.toList fpTrace
            , (kv, qs) <- HM.toList m
            , let qs' = filter helper $ HS.toList qs
            , not (null qs')
@@ -433,32 +474,12 @@ _tst = do
     getWriteTid :: Id -> Int
     getWriteTid varName = fromJust $ threadWriteMap ^. at varName
 
-    btmLookup :: QualType -> Id -> Maybe Int
-    btmLookup qt varName = do
-      kvs <- {- trc (printf "getCTNo qs (%s): " varName) $ -} btm ^. at varName
-      case IM.toList kvs of
-        [(tid, m)] -> m ^. at qt
-        qsList ->
-          case
-              [ (tid, iterNo)
-              | (tid, qs    ) <- qsList
-              , (qt', iterNo) <- HM.toList qs
-              , qt' == qt
-              ]
-            of
-              []              -> Nothing
-              -- [(tid, iterNo)] -> Just iterNo
-              i:is            ->
-                -- DT.trace (printf "Multiple iterNos for %s: %s" varName (show $ i:is)) $
-                Just $
-                foldl' (\acc (tid, iterNo) -> acc `max` iterNo) (snd i) is -- FIXME min -> max
-
     isCT varName =
       let v = T.unpack varName
           helper (FSM.TraceConstantTime tv) = toTVName tv == v
           helper _ = False
       in any (any helper) lastTraceElem
-    getCTNo v = btmLookup Q_CT v <|> if isCT v then Nothing else Just 0
+    getCTNo v = btmLookup btm Q_CT v <|> if isCT v then Nothing else Just 0
 
     insNode n a g = if G.gelem n g then g else G.insNode (n, a) g
 
@@ -468,11 +489,11 @@ _tst = do
     getDeps v = getVariableDependencies v topModule summaryMap
 
     createDepTree :: (Id -> Maybe Int) -> TstG -> Id -> Id -> Ids -> (TstG, Ids)
-    createDepTree getIterNo g currentVarName parentName ws
+    createDepTree getIterNo g currentVarName _parentName ws
       | HS.member currentVarName ws
       = (g, ws)
       | otherwise
-      = case {- trc (printf "parentCtNo (%s): " currentVarName) $ -} getIterNo parentName of
+      = let parentName = currentVarName in case {- trc (printf "parentCtNo (%s): " currentVarName) $ -} getIterNo parentName of
         Nothing -> (g, ws)
         Just parentIterNo ->
           let
@@ -485,6 +506,7 @@ _tst = do
                   trc (printf "childCtNo (%s) : " childName) $ getIterNo childName
               , isJust childIterNo
               ]
+            -- FIXME
             go acc@(g2, ws2) (childName, childIterNo, edgeType) =
               if childIterNo <= parentIterNo
               then
@@ -497,7 +519,7 @@ _tst = do
                        insNode childNode childIterNo g2
                 in
                   createDepTree getIterNo g3 childName childName ws2
-              else createDepTree getIterNo g2 childName parentName ws2
+              else acc -- createDepTree getIterNo g2 childName parentName ws2
             acc' = (g, HS.insert currentVarName ws)
           in
             foldl' go acc' nonCTChildren
@@ -516,19 +538,21 @@ _tst = do
             helper (FSM.TracePublic tv) = toTVName tv == v
             helper _ = False
         in any (any helper) lastTraceElem
-  let getPubNo v = btmLookup Q_PUB v <|> if isPublic v then Nothing else Just 0
+  let getPubNo v = btmLookup btm Q_PUB v <|> if isPublic v then Nothing else Just 0
   let getLeaves g =
         foldl' (\acc n -> if G.outdeg g n == 0 then n : acc else acc) []
           $ G.nodes g
 
   let hasToBePublic leaf = HS.fromList $
-        [ childName
+        [ (childName, fromJust pn)
         | (childName, depType) <- getDeps leaf
         , depType == Implicit
-        , isJust $ getPubNo childName
+        , let pn = getPubNo childName
+        , isJust pn
         ]
+  let initTree = foldl' (\g (v, n) -> insNode (toNode v) n g) G.empty
   let nonCtTreeLoop roots initws =
-        let (finalTree, finalWS) = foldl' (\(g, ws) snk -> createSinkTree g snk snk ws) (G.empty, initws) roots
+        let (finalTree, finalWS) = foldl' (\(g, ws) (snk, _) -> createSinkTree g snk snk ws) (initTree roots, initws) roots
             nonCtTreeLeaves = toName <$> getLeaves finalTree
             allNonCtChildrenAreGreater l =
               let lIterNo = fromJust $ getCTNo l
@@ -536,27 +560,37 @@ _tst = do
               in any (/= Nothing) childNos && all (maybe True (> lIterNo)) childNos
             needsFixin l = allNonCtChildrenAreGreater l && null (hasToBePublic l)
             rootsToFix = trc "rootsToFix: " $ filter needsFixin nonCtTreeLeaves
-        in if null rootsToFix
+        -- FIXME
+        in if True -- null rootsToFix
            then finalTree
            else
-             let roots' = [ c
+             let roots' = [ (c, n)
                           | r <- rootsToFix
                           , (c, _) <- getDeps r
-                          , isJust (getCTNo c)
+                          , n <- toList $ getCTNo c
                           ]
-             in nonCtTreeLoop roots' (foldl' (flip HS.delete) finalWS roots')
-  let nonCtTree = nonCtTreeLoop snks mempty
+             in nonCtTreeLoop roots' (foldl' (flip HS.delete) finalWS (fst <$> roots'))
+  let nonCtTree = nonCtTreeLoop [(s,n) | s <- snks, n <- toList (getCTNo s)] mempty
   writeFile "graph.dot" $ toDotStr nonCtTree
   system "dot -Tpdf graph.dot -o graph.pdf"
+
+  let shouldNotHaveCycle g msg =
+        unless (length (G.nodes g) == length (G.scc g)) $ do
+          putStrLn msg
+          exitFailure
+
+  shouldNotHaveCycle nonCtTree "ct tree has a cycle!"
 
   let createPubTree = createDepTree getPubNo
   let nonPubTreeRoots = [c | l <- getLeaves nonCtTree, c <- HS.toList (hasToBePublic $ toName l)]
   let nonPubTree =
         G.grev $ fst $
-        foldl' (\(g, ws) v -> createPubTree g v v ws) (G.empty, mempty) nonPubTreeRoots
-  printf "nonPubTreeRoots: %s\n" (show nonPubTreeRoots)
+        foldl' (\(g, ws) (v, _) -> createPubTree g v v ws) (initTree nonPubTreeRoots, mempty) nonPubTreeRoots
+  printf "NON PUBLIC TREE ROOTS: %s\n" (show nonPubTreeRoots)
   writeFile "graph2.dot" $ toDotStr nonPubTree
   system "dot -Tpdf graph2.dot -o graph2.pdf"
+
+  shouldNotHaveCycle nonPubTree "public tree has a cycle!"
 
   -- let topmoduleSanitizedVars = topmoduleAnnots ^. initialEquals
   -- let hasToBeSanitized =
@@ -578,6 +612,8 @@ _tst = do
   -- let firstNNonCTVars = take 10 $ nonCTVars topModule btm
   -- printf "first %d non ct vars:\n" (length firstNNonCTVars)
   -- traverse_ print firstNNonCTVars
+
+  return ()
 
 printSummaries :: [FSM.TraceQualif] -> IO ()
 printSummaries = traverse_ go
@@ -622,7 +658,7 @@ trace' msg a = PT.trace (msg ++ " " ++ show a)
 
 analyze :: IO ()
 analyze = do
-  ((af, mm, sm), FQOutAnalysisOutput {..}, moduleSummaries) <- readDebugOutput
+  ((af, mm, sm), cm, FQOutAnalysisOutput {..}, moduleSummaries) <- readDebugOutput
   let topModuleName = af ^. afTopModule
       m@Module {..} = mm ! topModuleName
       inputs        = moduleInputs m mempty
@@ -726,3 +762,142 @@ printThreads = do
       h = putStrLn . head . lines . prettyShow
   traverse_ h alwaysBlocks
   traverse_ h moduleInstances
+
+prettyQualif :: FSM.TraceQualif -> String
+prettyQualif = \case
+  FSM.TracePublic       v  -> printf "pub(%s)" (toTVName v)
+  FSM.TraceConstantTime v  -> printf "ct(%s)" (toTVName v)
+  FSM.TraceUntainted    v  -> printf "untainted(%s)" (toTVName v)
+  FSM.TraceSameTaint v1 v2 -> printf "eq_ct(%s, %s)" (toTVName v1) (toTVName v2)
+  FSM.TraceSummary qs1 qs2 -> printf "summary(%s, %s)" (go qs1) (go qs2)
+                              where go = show . fmap prettyQualif . HS.toList
+
+printTraceDiff :: IO ()
+printTraceDiff = do
+  fpTrace <- readFixpointTrace
+  let t = calculateSolverTraceDiff fpTrace
+      qFilter = \case
+        FSM.TracePublic       v -> False
+        FSM.TraceConstantTime v -> True
+        FSM.TraceUntainted    _ -> False
+        FSM.TraceSameTaint _ _  -> False
+        FSM.TraceSummary   _ _  -> False
+  for_ (IM.toList t) $ \(iterNo, (cid, m)) -> do
+    let m' = HM.filter (not .null) $ fmap prettyQualif . filter qFilter . HS.toList <$> m
+    unless (HM.null m') $ do
+      printf "iter no %d (constraint id %d)\n" iterNo cid
+      for_ (HM.toList m') $ \(kv, qs) -> do
+        print kv
+        print qs
+      putStrLn ""
+
+fpTraceCTLoopkup :: String -> IO (Maybe Int)
+fpTraceCTLoopkup arg = do
+  fpTrace <- readFixpointTrace
+  let lastTraceElem = snd . snd . fromJust $ IM.lookupMax fpTrace
+  let btm = firstNonCT $ calculateSolverTraceDiff fpTrace
+  let isCT varName =
+        let v = T.unpack varName
+            helper (FSM.TraceConstantTime tv) = toTVName tv == v
+            helper _ = False
+        in any (any helper) lastTraceElem
+      getCTNo v = btmLookup btm Q_CT v <|> if isCT v then Nothing else Just 0
+  return $ getCTNo $ T.pack arg
+
+fpTraceLookupAll :: String -> IO ()
+fpTraceLookupAll varName = do
+  fpTrace <- readFixpointTrace
+  ((af, _, summaryMap), _, _, _) <- readDebugOutput
+  let helper2 qs = let qs' = HS.filter (qualifMentionsVar varName) qs
+                   in if HS.null qs' then Nothing else Just qs'
+      tostr = \case
+        FSM.TracePublic _ -> Just "public"
+        FSM.TraceConstantTime _ -> Just "ct"
+        _ -> Nothing
+  let ModuleSummary{..} = summaryMap HM.! (af ^. afTopModule)
+  print $ threadWriteMap ^. at (T.pack varName)
+  runState False $
+    for_ (IM.toList fpTrace) $ \(iterNo, (cid, m)) -> do
+      let m' = fmap (second (catMaybes . fmap tostr . HS.toList)) <$> HM.toList $ HM.mapMaybe helper2 m
+      seenNull <- get
+      unless (null m' && seenNull) $
+        sendIO $ printf "%-3d %s\n" iterNo (show m')
+      modify (|| null m')
+  return ()
+
+fpTraceLookup :: String -> Int -> IO FSM.SolverTraceElement
+fpTraceLookup varName iterNo = do
+  fpTrace <- readFixpointTrace
+  let (cid, m) = fpTrace IM.! iterNo
+  let helper2 qs = let qs' = HS.filter (qualifMentionsVar varName) qs
+                   in if HS.null qs' then Nothing else Just qs'
+  print cid
+  return $ HM.mapMaybe helper2 m
+
+fpTraceConstraints :: IO ()
+fpTraceConstraints = do
+  fpTrace <- readFixpointTrace
+  (_, cm, _, _) <- readDebugOutput
+  for_ (second ((cm IM.!) . fst) <$> IM.toList fpTrace) $ \(iterNo, md) ->
+    printf "%-3d: %s\n" iterNo (FT.showFix md)
+
+fpTraceDiff :: Int -> Int -> IO ()
+fpTraceDiff n1 n2 = do
+  fpTrace <- readFixpointTrace
+  let m1 = snd $ fpTrace IM.! n1
+  let m2 = snd $ fpTrace IM.! n2
+  let fltr = \case
+        FSM.TracePublic _ -> True
+        FSM.TraceConstantTime _ -> True
+        _ -> False
+  let helper qs1 qs2 =
+        let r = HS.filter fltr $ HS.difference qs1 qs2
+        in if HS.null r then Nothing else Just r
+  let m = HM.differenceWith helper m1 m2
+  for_ (HM.toList m) $ \(k, qs) -> do
+    print k
+    traverse_ (putStrLn . prettyQualif) qs
+    putStrLn ""
+
+allDiffs :: IO ()
+allDiffs =
+  (sortOn fst . HM.toList . firstNonCT . calculateSolverTraceDiff <$> readFixpointTrace)
+    >>= traverse_ print
+
+groupSort :: Ord a => [(a, b)] -> [(a, [b])]
+groupSort = fmap go . groupBy (\(a1,_) (a2, _) -> a1 == a2) . sortOn fst
+  where go []           = undefined
+        go ((a,b):rest) = (a, b:(snd <$> rest))
+
+focusOnIterNo :: Int -> String -> IO ()
+focusOnIterNo iterNo varNameStr = do
+  fpTrace <- readFixpointTrace
+  ((af, mm, sm), cm, _, _) <- readDebugOutput
+  let topModuleName = af ^. afTopModule
+      topModule = mm ! topModuleName
+      varName = T.pack varNameStr
+      deps = getVariableDependencies varName topModule sm
+      varsToLookFor = varName : (fst <$> deps)
+      qFilter = \case
+        FSM.TracePublic       v -> True
+        FSM.TraceConstantTime v -> True
+        FSM.TraceUntainted    _ -> False
+        FSM.TraceSameTaint _ _  -> False
+        FSM.TraceSummary   _ _  -> False
+      fltr = HS.filter $ \q -> qFilter q && any (\v -> qualifMentionsVar (T.unpack v) q) varsToLookFor
+      swap (a,b) = (b,a)
+
+  putStrLn (T.unpack varName)
+  for_ (fmap (second sort) $ groupSort $ swap <$> deps) print
+  putStrLn ""
+
+  let fpList = [ (i, cid, m')
+               | a@(i, (cid, m)) <- IM.toList fpTrace
+               , abs (iterNo - i) < 2
+               , let m' = HM.filter (not . HS.null) $ HM.map fltr m
+               , not (HM.null m')
+               ]
+  for_ fpList $ \(i, cid, m) -> do
+    printf "iter no %d\nconstraint %d: %s\n" i cid (FT.showFix $ cm IM.! cid)
+    HM.traverseWithKey (\k qs -> print k >> print (prettyQualif <$> sort (HS.toList qs))) m
+    putStrLn "\n"

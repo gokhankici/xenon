@@ -316,9 +316,10 @@ tagSet ab = withTopModule $ do
       addModuleName v     = (v, moduleName)
       tagsToSet           = addModuleName <$> toList srcs
       tagsToClear         = addModuleName <$> toList nonSrcs
-      (eSet,   setSubs)   = updateTagsKeepValues 1 True  tagsToSet
-      (eClear, clearSubs) = updateTagsKeepValues 1 False tagsToClear
-      body                = HAnd $ makeEmptyKVar ab <| eSet <> eClear
+      (eSet,   setSubs)   = updateTags 1 True  tagsToSet
+      (eClear, clearSubs) = updateTags 1 False tagsToClear
+      keepValues          = updateValues 1 moduleName vars
+      body                = HAnd $ makeEmptyKVar ab <| eSet <> eClear <> keepValues
   (body', subs) <-
     if isStar ab
     then do
@@ -360,9 +361,10 @@ srcTagReset ab = withTopModule $ do
   (Module {..}, srcs, vars) <- tagSetHelper
   let addModuleName v     = (v, moduleName)
       tagsToClear         = addModuleName <$> toList srcs
-      (eClear, clearSubs) = updateTagsKeepValues 1 False tagsToClear
+      (eClear, clearSubs) = updateTags 1 False tagsToClear
+      keepValues          = updateValues 1 moduleName vars
       -- increment indices of srcs, clear the tags of the sources but keep the values
-      body = HAnd $ makeEmptyKVar ab <| eClear -- inv holds on 0 indices
+      body = HAnd $ makeEmptyKVar ab <| eClear <> keepValues -- inv holds on 0 indices
   (body', subs) <-
     if isStar ab
     then do
@@ -639,11 +641,16 @@ interferenceCheckAB writeAB readAB overlappingVars= do
   let sti     = setThreadId currentModule
       uvi1    = updateVarIndex (+ 1)
       writeTR = uvi1 $ sti $ transitionRelation (abStmt writeAB)
+  aes <-
+    let t = AB writeAB
+    in withAB t $
+       fmap (setThreadId currentModule . updateVarIndex (+ 1)) <$>
+       alwaysEqualEqualities t
   writeNext <- HM.map (+ 1) <$> getNextVars writeAB
   (body, hd) <- interferenceReaderExpr readAB overlappingVars writeNext
   return $
     Horn { hornHead   = hd
-         , hornBody   = HAnd $ writeInstance <| writeTR <| body
+         , hornBody   = HAnd $ writeInstance <| (aes |> writeTR) <> body
          , hornType   = Interference [getData writeAB]
          , hornStmtId = getThreadId readAB
          , hornData   = ()
@@ -718,8 +725,9 @@ instantiateAB :: FDM sig m => AlwaysBlock Int -> Ids -> m HornExpr
 instantiateAB ab excludedVars = do
   m@Module{..} <- ask
   let sti = setThreadId m
-      mkInstance = fmap (second sti) . foldMap (\v -> mkAllSubs v moduleName 0 1)
-  makeKVar ab . mkInstance . (`HS.difference` excludedVars) <$> getHornVariables ab
+      mkEqs = fmap (mkEqual . bimap (setThreadId ab) sti) . foldMap (\v -> mkAllSubs v moduleName 0 1)
+  instanceVars <- mkEqs . (`HS.difference` excludedVars) <$> getHornVariables ab
+  return $ HAnd $ makeKVar ab mempty <| instanceVars
 
 
 -- | instantiate the given module instance with variable index = 1 and thread
@@ -1088,8 +1096,22 @@ getCurrentSources = do
             inputs <- moduleInputs <$> ask @M <*> getCurrentClocks
             return $ HS.filter (`elem` inputs) vars
 
-updateTagsKeepValues :: Foldable t => Int -> Bool -> t (Id, Id) -> (L HornExpr, L ExprPair)
-updateTagsKeepValues n b =
+-- >>> updateTags 3 True $ bimap T.pack T.pack <$> [("Mod1", "Var1"), ("Mod2", "Var2")]
+{- (fromList [TL.Var1.T0.Mod1.3 <=> True,
+              TR.Var1.T0.Mod1.3 <=> True,
+              TL.Var2.T0.Mod2.3 <=> True,
+              TR.Var2.T0.Mod2.3 <=> True],
+    fromList [(TL.Var1.T0.Mod1.0,TL.Var1.T0.Mod1.3),
+              (TR.Var1.T0.Mod1.0,TR.Var1.T0.Mod1.3),
+              (TL.Var2.T0.Mod2.0,TL.Var2.T0.Mod2.3),
+              (TR.Var2.T0.Mod2.0,TR.Var2.T0.Mod2.3)])
+-}
+updateTags :: Foldable t
+           => Int
+           -> Bool
+           -> t (Id, Id)
+           -> (L HornExpr, L ExprPair)
+updateTags n b =
   foldl'
   (\(es, ss) (v, m) ->
      let es' = es
@@ -1116,3 +1138,7 @@ instance Semigroup FDEQReason where
 
 instance Monoid FDEQReason where
   mempty = FDEQReason mempty mempty mempty
+
+updateValues :: Foldable t => Int -> Id -> t Id -> L HornExpr
+updateValues n moduleName =
+  foldl' (\acc v -> acc <> (mkEqual <$> mkValueSubs v moduleName n 0)) mempty
