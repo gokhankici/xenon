@@ -87,7 +87,7 @@ pipeline
   => AnnotationFile                  -- ^ annotation file
   -> m (L (Module ()))               -- ^ ir parser
   -> IA.IodineArgs                   -- ^ iodine args
-  -> m (FInfo, IM.IntMap ThreadType) -- ^ fixpoint query to run
+  -> m (FInfo, (IM.IntMap ThreadType, AnnotationFile, HM.HashMap Id (Module Int), SummaryMap)) -- ^ fixpoint query to run
 pipeline af irReader ia = do
   (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
   let normalizedIRMap = mkModuleMap normalizedIR
@@ -101,7 +101,7 @@ pipeline af irReader ia = do
       & runReader moduleSummaries
       & runReader normalizedIRMap
     let threadTypes = foldMap toThreadType normalizedIR
-    return (finfo, threadTypes)
+    return (finfo, (threadTypes, af'', normalizedIRMap, moduleSummaries))
 
 mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
 mkModuleMap = mkMap moduleName

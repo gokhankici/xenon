@@ -169,4 +169,5 @@ main = do
   where
     invalidate va = va { IA.fileName   = undefined
                        , IA.annotFile  = undefined
+                       , IA.benchmarkMode = True
                        }

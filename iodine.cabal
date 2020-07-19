@@ -27,6 +27,7 @@ custom-setup
 library
   exposed-modules:
       Control.Carrier.Trace.Print
+      Iodine.Analyze.CounterExample
       Iodine.Analyze.DependencyGraph
       Iodine.Analyze.FQOutAnalysis
       Iodine.Analyze.ModuleDependency
@@ -69,6 +70,7 @@ library
     , directory
     , dlist
     , fgl
+    , fgl-visualize
     , filepath
     , fused-effects
     , fused-effects-lens

@@ -14,6 +14,7 @@ module Iodine.Runner
   ) where
 
 import           Iodine.IodineArgs
+import           Iodine.Analyze.CounterExample (generateCounterExampleGraphs)
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR (prettyShow)
 import           Iodine.Language.IRParser
@@ -137,7 +138,7 @@ checkIR (ia@IodineArgs{..}, af)
   | onlyVCGen = do computeFInfo >>= FCons.saveQuery config . fst
                    return True
   | otherwise = do
-      (finfo, threadTypes) <- computeFInfo
+      (finfo, (threadTypes, af', moduleMap, summaryMap)) <- computeFInfo
       result <- F.solve config finfo
       let stat = FT.resStatus result
           statStr = render . FT.resultDoc
@@ -158,6 +159,8 @@ checkIR (ia@IodineArgs{..}, af)
               mds
         for_ (IS.toList tids) $ \tid ->
           printf "Thread #%d: %s\n" tid (show $ threadTypes IM.! tid)
+      unless (safe || benchmarkMode) $
+        generateCounterExampleGraphs af' moduleMap summaryMap finfo
       return safe
   where
     computeFInfo = do
@@ -168,8 +171,8 @@ checkIR (ia@IodineArgs{..}, af)
                 & handleTrace ia
                 & handleMonads ia
       case mFInfo of
-        Right finfo -> return finfo
-        Left e      -> errorHandle e
+        Right res -> return res
+        Left e    -> errorHandle e
 
     config :: FC.Config
     config = FC.defConfig { FC.eliminate = FC.Some
