@@ -363,4 +363,7 @@ assign l16 =
 // Finish.
 assign result = l16;
 
+reg [31:0] result_r;
+assign result_r = result;
+
 endmodule

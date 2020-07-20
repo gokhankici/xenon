@@ -1,0 +1,26 @@
+{
+  "modules": {
+    "xc_aesmix": {
+      "annotations": {
+        "sink": [
+          "ready_r",
+          "result_r"
+        ],
+        "source": [
+          "clock",
+          "enc",
+          "flush",
+          "flush_data",
+          "reset",
+          "rs1",
+          "rs2",
+          "valid"
+        ]
+      },
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "xc_aesmix"
+}
