@@ -1,0 +1,36 @@
+{
+  "modules": {
+    "post_norm": {
+      "annotations": {
+        "sink": [
+          "rewrite_underflow",
+          "rewrite_f2i_out_sign",
+          "rewrite_overflow",
+          "rewrite_ine",
+          "rewrite_out"
+        ],
+        "source": [
+          "fract_in",
+          "output_zero",
+          "rem_00",
+          "opas",
+          "opb_dn",
+          "opa_dn",
+          "clk",
+          "div_opa_ldz",
+          "exp_in",
+          "exp_ovf",
+          "sign",
+          "fpu_op",
+          "rmode"
+        ]
+      },
+      "clock": [
+        "clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "post_norm"
+}

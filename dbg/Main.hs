@@ -15,6 +15,8 @@
 
 module Main where
 
+import           AnnotationFileGenerator
+
 import           Iodine.Analyze.CounterExample
 import           Iodine.Analyze.FQOutAnalysis
 import           Iodine.Analyze.ModuleSummary
@@ -323,10 +325,15 @@ runner = do
 
 main :: IO ()
 main = do
-  (isSafe, out) <- runner
-  writeFile "debug-output" $ show out
-  -- analyze
-  print isSafe
+  args <- getArgs
+  case args of
+    [] -> do (isSafe, out) <- runner
+             writeFile "debug-output" $ show out
+             -- analyze
+             print isSafe
+    ["generate-annotation-file", filename, topModuleName, outputfile] ->
+      generateAnnotationFile filename topModuleName outputfile
+    _ -> error $ "invalid args: " <> show args
 
 readDebugOutput :: IO DebugOutput
 readDebugOutput = read <$> readFile "debug-output"

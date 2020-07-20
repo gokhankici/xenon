@@ -1,0 +1,33 @@
+{
+  "modules": {
+    "except": {
+      "annotations": {
+        "sink": [
+          "opb_00",
+          "qnan",
+          "opa_nan",
+          "opb_dn",
+          "opb_inf",
+          "opa_dn",
+          "inf",
+          "opa_00",
+          "snan",
+          "opa_inf",
+          "ind",
+          "opb_nan"
+        ],
+        "source": [
+          "opb",
+          "opa",
+          "clk"
+        ]
+      },
+      "clock": [
+        "clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "except"
+}

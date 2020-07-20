@@ -17,6 +17,7 @@ import           Data.Aeson.Types
 import qualified Data.ByteString.Lazy as B
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import           Data.List (sort)
 import qualified Data.Text as T
 
 data Annotations =
@@ -96,6 +97,19 @@ instance FromJSON Annotations where
       where
         objKeys = ["source", "sink", "initial_eq", "always_eq", "assert_eq", "tag_eq"]
 
+instance ToJSON Annotations where
+  toJSON a =
+    Object $ HM.fromList $ fmap (fmap toJSON) $
+    filter (not . null . snd) $
+    fmap (sort . HS.toList . (a ^.)) <$> fields
+    where
+      fields = [ ("source",     sources)
+               , ("sink",       sinks)
+               , ("initial_eq", initialEquals)
+               , ("always_eq",  alwaysEquals)
+               , ("assert_eq",  assertEquals)
+               , ("tag_eq",     tagEquals)
+               ]
 
 instance FromJSON Qualifier where
   parseJSON = withObject "Qualifier" $ \o -> do
@@ -105,6 +119,19 @@ instance FromJSON Qualifier where
       "iff"     -> QIff     <$> o .: "lhs" <*> o .: "rhs"
       "pairs"   -> QPairs   <$> o .: "variables"
       _         -> typeMismatch ("unknown qualifier type: " ++ t) (toJSON t)
+
+instance ToJSON Qualifier where
+  toJSON (QImplies l r) =
+    Object (mempty & (at "type" ?~ String "implies") .
+                     (at "lhs"  ?~ toJSON l) .
+                     (at "rhs"  ?~ toJSON r) )
+  toJSON (QIff l r) =
+    Object (mempty & (at "type" ?~ String "iff") .
+                     (at "lhs"  ?~ toJSON l) .
+                     (at "rhs"  ?~ toJSON r) )
+  toJSON (QPairs vs) =
+    Object (mempty & (at "type"      ?~ String "pairs") .
+                     (at "variables" ?~ toJSON vs))
 
 instance FromJSON ModuleAnnotations where
   parseJSON = withObjectKeys "ModuleAnnotation" objKeys $ \o ->
@@ -116,11 +143,23 @@ instance FromJSON ModuleAnnotations where
     where
       objKeys = ["annotations", "qualifiers", "clock", "inline", "blocklist", "qualifiers-history"]
 
+instance ToJSON ModuleAnnotations where
+  toJSON ma =
+    Object $ mempty & (at "annotations" ?~ toJSON (ma ^. moduleAnnotations)) .
+                      (at "qualifiers" ?~ toJSON (ma ^. moduleQualifiers)) .
+                      (at "clock" ?~ toJSON (ma ^. clocks)) .
+                      (at "inline" ?~ toJSON (ma ^. canInline))
+
 instance FromJSON AnnotationFile where
   parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "history", "blocklist", "qualifiers", "qualifiers-history"] $ \o ->
     AnnotationFile
     <$> o .:  "modules"
     <*> o .:  "top_module"
+
+instance ToJSON AnnotationFile where
+  toJSON af =
+    Object $ mempty & (at "modules" ?~ toJSON (toJSON <$> af ^. afAnnotations)) .
+                      (at "top_module" ?~ toJSON (af ^. afTopModule))
 
 withObjectKeys :: String -> [T.Text] -> (Object -> Parser a) -> Value -> Parser a
 withObjectKeys typ keys parser = withObject typ parser'

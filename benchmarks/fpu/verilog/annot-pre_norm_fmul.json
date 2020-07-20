@@ -1,0 +1,30 @@
+{
+  "modules": {
+    "pre_norm_fmul": {
+      "annotations": {
+        "sink": [
+          "exp_out",
+          "exp_ovf",
+          "rewrite_fracta",
+          "rewrite_fractb",
+          "inf",
+          "sign",
+          "sign_exe",
+          "underflow"
+        ],
+        "source": [
+          "clk",
+          "fpu_op",
+          "opa",
+          "opb"
+        ]
+      },
+      "clock": [
+        "clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "pre_norm_fmul"
+}

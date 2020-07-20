@@ -11,6 +11,7 @@ module Iodine.Runner
   , runner
   , main
   , readIRFile
+  , verilogToIR
   ) where
 
 import           Iodine.IodineArgs
@@ -69,18 +70,12 @@ runner :: IodineArgs -> IO Bool
 runner a = generateIR a >>= checkIR
 
 -- -----------------------------------------------------------------------------
-generateIR :: IodineArgs -> IO (IodineArgs, AnnotationFile)
+verilogToIR :: FilePath -> FilePath -> String -> IO FilePath
 -- -----------------------------------------------------------------------------
-generateIR IodineArgs{..} = do
+verilogToIR iverilogDir verilogFile topModule = do
   runPreProcessor
-  af <- parseAnnotations <$> B.readFile annotFile
-  let topModule =  T.unpack $ view afTopModule af
-  let result = IodineArgs { fileName   = irFile
-                          , moduleName = topModule
-                          , ..
-                          }
-  runIVL topModule
-  return (result, af)
+  runIVL
+  return irFile
   where
     -- run ivlpp preprocessor on the given verilog file
     runPreProcessor = withCurrentDirectory verilogDir $ do
@@ -96,7 +91,7 @@ generateIR IodineArgs{..} = do
           exitFailure
 
     -- compile the Verilog file into IR
-    runIVL topModule = do
+    runIVL = do
       let ivl     = iverilogDir </> "ivl"
           ivlArgs = [ "-M", topModule
                     , "-O", irFile
@@ -112,12 +107,23 @@ generateIR IodineArgs{..} = do
     printMsg msg err =
       forM_ (msg:[verilogFile, preprocFile, err]) (hPutStrLn stderr)
 
-    verilogFile = fileName
     verilogDir  = takeDirectory verilogFile
     filePrefix  = verilogDir </> "" <.> dropExtensions (takeFileName verilogFile)
     preprocFile = filePrefix <.> "preproc" <.> "v"
     irFile      = filePrefix <.> "pl"
 
+-- -----------------------------------------------------------------------------
+generateIR :: IodineArgs -> IO (IodineArgs, AnnotationFile)
+-- -----------------------------------------------------------------------------
+generateIR IodineArgs{..} = do
+  af <- parseAnnotations <$> B.readFile annotFile
+  let topModule =  T.unpack $ view afTopModule af
+  irFile <- verilogToIR iverilogDir fileName topModule
+  let result = IodineArgs { fileName   = irFile
+                          , moduleName = topModule
+                          , ..
+                          }
+  return (result, af)
 
 -- -----------------------------------------------------------------------------
 checkIR :: (IodineArgs, AnnotationFile) -> IO Bool
@@ -144,7 +150,7 @@ checkIR (ia@IodineArgs{..}, af)
           statStr = render . FT.resultDoc
       FM.colorStrLn (FT.colorResult stat) (statStr stat)
       let safe = FT.isSafe result
-      unless (noFPOutput || delta) $
+      unless (safe || noFPOutput || delta) $
         (readFile fqoutFile >>= putStrLn) `E.catch` (\(_ :: E.IOException) -> return ())
       when delta $ do
         let mds = case stat of

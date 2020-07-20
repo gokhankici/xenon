@@ -1,0 +1,32 @@
+{
+  "modules": {
+    "pre_norm": {
+      "annotations": {
+        "sink": [
+          "fracta_out",
+          "nan_sign",
+          "exp_dn_out",
+          "result_zero_sign",
+          "sign",
+          "fasu_op",
+          "fractb_out"
+        ],
+        "source": [
+          "opb",
+          "opa_nan",
+          "opa",
+          "add",
+          "clk",
+          "opb_nan",
+          "rmode"
+        ]
+      },
+      "clock": [
+        "clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "pre_norm"
+}

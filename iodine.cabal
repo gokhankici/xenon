@@ -129,6 +129,7 @@ executable iodine
 executable iodine-debug
   main-is: Main.hs
   other-modules:
+      AnnotationFileGenerator
       Paths_iodine
   hs-source-dirs:
       dbg
