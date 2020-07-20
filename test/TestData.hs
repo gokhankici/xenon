@@ -89,6 +89,7 @@ simple = mkCollection "simple" $ ts ++ [t']
       , "submodule-03"
       , "submodule-04"
       , "tr-test-12"
+      , "tr-test-14"
       ]
 
 
@@ -213,10 +214,10 @@ fpuStubs :: TestTree
 fpuStubs = mkCollection "fpu-stubs" ts
   where
     d f = benchmarkDir </> "fpu" </> "verilog" </> f
-    ts = [ T  "except"   $ d "except.v"
-         , TF "pre_norm" $ d "pre_norm.v"
-         , T  "post_norm" $ d "post_norm.v"
-         , T  "pre_norm_fmul" $ d "pre_norm_fmul.v"
+    ts = [ T "except"   $ d "except.v"
+         , T "pre_norm" $ d "pre_norm.v"
+         , T "post_norm" $ d "post_norm.v"
+         , T "pre_norm_fmul" $ d "pre_norm_fmul.v"
          ]
 
 --------------------------------------------------------------------------------

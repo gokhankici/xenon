@@ -398,15 +398,15 @@ srcTagReset ab = withTopModule $ do
       foldl' (\es (v, m) -> es <> (mkEqual <$> mkAllSubs v m n 0)) mempty
 
 -- -------------------------------------------------------------------------------------------------
-next, nextCommon, nextSubClock :: FDS sig m => AlwaysBlock Int -> m H
+next, nextStar, nextTopClk, nextSubClock :: FDS sig m => AlwaysBlock Int -> m H
 -- -------------------------------------------------------------------------------------------------
 next ab = do
   isTop <- isTopModule
-  if isStar ab || isTop
-    then nextCommon ab
-    else nextSubClock ab
+  if | isStar ab -> nextStar ab
+     | isTop     -> nextTopClk ab
+     | otherwise -> nextSubClock ab
 
-nextCommon ab@AlwaysBlock{..} = do
+nextStar ab@AlwaysBlock{..} = do
   Module {..} <- ask @M
   initialSubs <-
     foldMap (\v -> second sti <$> mkAllSubs v moduleName 0 1)
@@ -426,6 +426,23 @@ nextCommon ab@AlwaysBlock{..} = do
   where
     sti = setThreadId ab
     uvi = updateVarIndex (+ 1)
+
+nextTopClk ab@AlwaysBlock{..} = do
+  Module {..} <- ask @M
+  case find ((/= thisTid) . getThreadId) alwaysBlocks of
+    Nothing     -> nextStar ab
+    Just starAB -> do
+      h <- nextStar ab
+      overlappingVars <-
+        fmap toSequence
+        $ HS.intersection
+        <$> asks (view currentVariables . (IM.! thisTid))
+        <*> asks (view currentVariables . (IM.! getThreadId starAB))
+      let starKVar = makeKVar starAB (overlappingVars >>= mkSub)
+      return $ h { hornBody = HAnd $ starKVar |:> hornBody h }
+  where
+    thisTid = getThreadId ab
+    mkSub v = second (setThreadId ab) <$> mkAllSubs v v 0 1
 
 nextSubClock ab@AlwaysBlock{..} = do
   m@Module{..} <- ask

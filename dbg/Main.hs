@@ -327,13 +327,12 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-    [] -> do (isSafe, out) <- runner
-             writeFile "debug-output" $ show out
-             -- analyze
-             print isSafe
     ["generate-annotation-file", filename, topModuleName, outputfile] ->
       generateAnnotationFile filename topModuleName outputfile
-    _ -> error $ "invalid args: " <> show args
+    _ -> do (isSafe, out) <- runner
+            writeFile "debug-output" $ show out
+            -- analyze
+            print isSafe
 
 readDebugOutput :: IO DebugOutput
 readDebugOutput = read <$> readFile "debug-output"
@@ -566,8 +565,9 @@ fpTraceLookupAll varName = do
   let helper2 qs = let qs' = HS.filter (qualifMentionsVar varName) qs
                    in if HS.null qs' then Nothing else Just qs'
       tostr = \case
-        FSM.TracePublic _ -> Just "public"
+        FSM.TracePublic _ -> Just "public" :: Maybe String
         FSM.TraceConstantTime _ -> Just "ct"
+        FSM.TraceSameTaint v1 v2 -> Just $ printf "same(%s, %s)" (toTVName v1) (toTVName v2)
         _ -> Nothing
   let ModuleSummary{..} = summaryMap HM.! (af ^. afTopModule)
   print $ threadWriteMap ^. at (T.pack varName)
@@ -632,14 +632,14 @@ focusOnIterNo iterNo varNameStr = do
       topModule = mm ! topModuleName
       varName = T.pack varNameStr
       deps = getVariableDependencies varName topModule sm
-      varsToLookFor = varName : (fst <$> deps)
-      qFilter = \case
-        FSM.TracePublic       v -> True
-        FSM.TraceConstantTime v -> True
-        FSM.TraceUntainted    _ -> False
-        FSM.TraceSameTaint _ _  -> False
-        FSM.TraceSummary   _ _  -> False
-      fltr = HS.filter $ \q -> qFilter q && any (\v -> qualifMentionsVar (T.unpack v) q) varsToLookFor
+      varsToLookFor = T.unpack <$> varName : (fst <$> deps)
+      qmv vs = \case
+        FSM.TracePublic       v  -> toTVName v `elem` vs
+        FSM.TraceConstantTime v  -> toTVName v `elem` vs
+        FSM.TraceSameTaint v1 v2 -> all (`elem` vs) $ toTVName <$> [v1, v2]
+        FSM.TraceUntainted    _  -> False
+        FSM.TraceSummary   _ _   -> False
+      fltr = HS.filter $ qmv varsToLookFor
       swap (a,b) = (b,a)
 
   putStrLn (T.unpack varName)
@@ -652,7 +652,8 @@ focusOnIterNo iterNo varNameStr = do
                , let m' = HM.filter (not . HS.null) $ HM.map fltr m
                , not (HM.null m')
                ]
+  let sep = replicate 80 '-'
   for_ fpList $ \(i, cid, m) -> do
-    printf "iter no %d\nconstraint %d: %s\n" i cid (FT.showFix $ cm IM.! cid)
-    HM.traverseWithKey (\k qs -> print k >> print (prettyQualif <$> sort (HS.toList qs))) m
-    putStrLn "\n"
+    printf "%s\niter no %d\n%s\nconstraint %d:%s\n\n" sep i sep cid (FT.showFix $ cm IM.! cid)
+    HM.traverseWithKey (\k qs -> print k >> for_ (prettyQualif <$> sort (HS.toList qs)) putStrLn >> putStrLn "") m
+    putStrLn ""

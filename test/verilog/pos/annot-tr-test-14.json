@@ -1,0 +1,23 @@
+{
+  "modules": {
+    "test": {
+      "annotations": {
+        "sink": [
+          "out"
+        ],
+        "source": [
+          "opa",
+          "opa_nan",
+          "opb",
+          "opb_nan"
+        ]
+      },
+      "clock": [
+        "clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "test"
+}
