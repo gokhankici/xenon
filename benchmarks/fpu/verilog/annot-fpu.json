@@ -1,30 +1,47 @@
 {
-  "clock": "clk",
-  "annotations": [
-    {
-      "type": "source",
-      "variables": [
-        "rmode",
-        "fpu_op",
-        "opa",
-        "opb"
-      ]
+  "top_module": "fpu",
+  "modules": {
+    "fpu": {
+      "annotations": {
+        "source": [
+          "rmode",
+          "fpu_op",
+          "opa",
+          "opb"
+        ],
+        "sink": [
+          "out",
+          "inf",
+          "snan",
+          "qnan",
+          "ine",
+          "overflow",
+          "underflow",
+          "zero",
+          "div_by_zero"
+        ]
+      },
+      "clock": "clk"
     },
-    {
-      "type": "sink",
-      "variables": [
-        "out",
-        "inf",
-        "snan",
-        "qnan",
-        "ine",
-        "overflow",
-        "underflow",
-        "zero",
-        "div_by_zero"
-      ]
+    "pre_norm_fmul": {
+      "clock": "clk"
+    },
+    "post_norm": {
+      "clock": "clk"
+    },
+    "mul_r2": {
+      "clock": "clk"
+    },
+    "div_r2": {
+      "clock": "clk"
+    },
+    "except": {
+      "clock": "clk"
+    },
+    "pre_norm": {
+      "clock": "clk"
     }
-  ],
+  },
   "qualifiers": [
     {
       "type": "pairs",

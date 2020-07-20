@@ -20,16 +20,20 @@ import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
+import qualified Data.Graph.Inductive.Dot as GD
 import           Data.Graph.Inductive.PatriciaTree (Gr)
 import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
-import           Data.List (intercalate)
 import qualified Data.Sequence as SQ
+import           Control.Effect.Lift
+import           Data.List (sortOn)
+
+
 
 type A = Int
-type DepGraph = Gr () ()
+type DepGraph = Gr Int ()
 type StmtMap  = IM.IntMap (Stmt A)
 data St =
   St { _writtenBy   :: HM.HashMap Id IS.IntSet
@@ -43,7 +47,7 @@ makeLenses ''St
 type OldG sig m = ( Has (Reader AnnotationFile) sig m
                   , Has (Reader ModuleMap) sig m
                   , Has (Error IodineException) sig m
-                  -- , Effect sig
+                  , Has (Lift IO) sig m
                   )
 type G sig m = (OldG sig m, Has (State Int) sig m)
 
@@ -97,10 +101,23 @@ mergeAlwaysStarBlocks as = do
       graphs = (\ns -> G.nfilter (`elem` ns) depGraph) <$> components
   stmts' <- foldlM' mempty graphs $ \acc g -> do
     let stmtOrder = GQ.topsort g
-    when (hasCycle g) $
-      throwError . IE Merge $
-        "star dependency graph has a loop:\n" ++
-        intercalate "\n" (show . (stmtIds IM.!) <$> stmtOrder)
+    when (hasCycle g) $ do
+      let cycleNodes = snd $
+                       head $
+                       sortOn fst $
+                       fmap (\l -> (length l, l)) $
+                       filter (\l -> length l > 1) (GQ.scc g)
+          g' = G.nfilter (`elem` cycleNodes) g
+          dotStr = GD.showDot $ GD.fglToDotString $ G.nemap show (const "") g'
+          sep = replicate 80 '-'
+      sendIO $ do writeFile "merge-cycle.dot" dotStr
+                  for_ cycleNodes $ \n -> do
+                    putStrLn sep
+                    putStrLn $ "stmt " <> show n
+                    putStrLn sep
+                    putStrLn $ prettyShow $ stmtIds IM.! n
+                    putStrLn ""
+      throwError $ IE Merge "star dependency graph has a loop"
     return $ (stmtIds IM.!) <$> stmtOrder
              & SQ.fromList
              & (acc <>)
@@ -152,7 +169,7 @@ buildDependencyGraph stmts =
              g
              fromIds
       )
-      (IS.foldr' (\n -> G.insNode (n, ())) G.empty nodes)
+      (IS.foldr' (\n -> G.insNode (n, n)) G.empty nodes)
       writeMap
 
     -- create a new id for the given statement, and update its read & write set
@@ -222,4 +239,3 @@ getMaxThreadId = maximum . fmap goM
       getData m
       <| (getData <$> alwaysBlocks)
       <> (getData <$> moduleInstances)
-

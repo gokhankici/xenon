@@ -1,0 +1,20 @@
+{
+  "modules": {
+    "b_lut": {
+      "annotations": {
+        "sink": [
+          "result_r"
+        ],
+        "source": [
+          "crs1",
+          "crs2",
+          "crs3"
+        ]
+      },
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "b_lut"
+}

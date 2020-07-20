@@ -151,7 +151,8 @@ checkIR (ia@IodineArgs{..}, af)
       FM.colorStrLn (FT.colorResult stat) (statStr stat)
       let safe = FT.isSafe result
       unless (safe || noFPOutput || delta) $
-        (readFile fqoutFile >>= putStrLn) `E.catch` (\(_ :: E.IOException) -> return ())
+        (readFile fqoutFile >>= traverse_ putStrLn . take 300 . lines)
+        `E.catch` (\(_ :: E.IOException) -> return ())
       when delta $ do
         let mds = case stat of
                     FT.Unsafe cs -> snd <$> cs

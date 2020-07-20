@@ -1,0 +1,21 @@
+{
+  "modules": {
+    "b_bop_unrolled": {
+      "annotations": {
+        "sink": [
+          "result_r"
+        ],
+        "source": [
+          "lut",
+          "rd",
+          "rs1",
+          "rs2"
+        ]
+      },
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "b_bop_unrolled"
+}

@@ -30,6 +30,7 @@ import           Control.Carrier.Reader
 import           Control.Effect.Error
 import           Control.Effect.Trace
 import           Control.Effect.Writer
+import           Control.Effect.Lift
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -47,7 +48,7 @@ import qualified Data.Text as T
 normalizeIR
   :: ( Has (Error IodineException) sig m
      , Has (Writer Output) sig m
-     -- , Effect sig
+     , Has (Lift IO) sig m
      )
   => AnnotationFile                      -- ^ annotation file
   -> m (L (Module ()))                   -- ^ ir parser
@@ -82,7 +83,7 @@ pipeline
   :: ( Has (Error IodineException) sig m
      , Has Trace sig m
      , Has (Writer Output) sig m
-     -- , Effect sig
+     , Has (Lift IO) sig m
      )
   => AnnotationFile                  -- ^ annotation file
   -> m (L (Module ()))               -- ^ ir parser

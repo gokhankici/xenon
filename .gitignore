@@ -27,6 +27,7 @@ fixpoint-trace.json
 graph*.dot
 graph*.png
 graph*.pdf
+merge-cycle.*
 iodine.prof.html*
 /output
 /non*Tree.*
