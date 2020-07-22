@@ -243,8 +243,8 @@ initialize ab = do
   (cond, subs) <-
     if isStar ab
     then do nxt <- HM.map (+1) <$> getNextVars ab
-            let tr = sti $ uvi $ transitionRelation (abStmt ab)
-                cond1 = uvi . mkEqual <$> tagSubs
+            tr <- sti . uvi <$> transitionRelation (abStmt ab)
+            let cond1 = uvi . mkEqual <$> tagSubs
                 cond2 = uvi . mkEqual <$> valSubs
                 cond3 =
                   foldl'
@@ -292,8 +292,8 @@ combinatorialModuleInit = do
       ab = case alwaysBlocks of
              a SQ.:<| Empty | abEvent a == Star -> a
              _ -> error "unreachable"
-      abTR = sti $ updateVarIndex (+ 1) $
-             transitionRelation (abStmt ab)
+  abTR <- sti . updateVarIndex (+ 1) <$>
+          transitionRelation (abStmt ab)
   miExprs <- for moduleInstances instantiateMI
   abNext <- HM.map (+ 1) <$> getNextVars ab
   moduleAlwaysEqs <- moduleAlwaysEquals 1 abNext
@@ -325,7 +325,7 @@ tagSet ab = withTopModule $ do
     then do
       aes      <- fmap (updateVarIndex (+ 1)) <$> alwaysEqualEqualities thread
       nextVars <- HM.map (+ 1) <$> getNextVars ab
-      let tr = updateVarIndex (+ 1) $ transitionRelation (abStmt ab)
+      tr <- updateVarIndex (+ 1) <$> transitionRelation (abStmt ab)
       -- inv holds on 0 indices
       -- increment all indices, keep values but update tags
       -- always_eq on 1 indices and last hold
@@ -372,7 +372,7 @@ srcTagReset ab = withTopModule $ do
           nonSrcUpdates = keepEverything 1 $ addModuleName <$> toList nonSrcs
       aes       <- fmap (updateVarIndex (+ 1)) <$> alwaysEqualEqualities thread
       nextVars  <- HM.map (+ 1) <$> getNextVars ab
-      let tr    = updateVarIndex (+ 1) $ transitionRelation (abStmt ab)
+      tr <- updateVarIndex (+ 1) <$> transitionRelation (abStmt ab)
       -- increment indices of non srcs, keep everything
       -- always_eq on 1 indices and last hold
       -- transition starting from 1 indices
@@ -413,7 +413,7 @@ nextStar ab@AlwaysBlock{..} = do
     <$> getHornVariables ab
   let threadKVar = makeKVar ab initialSubs
   aes <- fmap (sti . uvi) <$> alwaysEqualEqualities (AB ab)
-  let tr = sti $ uvi $ transitionRelation abStmt
+  tr <- sti . uvi <$> transitionRelation abStmt
   nextVars <- HM.map (+ 1) <$> getNextVars ab
   let subs  = second sti <$> toSubs moduleName nextVars
   return $
@@ -463,7 +463,7 @@ nextSubClock ab@AlwaysBlock{..} = do
       MI depMI -> instantiateMI depMI
   let sti  = setThreadId m
       uvi1 = updateVarIndex (+ 1)
-      tr   = uvi1 $ sti $ transitionRelation abStmt
+  tr <- uvi1 . sti <$> transitionRelation abStmt
   abNext <- HM.map (+ 1) <$> getNextVars ab
   (body, hd) <- interferenceReaderExpr ab mempty abNext
   let subs = case hd of
@@ -657,7 +657,7 @@ interferenceCheckAB writeAB readAB overlappingVars= do
   writeInstance <- instantiateAB writeAB mempty
   let sti     = setThreadId currentModule
       uvi1    = updateVarIndex (+ 1)
-      writeTR = uvi1 $ sti $ transitionRelation (abStmt writeAB)
+  writeTR <- uvi1 . sti <$> transitionRelation (abStmt writeAB)
   aes <-
     let t = AB writeAB
     in withAB t $
@@ -702,7 +702,7 @@ interferenceReaderExpr readAB overlappingVars writeNext = do
                             | otherwise     -> mempty
             )
             readHornVars
-      let readTR = uviN $ sti $ transitionRelation (abStmt readAB)
+      readTR <- uviN . sti <$> transitionRelation (abStmt readAB)
       return ( pullVarsToN |> readTR
              , HM.map (+ maxWriteN) readNext
              )

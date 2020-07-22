@@ -177,6 +177,37 @@ const IRModule *IRExporter::extractModule() const
         irModule->addVariableInit(v->getOnlyVariableName(), e);
     }
 
+    for (auto itr = module->funcs.begin(); itr != module->funcs.end(); itr++)
+    {
+        auto functionName = std::string(itr->first.str());
+        auto function = itr->second;
+        vector<string> functionPorts;
+
+        for (auto p : *(function->ports_))
+        {
+            if (p.defe)
+            {
+                cerr << "module function p.defe is not null!" << endl;
+                exit(1);
+            }
+            auto portname = string(p.port->basename().str());
+            functionPorts.push_back(portname);
+        }
+
+        auto s = function->get_statement();
+        auto as = dynamic_cast<PAssign*>(s);
+        if (!s)
+        {
+            cerr << "module function statement is not PAssign!" << endl;
+            s->dump(cout, 0);
+            exit(1);
+        }
+        IRExprVisitor ev(this);
+        auto functionExpr = ev.toIRExpr(as->rval());
+
+        irModule->addFunction(new IRFunction(functionName, functionPorts, functionExpr));
+    }
+
     // ###########################################################################
     // missing functionality
     // ###########################################################################
@@ -470,8 +501,25 @@ const IRExpr *IRExporter::nameComponentToIRExpr(const perm_string &name,
 
     if (!varExists)
     {
+        // FIXME: this is a hack, since currently we don't know whether we're in
+        // a function or not
+        for (auto f : module->funcs)
+        {
+            for (auto p : *(f.second->ports_))
+            {
+                if (p.port->basename() == name) {
+                    varExists = true;
+                    goto FUNCTION_PORT_NAME_LOOKUP_END;
+                }
+            }
+        }
+        FUNCTION_PORT_NAME_LOOKUP_END: ;
+    }
+
+    if (!varExists)
+    {
         cerr << endl
-             << "cannot find variable '" << nameStr << "' in module " << module->mod_name() << endl;
+             << "cannot find variable '" << nameStr << "' in module " << module->mod_name() << " (2)" << endl;
         exit(1);
     }
 

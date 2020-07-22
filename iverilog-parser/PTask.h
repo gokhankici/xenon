@@ -68,6 +68,7 @@ class PTaskFunc : public PScope, public LineInfo {
       void dump_ports_(std::ostream&out, unsigned ind) const;
 
     private:
+      VISITOR_FRIENDS;
       class_type_t*this_type_;
       std::vector<pform_tf_port_t>*ports_;
 };

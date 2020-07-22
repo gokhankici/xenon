@@ -79,6 +79,11 @@ inline std::ostream &operator<<(std::ostream &out, const IRVariableInit &vi)
     return out << "(" << vi.first << ", " << *vi.second << ")";
 }
 
+inline std::ostream &operator<<(std::ostream &out, const IRFunction &f)
+{
+    return out << "function(" << f.name << ", " << f.ports << ", " << *f.expr << ")";
+}
+
 std::ostream &operator<<(std::ostream &out, const IRModule &irModule)
 {
     return out << "module("
@@ -86,6 +91,7 @@ std::ostream &operator<<(std::ostream &out, const IRModule &irModule)
                << irModule.ports << ", "
                << irModule.variables << ", "
                << irModule.variableInits << ", "
+               << irModule.functions << ", "
                << irModule.gateStatements << ", "
                << irModule.alwaysBlocks << ","
                << irModule.moduleInstances << ")";

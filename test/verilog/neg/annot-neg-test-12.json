@@ -1,21 +1,21 @@
 {
   "modules": {
-    "b_bop": {
+    "test": {
       "annotations": {
         "sink": [
-          "result_r"
+          "out"
         ],
         "source": [
-          "lut",
-          "rd",
-          "rs1",
-          "rs2"
+          "cond",
+          "in"
         ]
       },
-      "clock": [],
+      "clock": [
+        "clk"
+      ],
       "qualifiers": [],
       "inline": false
     }
   },
-  "top_module": "b_bop"
+  "top_module": "test"
 }

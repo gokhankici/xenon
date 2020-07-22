@@ -66,7 +66,7 @@ type NewData = ( L Variable
                , L (AlwaysBlock A)
                , L MI
                )
-              
+
 data InlineSt = InlineSt { getCurrentModuleName :: Id
                          , getCurrentModuleVars :: L Variable
                          , getMIType            :: Id
@@ -124,6 +124,7 @@ fixExpr Select{..}   = Select
                        <$> fixExpr selectVar
                        <*> traverse fixExpr selectIndices
                        <*> return exprData
+fixExpr VFCall{..}   = notSupported
 
 fixStmt :: Has (Reader InlineSt) sig m => Stmt a -> m (Stmt a)
 fixStmt Block{..}      = Block <$> traverse fixStmt blockStmts <*> return stmtData

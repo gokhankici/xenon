@@ -34,6 +34,8 @@ import           Data.Graph.Inductive.PatriciaTree (Gr)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.IntSet as IS
+import           Data.Maybe
+import qualified Data.Sequence as SQ
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
@@ -87,9 +89,9 @@ dependencyGraphHelper :: ( Has (Reader ModuleMap) sig m
                          , Has (State DependencyGraphSt) sig m
                          )
                       =>  Module Int -> m ()
-dependencyGraphHelper Module{..} = do
+dependencyGraphHelper m@Module{..} = do
   for_ variables (getNode . variableName)
-  for_ alwaysBlocks dependencyGraphActAB
+  runReader m $ for_ alwaysBlocks dependencyGraphActAB
   for_ moduleInstances dependencyGraphActMI
   vrs :: HM.HashMap Id Ints <- gets (view varReads)
   HM.traverseWithKey
@@ -129,28 +131,45 @@ lookupThreads :: Has (State DependencyGraphSt) sig m
 lookupThreads v optic =
   gets (concatMap IS.toList . HM.lookup v . (^. optic))
 
-dependencyGraphActAB :: Has (State DependencyGraphSt) sig m
+dependencyGraphActAB :: ( Has (State DependencyGraphSt) sig m
+                        , Has (Reader (Module Int)) sig m
+                        )
                      => AlwaysBlock Int -> m ()
 dependencyGraphActAB ab = do
   modify (threadGraph %~ G.insNode (getData ab, ()))
   runReader (getData ab) $ handleStmt (abStmt ab)
 
-type FD sig m = (Has (State DependencyGraphSt) sig m, Has (Reader Int) sig m)
+type FD sig m = ( Has (State DependencyGraphSt) sig m
+                , Has (Reader Int) sig m
+                , Has (Reader (Module Int)) sig m
+                )
 
 -- returns the (Implicit, Explicit) variables that the given expr depends on
-getVariables' :: Expr a -> (HS.HashSet Id, HS.HashSet Id)
-getVariables' = \case
+getVariables' :: Module Int -> Expr a -> (HS.HashSet Id, HS.HashSet Id)
+getVariables' m = let cnct (a,b) (c,d) = (a <> c, b <> d) in \case
   Variable {..} -> (mempty, HS.singleton varName)
   Constant {..} -> (mempty, mempty)
   UF {..}       -> (mempty, mfold getVariables ufArgs)
   IfExpr {..}   ->
-    let cnct (a,b) (c,d) = (a <> c, b <> d)
-    in cnct (getVariables ifExprCondition, mempty) $
-       cnct (getVariables' ifExprThen) (getVariables' ifExprElse)
+    cnct (getVariables ifExprCondition, mempty) $
+    cnct (getVariables' m ifExprThen) (getVariables' m ifExprElse)
   Str {..}      -> (mempty, mempty)
   Select {..}   ->
     second (mappend $ mfold getVariables selectIndices) $
-    getVariables' selectVar
+    getVariables' m selectVar
+  VFCall {..}   ->
+    let VerilogFunction{..} = verilogFunctions m HM.! vfCallFunction
+        go = getVariables' m
+        (implicitPorts, explicitPorts) = go verilogFunctionExpr
+        ts = getVariables' m <$> vfCallArgs
+        getPortTs p = fromJust $ do
+          i <- SQ.elemIndexL p verilogFunctionPorts
+          SQ.lookup i ts
+        upd_e acc = cnct acc . getPortTs
+        upd_i (is, es) p =
+          let (is2, es2) = getPortTs p
+          in (is <> is2 <> es2, es)
+    in foldl' upd_i (foldl' upd_e (mempty, mempty) explicitPorts) implicitPorts
 
 handleStmt :: FD sig m => Stmt a -> m ()
 handleStmt Skip{..}  = return ()
@@ -158,8 +177,9 @@ handleStmt Block{..} = traverse_ handleStmt blockStmts
 handleStmt Assignment{..} =
   case assignmentLhs of
     Variable{..} -> do
+      m <- ask
       lhsNode <- getNode varName
-      let (pathVars2, rhsVars) = getVariables' assignmentRhs
+      let (pathVars2, rhsVars) = getVariables' m assignmentRhs
       rhsNodes <- getNodes rhsVars
       for_ (IS.toList rhsNodes) $ \rhsNode ->
         addEdge (rhsNode, lhsNode, Explicit)

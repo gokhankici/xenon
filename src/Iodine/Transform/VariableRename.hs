@@ -8,6 +8,7 @@ module Iodine.Transform.VariableRename (variableRename) where
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
+import           Iodine.Utils
 
 import           Control.Lens
 import           Control.Monad
@@ -88,6 +89,7 @@ handleModule Module{..} = -- do
     <$> traverse fixPort ports
     <*> traverse fixVariable variables
     <*> traverse (\(v, e) -> (,) <$> fix v <*> fixExpr e) constantInits
+    <*> traverse fixVerilogFunction verilogFunctions
     <*> traverse fixStmt gateStmts
     <*> traverse fixAB alwaysBlocks
     <*> traverse (fixMI moduleName) moduleInstances
@@ -100,6 +102,13 @@ fixPort (Output o) = Output <$> fixVariable o
 fixVariable :: FDM sig m => Variable -> m Variable
 fixVariable (Wire v)     = Wire <$> fix v
 fixVariable (Register r) = Register <$> fix r
+
+fixVerilogFunction :: FDM sig m => VerilogFunction a -> m (VerilogFunction a)
+fixVerilogFunction VerilogFunction{..} =
+  VerilogFunction verilogFunctionName
+  <$> traverse fix verilogFunctionPorts
+  <*> fixExpr verilogFunctionExpr
+  <*> return verilogFunctionData
 
 fixStmt :: FDM sig m => Stmt a -> m (Stmt a)
 fixStmt Block{..} = Block <$> traverse fixStmt blockStmts <*> return stmtData
@@ -134,6 +143,7 @@ fixExpr Select{..} =
   <$> fixExpr selectVar
   <*> traverse fixExpr selectIndices
   <*> return exprData
+fixExpr VFCall{..} = notSupported
 
 fixAB :: FDM sig m => AlwaysBlock a -> m (AlwaysBlock a)
 fixAB AlwaysBlock{..} =

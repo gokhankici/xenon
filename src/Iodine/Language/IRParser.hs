@@ -10,7 +10,7 @@ import           Iodine.Types
 
 import           Control.Effect.Error
 import           Data.Char (isLetter, isDigit)
-import           Data.Foldable (toList)
+import           Data.Foldable
 import           Data.Functor
 import qualified Data.HashMap.Strict as HM
 import           Data.Hashable
@@ -44,6 +44,7 @@ parseModule =
   <*> (comma *> list parsePort)
   <*> (comma *> list parseVariable)
   <*> (comma *> list parseVarInit)
+  <*> (comma *> parseVerilogFunctions)
   <*> (comma *> list parseStmt)
   <*> (comma *> list parseAlwaysBlock)
   <*> (comma *> list parseModuleInstance)
@@ -63,6 +64,7 @@ parseExpr :: Parser (Expr ())
 parseExpr =
   parseConstantExpr <|>
   parseVarExpr <|>
+  parseVFCallExpr <|>
   parseTerm "uf" (UF <$> parseUFOp <*> (comma *> list parseExpr) <*> parseData) <|>
   parseTerm "ite_expr" (IfExpr
                         <$> parseExpr
@@ -111,11 +113,14 @@ parseUFOp = do
       "xor"            -> UF_xor
       "concat"         -> UF_concat
       "write_to_index" -> UF_write_to_index
-      _                ->
-        case T.stripPrefix "call_function_" f of
-          Just suffix -> UF_call suffix
-          Nothing     -> error $ "parseUFOp failed: " ++ T.unpack f
+      _                -> error $ "parseUFOp failed: " ++ T.unpack f
 
+parseVFCallExpr :: Parser (Expr ())
+parseVFCallExpr =
+  parseTerm "vfcall" (VFCall <$>
+                      identifier <*>
+                      (comma *> list parseExpr) <*>
+                      parseData)
 
 parseConstantExpr :: Parser (Expr ())
 parseConstantExpr =
@@ -172,6 +177,19 @@ parseAlwaysBlock =
 
 parseVarInit :: Parser (Id, Expr ())
 parseVarInit = parens $ (,) <$> identifier <*> (comma *> parseExpr)
+
+parseVerilogFunctions :: Parser (HM.HashMap Id (VerilogFunction ()))
+parseVerilogFunctions =
+  foldl' (\m vf -> HM.insert (verilogFunctionName vf) vf m) mempty
+  <$> list parseVerilogFunction
+
+parseVerilogFunction :: Parser (VerilogFunction ())
+parseVerilogFunction =
+  parseTerm "function" $ do
+    fn <- identifier
+    ps <- comma *> list identifier
+    e <- comma *> parseExpr
+    return $ VerilogFunction fn ps e ()
 
 parseData :: Parser ()
 parseData = return ()

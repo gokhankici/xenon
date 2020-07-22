@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Iodine.Transform.Merge (merge) where
 
@@ -29,8 +30,6 @@ import qualified Data.IntSet as IS
 import qualified Data.Sequence as SQ
 import           Control.Effect.Lift
 import           Data.List (sortOn)
-
-
 
 type A = Int
 type DepGraph = Gr Int ()

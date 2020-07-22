@@ -77,9 +77,10 @@ inline std::ostream &operator<<(std::ostream &out, const IRUFOp& op)
         default:                        cerr << "missing other op" << endl; exit(1);
         }
     }
-    else if (auto cfop = get_if<IRCallFunctionOp>(&op))
+    else if (get_if<IRCallFunctionOp>(&op))
     {
-        return out << "call_function_" << cfop->function;
+        cerr << "IRCallFunctionOp should not be printed like this !" << endl;
+        exit(1);
     }
     else
     {
@@ -90,7 +91,14 @@ inline std::ostream &operator<<(std::ostream &out, const IRUFOp& op)
 
 std::ostream &IRExpr_UF::print(ostream &out) const
 {
-    return out << "uf(" << function << ", " << operands << ")";
+    if (auto cfop = get_if<IRCallFunctionOp>(&function))
+    {
+        return out << "vfcall(" << cfop->function << ", " << operands << ")";
+    }
+    else
+    {
+        return out << "uf(" << function << ", " << operands << ")";
+    }
 }
 
 void IRExpr_UF::addOperand(const IRExpr *operand)

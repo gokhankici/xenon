@@ -73,6 +73,19 @@ private:
     const IRStmt *statement;
 };
 
+class IRFunction
+{
+public:
+    IRFunction(const string& n, const vector<string>& ps, const IRExpr* e): name(n), ports(ps), expr(e) {}
+
+    friend std::ostream &operator<<(std::ostream &, const IRFunction &);
+
+private:
+    const std::string name;
+    const std::vector<std::string> ports;
+    const IRExpr* expr;
+};
+
 typedef std::pair<std::string, const IRExpr*> IRVariableInit;
 
 class IRModule
@@ -87,6 +100,7 @@ public:
     void addAlwaysBlock(const IRAlwaysBlock *ab) { alwaysBlocks.push_back(ab); }
     void addModuleInstance(const IRStmt *stmt) { moduleInstances.push_back(stmt); }
     void addVariableInit(const std::string& v, const IRExpr* e) { variableInits.push_back(std::pair(v, e)); }
+    void addFunction(const IRFunction* f) { functions.push_back(f); }
 
     friend std::ostream &operator<<(std::ostream &, const IRModule &);
 
@@ -97,6 +111,7 @@ private:
     std::vector<const IRStmt *> gateStatements;
     std::vector<const IRStmt *> moduleInstances;
     std::vector<const IRAlwaysBlock *> alwaysBlocks;
+    std::vector<const IRFunction *> functions;
     std::vector<IRVariableInit> variableInits;
 };
 

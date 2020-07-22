@@ -15,6 +15,8 @@ import           Iodine.Types
 import           Iodine.Utils
 
 import           Control.Carrier.State.Strict
+import           Control.Effect.Reader
+import qualified Control.Effect.Trace as CET
 import           Control.Lens
 import           Data.Foldable
 import qualified Data.HashSet as HS
@@ -23,37 +25,40 @@ import qualified Data.Text as T
 import           Text.Read (readEither)
 
 type S = Stmt Int
+type M = Module Int
 
-transitionRelation :: S -> HornExpr
+type FD sig m = (Has (Reader M) sig m, Has CET.Trace sig m)
+
+transitionRelation :: FD sig m => S -> m HornExpr
 transitionRelation s =
-  HAnd $
-  transitionRelation' mempty LeftRun s |:>
+  toAnd <$>
+  transitionRelation' mempty LeftRun s <*>
   transitionRelation' mempty RightRun s
 
 type PathCond = L (Expr Int)
 
-transitionRelation' :: PathCond -> HornVarRun -> S -> HornExpr
+transitionRelation' :: FD sig m => PathCond -> HornVarRun -> S -> m HornExpr
 transitionRelation' conds r stmt =
   case stmt of
     Block {..} ->
-      HAnd $ transitionRelation' conds r <$> blockStmts
+      HAnd <$> traverse (transitionRelation' conds r) blockStmts
 
     Assignment {..} ->
-      HAnd $
-      (val r assignmentLhs `heq` val r assignmentRhs) |:>
+      return $ toAnd
+      (val r assignmentLhs `heq` val r assignmentRhs)
       (tag r assignmentLhs `hiff` tagWithCond r conds assignmentRhs)
 
-    IfStmt {..} ->
+    IfStmt {..} -> do
       let conds' = ifStmtCondition <| conds
           hc     = val r ifStmtCondition
           c      = hc `heq` HInt 0
           not_c  = HBinary HNotEquals hc (HInt 0)
-          t      = transitionRelation' conds' r ifStmtThen
-          e      = transitionRelation' conds' r ifStmtElse
-      in  HOr $ HAnd (c |:> t) |:> HAnd (not_c |:> e)
+      t <- transitionRelation' conds' r ifStmtThen
+      e <- transitionRelation' conds' r ifStmtElse
+      return $ HOr $ toAnd c t |:> toAnd not_c e
 
     Skip {..} ->
-      HBool True
+      return $ HBool True
 
 ufVal :: HornVarRun -> Id -> HornAppReturnType -> L (Expr Int) -> HornExpr
 ufVal r name t es = HApp name t hes
@@ -83,6 +88,7 @@ val r = \case
   Str {..}    -> notSupported
   Select {..} -> ufVal r name HornInt (selectVar <| selectIndices)
     where name = mkUFName exprData
+  VFCall {..} -> error "val should not be called with a verilog function call"
 
 tagWithCond :: HornVarRun -> PathCond -> Expr Int -> HornExpr
 tagWithCond r es e =
@@ -110,6 +116,7 @@ tag r = \case
                       }
   Str {..}    -> HBool False
   Select {..} -> ufTag r (selectVar <| selectIndices)
+  VFCall {..} -> error "tag should not be called with a verilog function call"
 
 heq, hne, hiff :: HornExpr -> HornExpr -> HornExpr
 heq  = HBinary HEquals
@@ -141,6 +148,7 @@ keepVariables es = goEs es & evalState @Exprs HS.empty & run
     goE IfExpr{..}     = goEs $ ifExprCondition |:> ifExprThen |> ifExprElse
     goE Str{..}        = return mempty
     goE Select{..}     = goEs $ selectVar <| selectIndices
+    goE VFCall{..}     = error "keepVariables should not be called with a verilog function call"
 
     goEs :: Has (State (HS.HashSet (Expr Int))) sig m
          => L (Expr Int)
@@ -157,3 +165,6 @@ parseVerilogInt value = case readEither v' of
   v' = case v of
     '0' : 'b' : rst -> rst
     _               -> v
+
+toAnd :: HornExpr -> HornExpr -> HornExpr
+toAnd e1 e2 = HAnd $ mempty |> e1 |> e2

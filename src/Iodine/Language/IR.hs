@@ -20,6 +20,7 @@ module Iodine.Language.IR
   , GetVariables (..)
   , GetData (..)
   , UFOp (..)
+  , VerilogFunction (..)
   , isAB
   , isInput
   , isStar
@@ -93,6 +94,10 @@ data Expr a =
            , selectIndices :: L (Expr a)
            , exprData      :: a
            }
+  | VFCall { vfCallFunction :: Id
+           , vfCallArgs     :: L (Expr a)
+           , exprData       :: a
+           }
   deriving (Eq, Generic, Functor, Foldable, Traversable, Show, Read)
 
 data UFOp =
@@ -127,7 +132,6 @@ data UFOp =
   | UF_xor
   | UF_concat
   | UF_write_to_index
-  | UF_call Id -- ^ call a function with the given name
   deriving (Eq, Show, Read)
 {- HLINT ignore UFOp -}
 
@@ -140,6 +144,14 @@ data ModuleInstance a =
                  , moduleInstancePorts :: HM.HashMap Id (Expr a)
                  , moduleInstanceData  :: a
                  }
+  deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
+
+data VerilogFunction a =
+  VerilogFunction { verilogFunctionName  :: Id
+                  , verilogFunctionPorts :: L Id
+                  , verilogFunctionExpr  :: Expr a
+                  , verilogFunctionData  :: a
+                  }
   deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
 
 data Stmt a =
@@ -173,14 +185,15 @@ data AlwaysBlock a =
   deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
 
 data Module a =
-  Module { moduleName      :: Id
-         , ports           :: L Port
-         , variables       :: L Variable
-         , constantInits   :: L (Id, Expr a)
-         , gateStmts       :: L (Stmt a)
-         , alwaysBlocks    :: L (AlwaysBlock a)
-         , moduleInstances :: L (ModuleInstance a)
-         , moduleData      :: a
+  Module { moduleName         :: Id
+         , ports              :: L Port
+         , variables          :: L Variable
+         , constantInits      :: L (Id, Expr a)
+         , verilogFunctions   :: HM.HashMap Id (VerilogFunction a)
+         , gateStmts          :: L (Stmt a)
+         , alwaysBlocks       :: L (AlwaysBlock a)
+         , moduleInstances    :: L (ModuleInstance a)
+         , moduleData         :: a
          }
   deriving (Generic, Functor, Foldable, Traversable, Show, Eq, Read)
 
@@ -208,6 +221,7 @@ instance GetVariables Expr where
     IfExpr {..}   -> mfold getVariables [ifExprCondition, ifExprThen, ifExprElse]
     Str {..}      -> mempty
     Select {..}   -> mfold getVariables $ selectVar SQ.<| selectIndices
+    VFCall {..}   -> mfold getVariables vfCallArgs
 
 instance GetVariables ModuleInstance where
   getVariables ModuleInstance{..} =
@@ -232,6 +246,9 @@ instance GetData Expr where
 
 instance GetData ModuleInstance where
   getData = moduleInstanceData
+
+instance GetData VerilogFunction where
+  getData = verilogFunctionData
 
 instance GetData AlwaysBlock where
   getData = abData
@@ -354,7 +371,6 @@ instance DocSimple UFOp where
     UF_xor            -> "uf_xor"
     UF_concat         -> "uf_concat"
     UF_write_to_index -> "uf_write_to_index"
-    UF_call f         -> "uf_call_function_" <> T.unpack f
 
 instance Doc Expr where
   doc _ (Constant c _)   = id2Doc c
@@ -392,7 +408,10 @@ instance Doc Expr where
       UF_sub            -> commonB "-"
       UF_xnor           -> commonB "!^"
       UF_xor            -> commonB "^"
-      _ -> common
+      UF_abs            -> common
+      UF_exp            -> common
+      UF_concat         -> common
+      UF_write_to_index -> common
     where
       d = doc cfg
       commonB bop = commonB2 bop True es
@@ -410,6 +429,10 @@ instance Doc Expr where
   doc _   (Str s _)        = PP.quotes $ id2Doc s
   doc cfg (Select v is _)  = doc cfg v PP.<> PP.brackets (docList cfg is)
     where docList c l = PP.hsep $ PP.punctuate sep (doc c <$> toList l)
+  doc cfg (VFCall f es i) =
+    PP.text (T.unpack f) <>
+    PP.parens (PP.sep $ PP.punctuate sep (doc cfg <$> toList es)) <>
+    docIndex i
 
 
 instance Doc Event where
@@ -464,6 +487,17 @@ instance Doc ModuleInstance where
         []
       fixedC = c { currentDocIndex = Just a }
 
+instance Doc VerilogFunction where
+  doc c (VerilogFunction fn ps e a) =
+    PP.sep [ PP.text "function"
+             PP.<+> t fn
+             PP.<+> PP.parens (PP.hsep $ PP.punctuate (PP.text ", ") (t <$> toList ps))
+             PP.<+> PP.text "="
+           , doc fixedC e
+           ]
+    where fixedC = c { currentDocIndex = Just a }
+          t = PP.text . T.unpack
+
 instance Doc AlwaysBlock where
   doc c (AlwaysBlock e s a) =
     PP.sep [ PP.text "always"
@@ -484,6 +518,7 @@ instance Doc Module where
         vcatNL [ vcatSimple ports
                , vcatSimple variables
                , vcatNS cNoIndex gateStmts
+               , vcatNS cNoIndex verilogFunctions
                , vcatNS cMIIndex moduleInstances
                , vcatNS cNoIndex alwaysBlocks
                ]
@@ -491,7 +526,7 @@ instance Doc Module where
         PP.hsep $
         PP.punctuate sep (id2Doc . variableName . portVariable <$> toList ports)
 
-      vcatNS :: Doc d2 => DocConfig a -> L (d2 a) -> PP.Doc
+      vcatNS :: (Foldable t, Doc d2) => DocConfig a -> t (d2 a) -> PP.Doc
       vcatNS c2 = vcatNL . fmap (doc c2) . toList
 
       vcatNL :: [PP.Doc] -> PP.Doc
@@ -578,7 +613,10 @@ moduleInstanceReadsAndWrites m mClks mi = run $ execState (mempty, mempty) $ do
       IfExpr {..}   -> mfold getUpdatedVars [ifExprThen, ifExprElse]
       Str {..}      -> mempty
       Select {..}   -> getUpdatedVars selectVar
-
+      e@VFCall {..} -> error
+                       $ unlines [ "Module instance output port expression is an function call!"
+                                 , show $ void e
+                                 ]
 
 -- | is the given thread an always block with the star event?
 isStar :: AlwaysBlock a -> Bool

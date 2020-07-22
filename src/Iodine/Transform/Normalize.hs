@@ -26,6 +26,7 @@ import           Control.Effect.Error
 import           Control.Lens
 import           Control.Monad
 import           Data.Functor
+import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import qualified Data.Sequence as SQ
@@ -59,11 +60,12 @@ makeLenses ''St
 makeLenses ''StmtSt
 
 type FD sig m  = (Has (State St) sig m) --, Effect sig)
-type FDM sig m = (FD sig m, Has (Reader ModuleName) sig m)
+type FDM sig m = (FD sig m, Has (Reader ModuleName) sig m, Has (Reader VFM) sig m)
 type FDS sig m = (FDM sig m, Has (State StmtSt) sig m)
-type FDR sig m = (FD sig m, Has (Reader StmtSt) sig m)
+type FDR sig m = (FDM sig m, Has (Reader StmtSt) sig m)
 
 newtype ModuleName = ModuleName { getModuleName :: Id }
+type VFM = HM.HashMap Id (VerilogFunction Int)
 
 -- #############################################################################
 
@@ -85,10 +87,10 @@ normalize modules = traverse normalizeModule modules & runNormalize
 -- | Run normalize on all the statements inside the given module.
 normalizeModule :: (FD sig m, Has (Error IodineException) sig m)
                 => Module Int -> m (Module Int)
-normalizeModule Module {..} = runReader (ModuleName moduleName) $ do
+normalizeModule Module {..} = runReader (ModuleName moduleName) $ runReader verilogFunctions $ do
   unless (SQ.null gateStmts) $
     throwError $ IE Normalize "gateStmts should be empty here"
-  Module moduleName ports variables constantInits
+  Module moduleName ports variables constantInits verilogFunctions
     <$> return mempty
     <*> traverse normalizeAB alwaysBlocks
     <*> traverse normalizeModuleInstance moduleInstances
@@ -107,7 +109,7 @@ normalizeAB ab@AlwaysBlock{..} = do
 
 -- | Normalize the event of an always block. This just assigns zero to the
 -- expressions that appear under an event.
-normalizeEvent :: FD sig m => Event a -> m (Event Int)
+normalizeEvent :: FDM sig m => Event a -> m (Event Int)
 normalizeEvent =
   -- normalizing event does not require statement state
   runReader initialStmtSt . \case
@@ -117,11 +119,10 @@ normalizeEvent =
 
 -- | Normalize a module instance. This just assigns zero to the expressions that
 -- appear in port assignments.
-normalizeModuleInstance :: FD sig m => ModuleInstance Int -> m (ModuleInstance Int)
+normalizeModuleInstance :: FDM sig m => ModuleInstance Int -> m (ModuleInstance Int)
 normalizeModuleInstance ModuleInstance{..} = do
   ports' <- traverse normalizeExpr moduleInstancePorts & runReader initialStmtSt
   return $ ModuleInstance {moduleInstancePorts = ports', ..}
-
 
 -- #############################################################################
 
@@ -279,6 +280,11 @@ normalizeExpr = \case
     <*> traverse normalizeExpr selectIndices
     <*> freshId ExprId
 
+  VFCall {..} ->
+    VFCall vfCallFunction
+    <$> traverse normalizeExpr vfCallArgs
+    <*> freshId ExprId
+    >>= inlineVerilogFunction
 
 -- #############################################################################
 
@@ -293,7 +299,7 @@ runNormalize act = do
   (st, res) <- act & runState initialSt
   return (res, st ^. trSubs)
 
--- | give fresh id to each thread and module
+-- | give fresh id to each thread, module and verilog functions
 -- 0 is assigned to each stmt
 assignThreadIds :: Traversable t => t (Module a) -> t (Module Int)
 assignThreadIds modules =
@@ -304,7 +310,8 @@ assignThreadIds modules =
     freshModule Module{..} =
       Module moduleName ports variables
       (fmap ($> 0) <$> constantInits)
-      <$> traverse freshStmt gateStmts
+      <$> traverse freshF verilogFunctions
+      <*> traverse freshStmt gateStmts
       <*> traverse freshAB alwaysBlocks
       <*> traverse freshMI moduleInstances
       <*> getFreshId
@@ -328,6 +335,11 @@ assignThreadIds modules =
       ModuleInstance
       moduleInstanceType moduleInstanceName
       (HM.map (0 <$) moduleInstancePorts)
+      <$> getFreshId
+
+    freshF VerilogFunction{..} =
+      VerilogFunction verilogFunctionName verilogFunctionPorts
+      (0 <$ verilogFunctionExpr)
       <$> getFreshId
 
 data IdType = FunId | ExprId
@@ -365,3 +377,43 @@ updateLastNonBlocking var =
   where
     name  = varName var
     varId = exprData var
+
+inlineVerilogFunction :: FDM sig m => Expr Int -> m (Expr Int)
+inlineVerilogFunction VFCall {..} = do
+  VerilogFunction{..} <- (HM.! vfCallFunction) <$> ask @VFM
+  toBeReplaced <-
+    toList . SQ.zip verilogFunctionPorts <$>
+    traverse inlineVerilogFunction vfCallArgs
+  replaceVar toBeReplaced <$>
+    inlineVerilogFunction verilogFunctionExpr
+inlineVerilogFunction e@Constant{} = return e
+inlineVerilogFunction e@Variable{} = return e
+inlineVerilogFunction e@Str{}      = return e
+inlineVerilogFunction UF{..} =
+  UF ufOp
+  <$> traverse inlineVerilogFunction ufArgs
+  <*> return exprData
+inlineVerilogFunction IfExpr{..} =
+  IfExpr
+  <$> inlineVerilogFunction ifExprCondition
+  <*> inlineVerilogFunction ifExprThen
+  <*> inlineVerilogFunction ifExprElse
+  <*> return exprData
+inlineVerilogFunction Select{..} =
+  Select selectVar
+  <$> traverse  inlineVerilogFunction selectIndices
+  <*> return exprData
+
+replaceVar :: [(Id, Expr Int)] -> Expr Int -> Expr Int
+replaceVar vs = go
+  where
+    go e@Variable{..} =
+      case lookup varName vs of
+        Nothing -> e
+        Just e' -> e'
+    go VFCall{}           = error "replaceVar should not be called with VFCall"
+    go e@Constant{}       = e
+    go e@Str{}            = e
+    go UF{..}             = UF ufOp (go <$> ufArgs) exprData
+    go (IfExpr c e1 e2 a) = IfExpr (go c) (go e1) (go e2) a
+    go (Select v is a)    = Select (go v) (go <$> is) a

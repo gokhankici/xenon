@@ -56,6 +56,7 @@ allTests =
   , majorStubs
   , aesStubs
   , major
+  , scarvStubs
   ]
 
 --------------------------------------------------------------------------------
@@ -183,6 +184,7 @@ negative = mkCollection "negative" $ go <$> names
             , "neg-test-6"
             , "tp"
             , "neg-test-11"
+            , "neg-test-12"
             , "secverilog-neg-01"
             , "secverilog-neg-02"
             , "neg-submodule-02"
@@ -240,6 +242,22 @@ aesStubs = mkCollection "aes-stub" ts
          , mkT "expand_key_type_B_256" "test6"
          ]
 
+
+--------------------------------------------------------------------------------
+scarvStubs :: TestTree
+--------------------------------------------------------------------------------
+scarvStubs = mkCollection "scarv-stubs" ts
+  where
+    d = benchmarkDir </> "scarv-cpu"
+    x = d </> "external" </> "xcrypto" </> "rtl"
+    ts = [ T (takeBaseName filename) filename
+         | filename <- [ x </> "b_bop"     </> "b_bop_unrolled.v"
+                       , x </> "b_lut"     </> "b_lut_unrolled.v"
+                       , x </> "p_addsub"  </> "p_addsub_unrolled.v"
+                       , x </> "p_shfrot"  </> "p_shfrot.v"
+                       , x </> "xc_aesmix" </> "xc_aesmix_unrolled.v"
+                       ]
+         ]
 
 --------------------------------------------------------------------------------
 major :: TestTree
