@@ -116,9 +116,6 @@ instance MakeKVar AlwaysBlock where
 instance MakeKVar Module where
   getThreadId = getData
 
-instance MakeKVar VerilogFunction where
-  getThreadId = getData
-
 setThreadId :: MakeKVar m => m Int -> HornExpr -> HornExpr
 setThreadId t = updateThreadId (const $ getThreadId t)
 

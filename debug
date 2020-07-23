@@ -26,7 +26,7 @@ done
 # TEST="benchmarks/crypto_cores/tiny_aes/trunk/rtl/aes_256.v"
 # TEST="benchmarks/crypto_cores/tiny_aes/trunk/rtl/test6.v"
 # TEST="benchmarks/fpu/verilog/pre_norm.v"
-# TEST="benchmarks/fpu/verilog/fpu.v"
+TEST="benchmarks/fpu/verilog/fpu.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/mult_test.v"
 # TEST="benchmarks/xcrypto-ref/rtl/coprocessor/scarv_cop_palu.v"
 # TEST="benchmarks/yarvi/shared/test-01.v"
@@ -42,7 +42,7 @@ done
 # TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-14.v"
 # TEST="benchmarks/scarv-cpu/external/xcrypto/rtl/b_lut/b_lut_unrolled.v"
-TEST="benchmarks/scarv-cpu/external/xcrypto/rtl/p_addsub/p_addsub_unrolled.v"
+# TEST="benchmarks/scarv-cpu/external/xcrypto/rtl/p_addsub/p_addsub_unrolled.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"

@@ -9,9 +9,6 @@
         "sink": [
           "y"
         ],
-        "always_eq": [
-          "x"
-        ],
         "initial_eq": [
           "Stall"
         ]

@@ -16,6 +16,7 @@ import           Control.Lens
 import           Control.Monad
 import qualified Data.DList as DL
 import           Data.Foldable
+import           Data.List
 import qualified Data.Graph.Inductive as G
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
@@ -195,3 +196,8 @@ trace msg a = do
 
 output :: Has (Writer Output) sig m => [String] -> m ()
 output = tell . DL.fromList
+
+groupSort :: Ord a => [(a, b)] -> [(a, [b])]
+groupSort = fmap go . groupBy (\(a1,_) (a2, _) -> a1 == a2) . sortOn fst
+  where go []           = undefined
+        go ((a,b):rest) = (a, b:(snd <$> rest))

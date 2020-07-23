@@ -30,6 +30,7 @@ library
       Iodine.Analyze.CounterExample
       Iodine.Analyze.DependencyGraph
       Iodine.Analyze.FQOutAnalysis
+      Iodine.Analyze.GuessQualifiers
       Iodine.Analyze.ModuleDependency
       Iodine.Analyze.ModuleSummary
       Iodine.IodineArgs
@@ -59,7 +60,7 @@ library
   hs-source-dirs:
       src
   default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
-  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -Wno-missing-home-modules
   build-depends:
       aeson
     , base >=4.7 && <5
@@ -96,7 +97,7 @@ executable iodine
   hs-source-dirs:
       app
   default-extensions: ConstraintKinds DataKinds FlexibleContexts FlexibleInstances FunctionalDependencies GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators UndecidableInstances
-  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -flate-specialise -fspecialise-aggressively -Werror -fdefer-type-errors -fwarn-incomplete-patterns -fwarn-incomplete-record-updates -fwarn-incomplete-uni-patterns -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-orphans -fwarn-overlapping-patterns -fwarn-redundant-constraints -fwarn-tabs -fwarn-unused-binds -fwarn-unused-imports -fwarn-unused-matches -Wno-missing-home-modules -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
     , base >=4.7 && <5

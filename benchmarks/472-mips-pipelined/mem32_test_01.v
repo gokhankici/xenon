@@ -10,16 +10,19 @@ input wire [31:0] din;
 output reg [31:0] out;
 output reg [31:0] tmp;
 
+reg din_r;
+
 mem32 INS1(.clk(clk)
           ,.mem_read(mread)
 		  ,.mem_write(mwrite)
 		  ,.address(addr) // 32 bit
-		  ,.data_in(din) // 32 bit
+		  ,.data_in(din_r) // 32 bit
 		  ,.data_out(tmp) // 32 bit
 		  );
 
 always @(posedge clk) begin
 	out <= tmp;
+	din_r <= din;
 end
 
 endmodule

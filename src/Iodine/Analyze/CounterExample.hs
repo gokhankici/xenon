@@ -186,14 +186,14 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
                       childIterNo
                       g2
                   in
-                    DT.trace
-                        (printf "Adding edge (%s, %s) since %d >= %d"
-                                parentName
-                                childName
-                                parentIterNo
-                                childIterNo
-                        )
-                      $ createDepTree getIterNo g3 childName ws2
+                    -- DT.trace
+                    --     (printf "Adding edge (%s, %s) since %d >= %d"
+                    --             parentName
+                    --             childName
+                    --             parentIterNo
+                    --             childIterNo
+                    --     ) $
+                    createDepTree getIterNo g3 childName ws2
                 else acc
             acc' = (g, HS.insert parentName ws)
           in
@@ -268,12 +268,14 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
           exitFailure
 
   shouldNotHaveCycle nonCtTree "ct tree has a cycle!"
+  let nonCtTreeLeaves = toName <$> getLeaves nonCtTree
+  printf "NON CT TREE LEAVES: %s\n" (show nonCtTreeLeaves)
 
   let createPubTree = createDepTree getPubNo
   let nonPubTreeRoots =
         [ c
-        | l <- getLeaves nonCtTree
-        , c <- HS.toList (hasToBePublic $ toName l)
+        | l <- nonCtTreeLeaves
+        , c <- HS.toList $ hasToBePublic l
         ]
   let iterToConstraintType iterNo = do
         constraintNo   <- fst <$> fpTrace ^. at iterNo
