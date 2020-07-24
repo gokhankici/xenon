@@ -136,7 +136,7 @@ data UFOp =
 {- HLINT ignore UFOp -}
 
 data AssignmentType = Blocking | NonBlocking | Continuous
-                    deriving (Generic, Eq, Show, Read)
+                    deriving (Generic, Eq, Show, Read, Ord)
 
 data ModuleInstance a =
   ModuleInstance { moduleInstanceType  :: Id

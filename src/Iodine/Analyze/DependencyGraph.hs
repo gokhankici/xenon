@@ -39,7 +39,9 @@ import qualified Data.Sequence as SQ
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
-data VarDepEdgeType = Implicit | Explicit deriving (Show, Eq, Read, Ord)
+data VarDepEdgeType = Implicit
+                    | Explicit { varDepEdgeNonBlocking :: Bool }
+                    deriving (Show, Eq, Read, Ord)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 
@@ -182,7 +184,7 @@ handleStmt Assignment{..} =
       let (pathVars2, rhsVars) = getVariables' m assignmentRhs
       rhsNodes <- getNodes rhsVars
       for_ (IS.toList rhsNodes) $ \rhsNode ->
-        addEdge (rhsNode, lhsNode, Explicit)
+        addEdge (rhsNode, lhsNode, Explicit (assignmentType == NonBlocking))
       pathNodes <- gets (^. pathVars)
       pathNodes2 <- IS.fromList <$> traverse getNode (HS.toList pathVars2)
       for_ (IS.toList $ pathNodes <> pathNodes2) $ \pathNode ->

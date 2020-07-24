@@ -28,7 +28,7 @@ type ModuleMap = HM.HashMap Id M
 
 -- modules should be in the topological order
 inlineInstances :: (AnnotationFile, L M) -> (AnnotationFile, L M)
-inlineInstances (af, ms) = ({- DT.trace (show af') -} af', ms')
+inlineInstances (af, ms) = (af', ms')
   where
     mm :: ModuleMap
     mm = foldl' (\acc m -> HM.insert (moduleName m) m acc) mempty ms
@@ -52,12 +52,9 @@ inlineInstances (af, ms) = ({- DT.trace (show af') -} af', ms')
     toNewM m = mm' HM.! moduleName m
     ms' = toNewM <$> SQ.filter (canKeepModule . moduleName) ms
 
-    canKeepModule mn = mn == af ^. afTopModule
-
-    -- FIXME
-    -- canKeepModule m = maybe True id $ do
-    --   ma <- (af ^. afAnnotations) ^. at (moduleName m)
-    --   return $ not $ ma ^. canInline
+    canKeepModule mn = maybe True id $ do
+      ma <- (af ^. afAnnotations) ^. at mn
+      return $ not $ ma ^. canInline
 
 newtype ABCounter = ABCounter { getABCounter :: Int }
 
@@ -69,9 +66,9 @@ inlineInstancesM :: ( Has (State AnnotationFile) sig m
 inlineInstancesM Module{..} = do
   (remainingInstances, newData) <-
     foldlM' (SQ.empty, SQ.empty) moduleInstances $ \(mis, nds) mi -> do
-      -- FIXME
-      -- check <- view canInline <$> getModuleAnnotations (moduleInstanceType mi)
-      let check = True
+      check <- gets (^. afAnnotations
+                      . to (HM.lookupDefault emptyModuleAnnotations (moduleInstanceType mi))
+                      . canInline)
       if check
         then do let miType = moduleInstanceType mi
                 miClocks <- getMIClocks mi
@@ -80,7 +77,7 @@ inlineInstancesM Module{..} = do
                                       Just Variable{..} -> Just varName
                                       _ -> Nothing
                                else Nothing
-                    rst = InlineSt moduleName {- variables -} miType (getData mi) clkMap
+                    rst = InlineSt moduleName miType (getData mi) clkMap
                 nd <- inlineInstance mi & runReader rst
                 return (mis, nds |> nd)
         else return (mis |> mi, nds)
@@ -100,7 +97,6 @@ type NewData = ( L Variable
                )
 
 data InlineSt = InlineSt { getCurrentModuleName :: Id
-                         -- , getCurrentModuleVars :: L Variable
                          , getMIType            :: Id
                          , getMIName            :: Int
                          , getClockMapping      :: Id -> Maybe Id
@@ -138,13 +134,16 @@ inlineInstance mi@ModuleInstance{..} = do
 
   -- update the initial & always equal annotations of the current module
   miMA <- gets (^. afAnnotations
-                 . to (HM.lookupDefault emptyModuleAnnotations moduleInstanceType)
-                 . moduleAnnotations)
-  let computeNewAnnots l = HS.fromList <$> traverse fixName (miMA ^. l . to toList)
+                 . to (HM.lookupDefault emptyModuleAnnotations moduleInstanceType))
+  let computeNewAnnots l = HS.fromList <$> traverse fixName (miMA ^. moduleAnnotations . l . to toList)
   extraIEs <- computeNewAnnots initialEquals
   extraAEs <- computeNewAnnots alwaysEquals
+  newQualifiers <- traverse fixQualifier (miMA ^. moduleQualifiers)
   let updateA = over initialEquals (<> extraIEs) . over alwaysEquals (<> extraAEs)
-      updateMA = Just . over moduleAnnotations updateA . fromMaybe emptyModuleAnnotations
+      updateMA = Just .
+                 over moduleQualifiers (<> newQualifiers) .
+                 over moduleAnnotations updateA .
+                 fromMaybe emptyModuleAnnotations
   cmn <- asks getCurrentModuleName
   modify $ over afAnnotations $ HM.alter updateMA cmn
 
@@ -217,6 +216,12 @@ fixMI :: Has (Reader InlineSt) sig m => ModuleInstance a -> m (ModuleInstance a)
 fixMI ModuleInstance{..} = ModuleInstance moduleInstanceType moduleInstanceName
                            <$> traverse fixExpr moduleInstancePorts
                            <*> return moduleInstanceData
+
+fixQualifier :: Has (Reader InlineSt) sig m => Qualifier -> m Qualifier
+fixQualifier = \case
+  QImplies v vs -> QImplies <$> fixName v <*> traverse fixName vs
+  QIff     v vs -> QIff <$> fixName v <*> traverse fixName vs
+  QPairs   vs   -> QPairs <$> traverse fixName vs
 
 pureA :: A
 pureA = 0

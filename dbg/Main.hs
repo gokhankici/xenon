@@ -19,6 +19,7 @@ import           AnnotationFileGenerator
 
 import           Iodine.Analyze.CounterExample
 import           Iodine.Analyze.FQOutAnalysis
+import           Iodine.Analyze.GuessQualifiers (guessQualifiers)
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Analyze.DependencyGraph
 import           Iodine.IodineArgs
@@ -26,7 +27,7 @@ import qualified Iodine.IodineArgs             as IA
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR            as IR
 import           Iodine.Language.IRParser
-import           Iodine.Pipeline                ( normalizeIR )
+import           Iodine.Pipeline
 import           Iodine.Runner                  ( generateIR
                                                 , readIRFile
                                                 )
@@ -249,14 +250,17 @@ debugPipeline
   -> IodineArgs
   -> IRReaderM PipelineData
 debugPipeline af irReader ia = do
-  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
-  runReader af' $ do
-    let normalizedIRMap = mkMap IR.moduleName normalizedIR
-    moduleSummaries <- createModuleSummaries normalizedIR normalizedIRMap
-    (vcgen normalizedOutput >>= debug)
-      & runReader moduleSummaries
-      & runReader normalizedIRMap
-      & runReader normalizedIR
+  (finfo, (tt, af', mm, sm)) <- pipeline af irReader ia
+  return (finfo, toConstraintTypes finfo, (af', mm, sm))
+-- debugPipeline af irReader ia = do
+  -- (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
+  -- runReader af' $ do
+  --   let normalizedIRMap = mkMap IR.moduleName normalizedIR
+  --   moduleSummaries <- createModuleSummaries normalizedIR normalizedIRMap
+  --   (vcgen normalizedOutput >>= debug)
+  --     & runReader moduleSummaries
+  --     & runReader normalizedIRMap
+  --     & runReader normalizedIR
 
 runDefaultPipeline :: Monad m => p -> m ()
 runDefaultPipeline _ = return ()
@@ -652,3 +656,13 @@ focusOnIterNo iterNo varNameStr = do
     printf "%s\niter no %d\n%s\nconstraint %d:%s\n\n" sep i sep cid (FT.showFix $ cm IM.! cid)
     HM.traverseWithKey (\k qs -> print k >> for_ (prettyQualif <$> sort (HS.toList qs)) putStrLn >> putStrLn "") m
     putStrLn ""
+
+tst :: IO ()
+tst = do
+  ((af, moduleMap, summaryMap), constraintTypes, FQOutAnalysisOutput {..}, moduleSummaries) <- readDebugOutput
+  let mn = af ^. afTopModule
+      srcs = af ^. afAnnotations . to (HM.! mn) . moduleAnnotations . sources
+      ms = summaryMap HM.! mn
+  print srcs
+  traverse_ print $ guessQualifiers srcs ms
+  return ()

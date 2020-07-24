@@ -10,6 +10,7 @@ module Iodine.Pipeline
   , ThreadType(..)
   ) where
 
+import           Iodine.Analyze.GuessQualifiers
 import           Iodine.Analyze.ModuleDependency (topsortModules)
 import           Iodine.Analyze.ModuleSummary
 import qualified Iodine.IodineArgs as IA
@@ -89,19 +90,24 @@ pipeline
   -> IA.IodineArgs                   -- ^ iodine args
   -> m (FInfo, (IM.IntMap ThreadType, AnnotationFile, HM.HashMap Id (Module Int), SummaryMap)) -- ^ fixpoint query to run
 pipeline af irReader ia = do
-  (af', normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
+  (af1, normalizedOutput@(normalizedIR, _)) <- normalizeIR af irReader ia
   let normalizedIRMap = mkModuleMap normalizedIR
   moduleSummaries <-
     createModuleSummaries normalizedIR normalizedIRMap
-    & runReader af'
-  let af'' = initVars moduleSummaries normalizedIR af'
-  runReader af'' $ do
+    & runReader af1
+  let af2 = initVars moduleSummaries normalizedIR af1
+      af3 = let tpm = af ^. afTopModule
+                updateQuals m_name m_af =
+                  let qs = guessQualifiers (m_af ^. moduleAnnotations . sources) (moduleSummaries HM.! m_name)
+                  in m_af & moduleQualifiers %~ mappend qs
+            in af2 & afAnnotations %~ HM.adjust (updateQuals tpm) tpm
+  runReader af3 $ do
     finfo <-
       (vcgen normalizedOutput >>= constructQuery normalizedIR)
       & runReader moduleSummaries
       & runReader normalizedIRMap
     let threadTypes = foldMap toThreadType normalizedIR
-    return (finfo, (threadTypes, af'', normalizedIRMap, moduleSummaries))
+    return (finfo, (threadTypes, af3, normalizedIRMap, moduleSummaries))
 
 mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
 mkModuleMap = mkMap moduleName

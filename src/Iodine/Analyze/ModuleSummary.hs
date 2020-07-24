@@ -80,6 +80,8 @@ data ModuleSummary =
 
                   -- | variable dependency graph with SCC
                   variableDependenciesSCC       :: G.Gr IS.IntSet VarDepEdgeType,
+
+                  -- | original node to scc node map
                   variableDependencySCCNodeMap  :: IM.IntMap Int
                   }
   deriving (Show, Read)
@@ -211,7 +213,9 @@ addPortDependencies ModuleInstance{..} g varDepMap =
            (concatMap fromNodes $ toList $ qd ^. implicitVars)
          accG'' =
            foldl'
-           (\g2 i -> insEdge (i, oNode, Explicit) g2)
+           -- mark non blocking as True since the taints of inputs of outputs
+           -- won't be the same anyway
+           (\g2 i -> insEdge (i, oNode, Explicit True) g2)
            accG'
            (concatMap fromNodes $ toList $ qd ^. explicitVars)
      in accG''
@@ -376,11 +380,11 @@ moduleAnnotsSCC ns =
         case mparentQD of
           Nothing ->
             case lbl of
-              Explicit -> qd & explicitVars %~ HS.insert parentName
+              Explicit _ -> qd & explicitVars %~ HS.insert parentName
               Implicit -> qd & implicitVars %~ HS.insert parentName
           Just parentQD ->
             case lbl of
-              Explicit -> qd <> parentQD
+              Explicit _ -> qd <> parentQD
               Implicit ->
                 let parentQDVars =
                       (parentQD ^. implicitVars) <> (parentQD ^. explicitVars)
@@ -408,7 +412,7 @@ getVariableDependencies varName Module{..} summaryMap =
     Just _writeTid ->
       if writtenByAB
       then first toName <$> G.lpre (variableDependencies moduleSummary) (toNode varName)
-      else toVarDeps (portDeps ^. explicitVars) Explicit ++
+      else toVarDeps (portDeps ^. explicitVars) (Explicit True) ++
            toVarDeps (portDeps ^. implicitVars) Implicit
   where
     toNode = (variableDependencyNodeMap moduleSummary HM.!)
