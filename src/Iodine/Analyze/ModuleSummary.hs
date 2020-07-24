@@ -39,6 +39,14 @@ import qualified Data.IntSet as IS
 import           Data.Maybe
 import qualified Data.Sequence as SQ
 import           Data.Traversable
+import qualified Data.Text as T
+
+import qualified Debug.Trace as DT
+
+trc :: String -> a -> a
+trc msg =
+  let enableTrace = False
+  in if enableTrace then DT.trace msg else id
 
 data QualifierDependencies = QualifierDependencies
   { _explicitVars :: Ids
@@ -68,6 +76,9 @@ data ModuleSummary =
                   -- | maps variables to threads that update it
                   -- threadWriteMap :: HM.HashMap Id IS.IntSet,
                   threadWriteMap :: HM.HashMap Id Int,
+
+                  -- | variables that read only by the written thread
+                  temporaryVariables :: Ids,
 
                   -- | variable dependency map
                   variableDependencies :: VarDepGraph,
@@ -173,17 +184,36 @@ createModuleSummary m@Module{..} = do
         HS.null readBeforeWrittenVars
 
   let (sccG, toSCCNodeMap) = sccGraph varDepGraph
+      twm = let toSingle ts = case IS.toList ts of
+                                [t] -> t
+                                _ -> error $ "multiple update threads: " ++ show ts
+            in toSingle <$> dgState ^. varUpdates
+
+  annotVars <- annotationVariables <$> getAnnotations moduleName
+  let nonTmpVars = foldl' (flip HS.insert) annotVars (variableName . portVariable <$> ports)
+      starBlockId = getData <$> find ((== Star). abEvent) alwaysBlocks
+      _tmpVars =
+        let writeTidCheck readTids wtid = Just wtid == starBlockId &&
+                                          wtid `IS.member` readTids
+            isTemporary v readTids = IS.size readTids <= 1 &&
+                                     maybe False (writeTidCheck readTids) (twm ^. at v)
+            upd vs v readTids = if isTemporary v readTids then HS.insert v vs else vs
+        in HM.foldlWithKey' upd mempty (dgState ^. varReads) `HS.difference` nonTmpVars
+      tostr (Register r) = "reg " <> T.unpack r
+      tostr (Wire w)     = "wire " <> T.unpack w
+      msg = [ show $ (\v -> tostr $ fromJust $ find ((== v) . variableName) variables) <$> HS.toList _tmpVars
+            , show (dgState ^. varReads)
+            , show twm
+            ]
+      tmpVars = trc ("tmpVars: " <> unlines msg) _tmpVars
 
   return $
     ModuleSummary
     { portDependencies             = portDeps
     , isCombinatorial              = isComb
     , threadDependencies           = dgState ^. threadGraph
-    , threadWriteMap               =
-        let toSingle ts = case IS.toList ts of
-                            [t] -> t
-                            _ -> error $ "multiple update threads: " ++ show ts
-        in toSingle <$> dgState ^. varUpdates
+    , threadWriteMap               = twm
+    , temporaryVariables           = tmpVars
     , variableDependencies         = varDepGraph
     , variableDependencyNodeMap    = varDepMap
     , invVariableDependencyNodeMap = nodeMap

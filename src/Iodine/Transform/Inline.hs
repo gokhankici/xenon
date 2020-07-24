@@ -52,6 +52,7 @@ inlineInstances (af, ms) = (af', ms')
     toNewM m = mm' HM.! moduleName m
     ms' = toNewM <$> SQ.filter (canKeepModule . moduleName) ms
 
+    -- canKeepModule mn = mn == af ^. afTopModule
     canKeepModule mn = maybe True id $ do
       ma <- (af ^. afAnnotations) ^. at mn
       return $ not $ ma ^. canInline
@@ -66,6 +67,7 @@ inlineInstancesM :: ( Has (State AnnotationFile) sig m
 inlineInstancesM Module{..} = do
   (remainingInstances, newData) <-
     foldlM' (SQ.empty, SQ.empty) moduleInstances $ \(mis, nds) mi -> do
+      -- let check = True
       check <- gets (^. afAnnotations
                       . to (HM.lookupDefault emptyModuleAnnotations (moduleInstanceType mi))
                       . canInline)
@@ -164,7 +166,7 @@ fixName :: Has (Reader InlineSt) sig m => Id -> m Id
 fixName v = do
   miType <- asks getMIType
   miName <- asks getMIName
-  return $ "M_" <> miType <> "_T" <> T.pack (show miName) <> "_" <> v
+  return $ "M_" <> miType <> "_V_" <> v <> "_T" <> T.pack (show miName)
 
 fixExpr :: Has (Reader InlineSt) sig m => Expr a -> m (Expr a)
 fixExpr e@Constant{} = return e

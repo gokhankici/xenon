@@ -35,11 +35,13 @@ Creates the following qualifiers:
 -}
 defaultQualifiers :: L FT.Qualifier
 defaultQualifiers =
-    mkEq "ValueEq" Value True
-    |:> mkEq "TagEq" Tag True -- False
+    mkEq "ValueEq" Value sameValueSuffix
+    |:> mkEq "TagEq" Tag sameTagSuffix
     |> mkTagZero 0 LeftRun
     |> mkTagZero 1 RightRun
  where
+  sameValueSuffix = True
+  sameTagSuffix   = True
   mkEq name t sameSuffix =
     makeQualifier2 name t
     (FT.PatPrefix (symbol $ getVarPrefix t LeftRun) 1)
@@ -89,19 +91,17 @@ the following qualifier is generated for every (vi, vj) pair:
 
 VLT_v1 <=> VLT_v2
 -}
-generateQualifiers (QPairs vs) = do
-  m <- ask @M
-  let mn       = moduleName m
-      vars ab  = (setThreadId ab) . (`HVarTL0` mn) <$> vs
-      varPairs = alwaysBlocks m >>= twoPairs . fmap (getFixpointName True) . vars
+generateQualifiers (QPairs vs) =
   for_ varPairs $ \pair ->
     (q pair <$> freshQualifierId) >>=
     addQualifier
  where
-  q (x1, x2) n =
+  varPairs = twoPairs vs
+  vp = getVarPrefix Tag LeftRun
+  q (v1, v2) n =
     makeQualifier2 ("Custom2_" ++ show n) Tag
-    (FT.PatExact (symbol x1))
-    (FT.PatExact (symbol x2))
+    (FT.PatPrefix (symbol $ vp <> v1) 1)
+    (FT.PatPrefix (symbol $ vp <> v2) 1)
 
 
 {-|

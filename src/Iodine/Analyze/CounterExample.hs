@@ -199,7 +199,6 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
           in
             foldl' go acc' nonCTChildren
 
-  print snks
   let createSinkTree = createDepTree getCTNo
   let
     toDotStr = GD.showDot . GD.fglToDotString . G.gmap
@@ -269,29 +268,34 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
 
   shouldNotHaveCycle nonCtTree "ct tree has a cycle!"
   let nonCtTreeLeaves = toName <$> getLeaves nonCtTree
-  printf "NON CT TREE LEAVES: %s\n" (show nonCtTreeLeaves)
+
+  putStrLn "### NON CT TREE LEAVES ##########################################################"
+  for_ nonCtTreeLeaves (putStrLn . T.unpack)
+  putStrLn ""
+
+  let minCtTreeLeaf = snd $ minimum [ (n, l) | l <- nonCtTreeLeaves, n <- toList (getPubNo l) ]
+  printf "Picking min leaf %s\n\n" minCtTreeLeaf
 
   let createPubTree = createDepTree getPubNo
-  let nonPubTreeRoots =
-        [ c
-        | l <- nonCtTreeLeaves
-        , c <- HS.toList $ hasToBePublic l
-        ]
-  let iterToConstraintType iterNo = do
+      nonPubTreeRoots = [minCtTreeLeaf] >>= HS.toList . hasToBePublic
+      iterToConstraintType iterNo = do
         constraintNo   <- fst <$> fpTrace ^. at iterNo
         constraintType <- cm ^. at constraintNo
         return $ hcType constraintType
-  let nonPubTree0 = fst $ foldl' (\(g, ws) (v, _) -> createPubTree g v ws)
+      nonPubTree0 = fst $ foldl' (\(g, ws) (v, _) -> createPubTree g v ws)
                                  (initTree nonPubTreeRoots, mempty)
                                  nonPubTreeRoots
-  let
-    nonPubTreeInitLeaves =
-      [ toName l
-      | l   <- getLeaves nonPubTree0
-      , hid <- toList $ iterToConstraintType $ G.lab' $ G.context nonPubTree0 l
-      , hid == Init
-      ]
-  printf "NON PUBLIC TREE ROOTS: %s\n" (show nonPubTreeRoots)
+      nonPubTreeInitLeaves =
+        [ toName l
+        | l   <- getLeaves nonPubTree0
+        , hid <- toList $ iterToConstraintType $ G.lab' $ G.context nonPubTree0 l
+        , hid == Init
+        ]
+
+  putStrLn "### NON PUBLIC TREE ROOTS ######################################################"
+  for_ nonPubTreeRoots (putStrLn . T.unpack . fst)
+  putStrLn ""
+
   let isReg v = Register v `elem` variables topModule
   let nonPubTreeLoop :: TstG -> [Id] -> Ids -> TstG
       nonPubTreeLoop g [] _ = g
@@ -311,8 +315,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
                  ^.        alwaysEquals
                  )
             ]
-          newEdges = DT.trace
-            ("new edges: " ++ show _newEdges)
+          newEdges = -- DT.trace ("new edges: " ++ show _newEdges)
             [ (toNode x, toNode y, z) | (x, y, z) <- _newEdges ]
           g' =
             foldl' (\acc e@(_, n, _) -> insEdge' e $ insNode n 0 acc) g newEdges

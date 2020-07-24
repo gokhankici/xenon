@@ -429,6 +429,7 @@ nextStar ab@AlwaysBlock{..} = do
 
 nextTopClk ab@AlwaysBlock{..} = do
   Module {..} <- ask @M
+  let mkSub v = second (setThreadId ab) <$> mkAllSubs v moduleName 0 1
   case find ((/= thisTid) . getThreadId) alwaysBlocks of
     Nothing     -> nextStar ab
     Just starAB -> do
@@ -442,7 +443,6 @@ nextTopClk ab@AlwaysBlock{..} = do
       return $ h { hornBody = HAnd $ starKVar |:> hornBody h }
   where
     thisTid = getThreadId ab
-    mkSub v = second (setThreadId ab) <$> mkAllSubs v v 0 1
 
 nextSubClock ab@AlwaysBlock{..} = do
   m@Module{..} <- ask

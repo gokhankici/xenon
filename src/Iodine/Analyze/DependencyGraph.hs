@@ -41,7 +41,7 @@ type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
 data VarDepEdgeType = Implicit
                     | Explicit { varDepEdgeNonBlocking :: Bool }
-                    deriving (Show, Eq, Read, Ord)
+                    deriving (Eq, Read, Ord)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 
@@ -192,7 +192,7 @@ handleStmt Assignment{..} =
       -- update the thread map
       tid <- ask
       modify (varUpdates %~ addToSet varName tid)
-      for_ rhsVars $ \rhsVar -> modify (varReads %~ addToSet rhsVar tid)
+      for_ (pathVars2 <> rhsVars) $ \rhsVar -> modify (varReads %~ addToSet rhsVar tid)
     _ -> error "assignment lhs is non-variable"
 handleStmt IfStmt{..} = do
   oldPathVars <- gets (view pathVars)
@@ -230,3 +230,7 @@ addToSet k i = HM.alter upd k
   where
     upd Nothing   = Just $ IS.singleton i
     upd (Just is) = Just $ IS.insert i is
+
+instance Show VarDepEdgeType where
+  show Implicit     = "imp"
+  show (Explicit b) = if b then "exp-nb" else "exp-b"

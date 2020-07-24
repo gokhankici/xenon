@@ -95,7 +95,7 @@ instance FromJSON Annotations where
       <*> o .:? "assert_eq"  .!= mempty
       <*> o .:? "tag_eq"     .!= mempty
       where
-        objKeys = ["source", "sink", "initial_eq", "always_eq", "assert_eq", "tag_eq"]
+        objKeys = ["source", "sink", "initial_eq", "always_eq", "assert_eq", "tag_eq", "ignore"]
 
 instance ToJSON Annotations where
   toJSON a =
@@ -134,14 +134,14 @@ instance ToJSON Qualifier where
                      (at "variables" ?~ toJSON vs))
 
 instance FromJSON ModuleAnnotations where
-  parseJSON = withObjectKeys "ModuleAnnotation" objKeys $ \o ->
+  parseJSON = withObject "ModuleAnnotation" $ \o ->
     ModuleAnnotations
     <$> o .:? "annotations" .!= emptyAnnotations
     <*> o .:? "qualifiers"  .!= mempty
     <*> parseClock o "clock"
     <*> o .:? "inline"      .!= False
-    where
-      objKeys = ["annotations", "qualifiers", "clock", "inline", "blocklist", "qualifiers-history"]
+    -- where
+    --   objKeys = ["annotations", "qualifiers", "clock", "inline", "blocklist", "qualifiers-history"]
 
 instance ToJSON ModuleAnnotations where
   toJSON ma =

@@ -19,15 +19,15 @@ import qualified Data.IntSet                   as IS
 import           Data.Foldable
 import           Data.Maybe
 import qualified Data.Sequence                 as SQ
-
 import           Data.Bifunctor
-import qualified Debug.Trace                   as DT
+-- import Data.List (nub)
 
-enableTrace :: Bool
-enableTrace = False
+import qualified Debug.Trace as DT
 
 trc :: String -> a -> a
-trc msg = if enableTrace then DT.trace msg else id
+trc msg =
+  let enableTrace = False
+  in if enableTrace then DT.trace msg else id
 
 data St =
   St { summary  :: ModuleSummary
@@ -38,8 +38,13 @@ data St =
   deriving (Show)
 
 guessQualifiers :: Ids -> ModuleSummary -> L Qualifier
-guessQualifiers srcs ms = (\ns -> QPairs (ns >>= sccToName)) <$> sameCycles
+guessQualifiers srcs ms =
+  ( \ns -> let vs = withLen "guessQualifiers: " $ SQ.filter filterVars (ns >>= sccToName)
+           in  QPairs vs
+  ) <$> sameCycles
  where
+  withLen s ls = trc (s <> show (length ls)) ls
+
   sameCycles = trc (show $ toList $ fmap toName <$> _sameCycles) _sameCycles
   _sameCycles =
     SQ.fromList
@@ -57,11 +62,11 @@ guessQualifiers srcs ms = (\ns -> QPairs (ns >>= sccToName)) <$> sameCycles
                     , history  = IS.fromList startSCCNodes
                     , cycleMap = IM.fromList $ (, 0) <$> startSCCNodes
                     }
-
+  filterVars = (`notElem` temporaryVariables ms)
   _g  = variableDependenciesSCC ms
-  msg = second (fmap (invVariableDependencyNodeMap ms IM.!) . IS.toList)
-    <$> G.labNodes _g
-  g      = trc (show msg) _g
+  msg = second (fmap (invVariableDependencyNodeMap ms IM.!) . IS.toList) <$> G.labNodes _g
+  -- msg = nub $ IS.size . snd <$> G.labNodes _g
+  g = trc (show msg) _g
 
   toName = (invVariableDependencyNodeMap ms IM.!)
 

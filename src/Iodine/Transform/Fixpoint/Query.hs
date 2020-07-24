@@ -11,6 +11,7 @@ module Iodine.Transform.Fixpoint.Query
   )
 where
 
+import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Common
@@ -171,19 +172,29 @@ convertExpr HApp {..} = do
           then FT.mkFFunc 0 $ replicate arity FT.intSort ++ [ret]
           else ret
 
-convertExpr KVar {..} =
+convertExpr KVar {..} = do
+  let moduleName =
+        case SQ.viewl hKVarSubs of
+          SQ.EmptyL        -> Nothing
+          (lhs, _) SQ.:< _ -> Just $ hVarModule lhs
+  mms <- maybe (return Nothing) (\mn -> asks @SummaryMap (^. at mn)) moduleName
+  let tmpCheck e =
+        case mms of
+          Just ms -> hVarName e `notElem` temporaryVariables ms
+          Nothing -> error "unreachable"
   FT.PKVar (mkKVar hKVarId) . FT.mkSubst . toList <$>
-  traverse
-  (\(lhs, rhs) -> do
-      lhs' <- convertHVar True lhs
-      sym  <-
-        case lhs' of
-          FT.EVar v -> return v
-          _ -> throw $ "expecting lhs of kvar substitution to be a symbol: " ++ show lhs
-      rhs' <- convertExpr rhs
-      return (sym, rhs')
-  )
-  hKVarSubs
+    traverse
+    (\(lhs, rhs) -> do
+        lhs' <- convertHVar True lhs
+        sym  <-
+          case lhs' of
+            FT.EVar v -> return v
+            _ -> throw $ "expecting lhs of kvar substitution to be a symbol: " ++ show lhs
+        rhs' <- convertExpr rhs
+        return (sym, rhs')
+    )
+    -- hKVarSubs
+    (SQ.filter (tmpCheck . fst) hKVarSubs)
 
 convertExpr HIte{..} =
   FT.EIte

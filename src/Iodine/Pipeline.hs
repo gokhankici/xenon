@@ -23,7 +23,6 @@ import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
 import           Iodine.Transform.SanityCheck
 import           Iodine.Transform.VCGen
--- import           Iodine.Transform.VariableRename
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -59,7 +58,7 @@ normalizeIR af irReader ia = do
   let topModuleName = af ^. afTopModule
   initialIR <- topsortModules topModuleName <$> irReader
   let (af', ir) = inlineInstances $
-                  (af, assignThreadIds initialIR) -- variableRename af $ assignThreadIds initialIR
+                  (af, assignThreadIds initialIR)
       irMap = mkModuleMap ir
 
   normalizedOutput <- runReader af' $ runReader irMap $ do
@@ -101,13 +100,16 @@ pipeline af irReader ia = do
                   let qs = guessQualifiers (m_af ^. moduleAnnotations . sources) (moduleSummaries HM.! m_name)
                   in m_af & moduleQualifiers %~ mappend qs
             in af2 & afAnnotations %~ HM.adjust (updateQuals tpm) tpm
-  runReader af3 $ do
+      addGuessedQuals = True
+      -- addGuessedQuals = False
+      finalAF = if addGuessedQuals then af3 else af2
+  runReader finalAF $ do
     finfo <-
       (vcgen normalizedOutput >>= constructQuery normalizedIR)
       & runReader moduleSummaries
       & runReader normalizedIRMap
     let threadTypes = foldMap toThreadType normalizedIR
-    return (finfo, (threadTypes, af3, normalizedIRMap, moduleSummaries))
+    return (finfo, (threadTypes, finalAF, normalizedIRMap, moduleSummaries))
 
 mkModuleMap :: L (Module a) -> HM.HashMap Id (Module a)
 mkModuleMap = mkMap moduleName
