@@ -22,6 +22,9 @@ xc_aessub_sbox_inv i_sbox_inv (
 .out(out_inv)
 );
 
+reg [7:0] out_r;
+always @(*) out_r = out;
+
 endmodule
 
 
@@ -179,7 +182,15 @@ wire s7, s6, s5, s4, s3, s2, s1, s0;
 
 assign out = {s0, s1, s2, s3, s4, s5, s6, s7};
 
-assign {u0, u1, u2, u3, u4, u5, u6, u7}= in;
+// assign {u0, u1, u2, u3, u4, u5, u6, u7}= in;
+assign u0 = in[7];
+assign u1 = in[6];
+assign u2 = in[5];
+assign u3 = in[4];
+assign u4 = in[3];
+assign u5 = in[2];
+assign u6 = in[1];
+assign u7 = in[0];
 
 wire y0 = u0 ^ u3;
 wire y2 = u1 ~^ u3;

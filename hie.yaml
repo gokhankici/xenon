@@ -1,25 +1,46 @@
 cradle:
   cabal:
-    - path: "src"
+    - path: "./src"
       component: "lib:iodine"
 
-    - path: "app/Main.hs"
+    - path: "./app/Main.hs"
       component: "iodine:exe:iodine"
 
-    - path: "app/Paths_iodine.hs"
+    - path: "./app/Paths_iodine.hs"
       component: "iodine:exe:iodine"
 
-    - path: "dbg/Main.hs"
+    - path: "./dbg/Main.hs"
       component: "iodine:exe:iodine-debug"
 
-    - path: "dbg/Paths_iodine.hs"
+    - path: "./dbg/AnnotationFileGenerator.hs"
       component: "iodine:exe:iodine-debug"
 
-    - path: "prolog-pretty-app/Main.hs"
+    - path: "./dbg/Paths_iodine.hs"
+      component: "iodine:exe:iodine-debug"
+
+    - path: "./prolog-pretty-app/Main.hs"
       component: "iodine:exe:prolog-pretty"
 
-    - path: "prolog-pretty-app/Paths_iodine.hs"
+    - path: "./prolog-pretty-app/Paths_iodine.hs"
       component: "iodine:exe:prolog-pretty"
 
-    - path: "test"
+    - path: "./test"
       component: "iodine:test:iodine-test"
+
+    - path: "./liquid-fixpoint/src"
+      component: "lib:liquid-fixpoint"
+
+    - path: "./liquid-fixpoint/unix"
+      component: "lib:liquid-fixpoint"
+
+    - path: "./liquid-fixpoint/win"
+      component: "lib:liquid-fixpoint"
+
+    - path: "./liquid-fixpoint/bin/Fixpoint.hs"
+      component: "liquid-fixpoint:exe:fixpoint"
+
+    - path: "./liquid-fixpoint/tests"
+      component: "liquid-fixpoint:test:test"
+
+    - path: "./liquid-fixpoint/tests"
+      component: "liquid-fixpoint:test:testparser"

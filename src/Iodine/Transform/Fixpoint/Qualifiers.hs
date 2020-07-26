@@ -16,6 +16,7 @@ import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Horn
 import           Iodine.Types
 import           Iodine.Utils
+import           Iodine.ConstantConfig
 
 import           Control.Effect.Reader
 import           Control.Lens
@@ -41,7 +42,7 @@ defaultQualifiers =
     |> mkTagZero 1 RightRun
  where
   sameValueSuffix = True
-  sameTagSuffix   = True
+  sameTagSuffix   = enableQualifierGuess
   mkEq name t sameSuffix =
     makeQualifier2 name t
     (FT.PatPrefix (symbol $ getVarPrefix t LeftRun) 1)
@@ -137,11 +138,12 @@ generateAutoQualifiers af = forM_ sourcePairs $ \(s1, s2) ->
     srcs = HS.foldl' (|>) mempty (annots ^. sources)
 
     sourcePairs = twoPairs srcs
+    vp = getVarPrefix Tag LeftRun
     -- sources     = getSourceVar <$> SQ.filter isSource afAnnotations
     mkQ s1 s2 n = makeQualifier2 ("SrcTagEq_" ++ show n) Tag
-                  (FT.PatExact (symbol s1))
-                  (FT.PatExact (symbol s2))
-    mkVar v     = getFixpointName True $ HVarTL0 v topModuleName
+                  (FT.PatPrefix (symbol s1) 1)
+                  (FT.PatPrefix (symbol s2) 1)
+    mkVar v     = vp <> v
 
 
 -- | create a qualifier where the given patterns are compared

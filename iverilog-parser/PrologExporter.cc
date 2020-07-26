@@ -95,7 +95,7 @@ void PrologExporter::visit(Module* m) {
     out << "[";
     for (map<perm_string,PWire*>::const_iterator wire = m->wires.begin(); wire != m->wires.end(); ++ wire) {
         PWire* w = (*wire).second;
-        
+
         if (w->get_port_type() == PortType::PINOUT) {
           cerr << "inout port types are not supported yet: " << endl;
           w->dump(cerr, 0);
@@ -211,7 +211,7 @@ void PrologExporter::visit(Module* m) {
             if (rexpr == NULL) {
                 // don't know what to do, so continue
                 continue;
-            } 
+            }
 
             FoldNames fn(this);
             rexpr->accept(&fn);
@@ -617,8 +617,8 @@ void PrologExporter::visit(PCallTask* ct) {
     os << ct->path();
     string taskname = os.str();
 
-    if (taskname == "$readmemh" || 
-        taskname == "$display"  || 
+    if (taskname == "$readmemh" ||
+        taskname == "$display"  ||
         taskname == "$finish" ) {
         // do nothing ...
         out << nopStmt;
@@ -805,7 +805,7 @@ void PrologExporter::visit(PEEvent* ev) {
     case PEEvent::NEGEDGE:
         out << "negedge";
         break;
-    default:    
+    default:
         cerr << endl << "PEvent: NOT SUPPORTED: ";
         ev->dump(cerr);
         cerr << endl;
@@ -893,7 +893,7 @@ string PrologExporter::export_name_component_to_prolog(
     } else if (auto localParamItr = module->localparams.find(name); localParamItr != module->localparams.end()) {
         varExists = true;
         paramExp = localParamItr->second.expr;
-    } 
+    }
 
     if (paramExp) {
         if (moduleInstantiation == NULL) {
@@ -936,7 +936,7 @@ string PrologExporter::export_name_component_to_prolog(
     }
 
     if (!varExists) {
-        varExists = 
+        varExists =
             (module->wires.find(name) != module->wires.end()) ||
             (module->funcs.find(name) != module->funcs.end());
     }
@@ -1162,8 +1162,8 @@ void PrologExporter::doAsgn(AssignType a, AsgnArg lhsArg, AsgnArg rhsArg) {
     }
 
     const name_component_t& lhs_nc = lhs_id->path_.front();
-    string lhsExprId = 
-        lPE->export_name_component_to_prolog(lhs_nc.name, 
+    string lhsExprId =
+        lPE->export_name_component_to_prolog(lhs_nc.name,
                                              std::list<index_component_t>());
     out << lhsExprId << ", ";
 
@@ -1177,7 +1177,7 @@ void PrologExporter::doAsgn(AssignType a, AsgnArg lhsArg, AsgnArg rhsArg) {
         lhsWire = pe->module->wires_find(lhs_nc.name);
         if(lhsWire) break;
         pe = pe->parentExporter;
-    } 
+    }
     if(lhsWire == NULL) {
         cerr << endl << "lhsWire is NULL" << endl;
         printAsgn(a, lhsArg.e, rhsArg.e);
@@ -1203,7 +1203,7 @@ void PrologExporter::doAsgn(AssignType a, AsgnArg lhsArg, AsgnArg rhsArg) {
         // or if it's a wire, then the new value does not depend on the old one
         out << rPE->exportExpr(rhs);
     } else if(lhs_nc.index.size() == 1) {
-        // if assignment is of the form 
+        // if assignment is of the form
         // x[i] <= y
         // convert it to
         // x <= f(x,i,y)
@@ -1237,7 +1237,7 @@ void PrologExporter::doAsgn(AssignType a, AsgnArg lhsArg, AsgnArg rhsArg) {
             break;
         }
     } else if(lhs_nc.index.size() > 1) {
-        // if assignment is of the form 
+        // if assignment is of the form
         // x[i][j][k]... <= y
         // convert it to
         // x <= f(x,i,j,k,y)
@@ -1339,12 +1339,12 @@ void PrologExporter::printModInstPortAssignments()
         switch (formalWire->get_port_type()) {
         case PortType::PINPUT:
             doAsgn(PrologExporter::ContAsgn,
-                   {this,           formalParam}, 
+                   {this,           formalParam},
                    {parentExporter, actualParam});
             break;
         case PortType::POUTPUT:
             doAsgn(PrologExporter::ContAsgn,
-                   {parentExporter, actualParam}, 
+                   {parentExporter, actualParam},
                    {this, formalParam});
             break;
         default: {

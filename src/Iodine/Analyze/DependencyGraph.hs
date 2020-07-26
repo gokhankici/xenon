@@ -40,8 +40,8 @@ import qualified Data.Sequence as SQ
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
 data VarDepEdgeType = Implicit
-                    | Explicit { varDepEdgeNonBlocking :: Bool }
-                    deriving (Eq, Read, Ord)
+                    | Explicit Bool -- is non blocking ?
+                    deriving (Eq, Ord, Show, Read)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 
@@ -230,7 +230,3 @@ addToSet k i = HM.alter upd k
   where
     upd Nothing   = Just $ IS.singleton i
     upd (Just is) = Just $ IS.insert i is
-
-instance Show VarDepEdgeType where
-  show Implicit     = "imp"
-  show (Explicit b) = if b then "exp-nb" else "exp-b"

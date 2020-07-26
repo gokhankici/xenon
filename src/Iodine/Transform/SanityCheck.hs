@@ -23,7 +23,7 @@ import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.List
-import           Data.Maybe
+-- import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Text.Printf
@@ -250,10 +250,10 @@ checkVariables =
                throw $ printf "The input port %s is not declared as a taint source!" name
           Output _ -> return ()
 
-        -- sinks have to be registers
-        for_ snks $ \snk ->
-          when (isNothing $ Register snk `SQ.elemIndexL` variables) $
-          throw $ printf "Sink %s is not found or not a register" snk
+        -- -- sinks have to be registers
+        -- for_ snks $ \snk ->
+        --   when (isNothing $ Register snk `SQ.elemIndexL` variables) $
+        --   throw $ printf "Sink %s is not found or not a register" snk
 
         -- always block events only refer to specified clocks
         for_ alwaysBlocks $ \AlwaysBlock{..} ->

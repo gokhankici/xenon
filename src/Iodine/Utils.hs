@@ -201,3 +201,6 @@ groupSort :: Ord a => [(a, b)] -> [(a, [b])]
 groupSort = fmap go . groupBy (\(a1,_) (a2, _) -> a1 == a2) . sortOn fst
   where go []           = undefined
         go ((a,b):rest) = (a, b:(snd <$> rest))
+
+swap :: (a,b) -> (b,a)
+swap (a,b) = (b,a)

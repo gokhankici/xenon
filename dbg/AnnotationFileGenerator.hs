@@ -59,6 +59,9 @@ generateAnnotationFile filename topModule outputfile = do
     mkMA m =
       let (ins, outs) = foldl' goP (mempty, mempty) (ports m)
           clks = foldl' goE mempty (abEvent <$> alwaysBlocks m)
+          addSources = if T.pack topModule == moduleName m
+                       then moduleAnnotations .~ (emptyAnnotations & (sources .~ ins) . (sinks .~ outs))
+                       else id
       in emptyModuleAnnotations
-         & (moduleAnnotations .~ (emptyAnnotations & (sources .~ ins) . (sinks .~ outs)))
+         & addSources
          . (clocks .~ clks)

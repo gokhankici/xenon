@@ -53,8 +53,8 @@ inlineInstances (af, ms) = (af', ms')
     ms' = toNewM <$> SQ.filter (canKeepModule . moduleName) ms
 
     -- canKeepModule mn = mn == af ^. afTopModule
-    canKeepModule mn = maybe True id $ do
-      ma <- (af ^. afAnnotations) ^. at mn
+    canKeepModule mn = fromMaybe True $ do
+      ma <- af ^. (afAnnotations . at mn)
       return $ not $ ma ^. canInline
 
 newtype ABCounter = ABCounter { getABCounter :: Int }
@@ -230,4 +230,4 @@ pureA = 0
 
 getMIClocks :: Has (State AnnotationFile) sig m => ModuleInstance Int -> m Ids
 getMIClocks ModuleInstance{..} =
-  gets $ (^. afAnnotations . to (HM.lookupDefault emptyModuleAnnotations moduleInstanceType) . clocks)
+  gets (^. afAnnotations . to (HM.lookupDefault emptyModuleAnnotations moduleInstanceType) . clocks)

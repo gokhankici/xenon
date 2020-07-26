@@ -16,6 +16,7 @@ module Iodine.Analyze.ModuleSummary
   , implicitVars
   , addPortDependencies
   , getVariableDependencies
+  , writtenByAB
   ) where
 
 import           Iodine.Analyze.DependencyGraph hiding (getNode)
@@ -23,7 +24,9 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Types
 import           Iodine.Utils
+import           Iodine.ConstantConfig
 
+import           Control.Applicative
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Effect.Lens (use)
@@ -192,7 +195,7 @@ createModuleSummary m@Module{..} = do
   annotVars <- annotationVariables <$> getAnnotations moduleName
   let nonTmpVars = foldl' (flip HS.insert) annotVars (variableName . portVariable <$> ports)
       starBlockId = getData <$> find ((== Star). abEvent) alwaysBlocks
-      _tmpVars =
+      tmpVars0 =
         let writeTidCheck readTids wtid = Just wtid == starBlockId &&
                                           wtid `IS.member` readTids
             isTemporary v readTids = IS.size readTids <= 1 &&
@@ -201,11 +204,13 @@ createModuleSummary m@Module{..} = do
         in HM.foldlWithKey' upd mempty (dgState ^. varReads) `HS.difference` nonTmpVars
       tostr (Register r) = "reg " <> T.unpack r
       tostr (Wire w)     = "wire " <> T.unpack w
-      msg = [ show $ (\v -> tostr $ fromJust $ find ((== v) . variableName) variables) <$> HS.toList _tmpVars
-            , show (dgState ^. varReads)
-            , show twm
+      msg = [ show $ (\v -> tostr $ fromJust $ find ((== v) . variableName) variables) <$> HS.toList tmpVars0
+            -- , show (dgState ^. varReads)
+            -- , show twm
             ]
-      tmpVars = trc ("tmpVars: " <> unlines msg) _tmpVars
+      tmpVars = if enableQualifierGuess
+                then trc ("tmpVars: " <> unlines msg) tmpVars0
+                else mempty
 
   return $
     ModuleSummary
@@ -221,7 +226,6 @@ createModuleSummary m@Module{..} = do
     , variableDependencySCCNodeMap = toSCCNodeMap
     }
   where
-    swap (a,b) = (b,a)
     inputsSet = moduleInputs m mempty
 
 addPortDependencies :: Has (Reader SummaryMap) sig m
@@ -432,37 +436,41 @@ moduleAnnotsSCC ns =
         return rest
     moduleAnnotsSCC ns'
 
+writtenByAB :: Id                 -- ^ variable name
+            -> Module Int         -- ^ module that contains the variable
+            -> SummaryMap         -- ^ summary of all modules
+            -> Maybe (Thread Int)
+writtenByAB varName Module{..} summaryMap = do
+  tid <- HM.lookup varName $ threadWriteMap $ summaryMap HM.! moduleName
+  let
+    fnd :: (GetData m, Foldable t) => t (m Int) -> Maybe (m Int)
+    fnd = find ((== tid) . getData)
+  (AB <$> fnd alwaysBlocks) <|> (MI <$> fnd moduleInstances)
+
 getVariableDependencies :: Id         -- ^ variable name
                         -> Module Int -- ^ module that contains the variable
                         -> SummaryMap -- ^ summary of all modules
                         -> [(Id, VarDepEdgeType)] -- ^ (written by an always block ?, variable name and dependency type pairs)
-getVariableDependencies varName Module{..} summaryMap =
-  case mwriteTid of
-    Nothing -> []
-    Just _writeTid ->
-      if writtenByAB
-      then first toName <$> G.lpre (variableDependencies moduleSummary) (toNode varName)
-      else toVarDeps (portDeps ^. explicitVars) (Explicit True) ++
-           toVarDeps (portDeps ^. implicitVars) Implicit
+getVariableDependencies varName m@Module{..} summaryMap =
+  case writtenByAB varName m summaryMap of
+    Nothing      -> []
+    Just (AB _)  -> first toName <$> G.lpre (variableDependencies moduleSummary) (toNode varName)
+    Just (MI mi) ->
+      let miSummary = summaryMap HM.! moduleInstanceType mi
+          portName =
+            fst $ fromJust $
+            find (HS.member varName . getVariables . snd) $
+            HM.toList (moduleInstancePorts mi)
+          portDeps = portDependencies miSummary HM.! portName
+
+          toVarDeps :: Ids -> VarDepEdgeType -> [(Id, VarDepEdgeType)]
+          toVarDeps ps typ =
+            let vs = mconcat $
+                     getVariables . (moduleInstancePorts mi HM.!) <$> HS.toList ps
+            in (, typ) <$> HS.toList vs
+      in toVarDeps (portDeps ^. explicitVars) (Explicit True) ++
+         toVarDeps (portDeps ^. implicitVars) Implicit
   where
     toNode = (variableDependencyNodeMap moduleSummary HM.!)
     toName = (invVariableDependencyNodeMap moduleSummary IM.!)
     moduleSummary = summaryMap HM.! moduleName
-    mwriteTid = HM.lookup varName $ threadWriteMap moduleSummary
-    sameWriteTid :: GetData m => m Int -> Bool
-    sameWriteTid = (== fromJust mwriteTid) . getData
-    writtenByAB = any sameWriteTid alwaysBlocks
-
-    mi = fromJust $ find sameWriteTid moduleInstances
-    miSummary = summaryMap HM.! moduleInstanceType mi
-    portName =
-      fst $ fromJust $
-      find (HS.member varName . getVariables . snd) $
-      HM.toList (moduleInstancePorts mi)
-    portDeps = portDependencies miSummary HM.! portName
-
-    toVarDeps :: Ids -> VarDepEdgeType -> [(Id, VarDepEdgeType)]
-    toVarDeps ps typ =
-      let vs = mconcat $
-               getVariables . (moduleInstancePorts mi HM.!) <$> HS.toList ps
-      in (, typ) <$> HS.toList vs

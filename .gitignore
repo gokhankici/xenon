@@ -31,3 +31,5 @@ merge-cycle.*
 iodine.prof.html*
 /output
 /non*Tree.*
+
+/report.html

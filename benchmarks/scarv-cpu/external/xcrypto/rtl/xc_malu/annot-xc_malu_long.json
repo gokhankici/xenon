@@ -1,0 +1,40 @@
+{
+  "modules": {
+    "xc_malu_long": {
+      "annotations": {
+        "sink": [
+          "n_acc",
+          "n_carry",
+          "padd_cin",
+          "padd_lhs",
+          "padd_rhs",
+          "padd_sub",
+          "ready",
+          "result"
+        ],
+        "source": [
+          "acc",
+          "carry",
+          "count",
+          "fsm_done",
+          "fsm_init",
+          "fsm_macc_1",
+          "fsm_mdr",
+          "fsm_mmul_1",
+          "fsm_mmul_2",
+          "fsm_msub_1",
+          "padd_cout",
+          "padd_result",
+          "rs1",
+          "rs2",
+          "rs3",
+          "uop_macc",
+          "uop_madd",
+          "uop_mmul",
+          "uop_msub"
+        ]
+      }
+    }
+  },
+  "top_module": "xc_malu_long"
+}

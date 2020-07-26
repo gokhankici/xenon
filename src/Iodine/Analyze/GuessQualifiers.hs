@@ -9,6 +9,7 @@ where
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Analyze.DependencyGraph
 import           Iodine.Language.Annotation
+import           Iodine.Language.IR
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -37,12 +38,16 @@ data St =
      }
   deriving (Show)
 
-guessQualifiers :: Ids -> ModuleSummary -> L Qualifier
-guessQualifiers srcs ms =
-  ( \ns -> let vs = withLen "guessQualifiers: " $ SQ.filter filterVars (ns >>= sccToName)
-           in  QPairs vs
-  ) <$> sameCycles
+guessQualifiers :: Module Int -> Ids -> ModuleSummary -> L Qualifier
+guessQualifiers Module{..} srcs ms = res <> miQualifs
  where
+  miQualifs = mkMIQualif <$> moduleInstances
+  mkMIQualif mi = QPairs . toSequence $ mfold getVariables $ moduleInstancePorts mi
+
+  res =
+    ( \ns -> let vs = withLen "guessQualifiers: " $ SQ.filter filterVars (ns >>= sccToName)
+             in  QPairs vs
+    ) <$> sameCycles
   withLen s ls = trc (s <> show (length ls)) ls
 
   sameCycles = trc (show $ toList $ fmap toName <$> _sameCycles) _sameCycles
@@ -75,7 +80,6 @@ guessQualifiers srcs ms =
     (variableDependencySCCNodeMap ms IM.!)
       .   (variableDependencyNodeMap ms HM.!)
       <$> toList srcs
-  swap (a, b) = (b, a)
 
 loop :: St -> St
 loop St {..}

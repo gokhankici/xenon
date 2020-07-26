@@ -93,6 +93,7 @@ void IRExprVisitor::visit(PEBinary *be)
     case 'E': fun = IRBinaryOp::CASE_EQ;     break; // ===
     case 'L': fun = IRBinaryOp::LE;          break; // <=
     case 'N': fun = IRBinaryOp::CASE_NEQ;    break; // !==
+    case 'X': fun = IRBinaryOp::XNOR;        break; // ~^
     default:
         cerr << endl
              << "NOT SUPPORTED: Binary expr operand: " << be->op_ << endl;

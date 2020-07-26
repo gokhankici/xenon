@@ -1,0 +1,36 @@
+{
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "acc",
+          "arg_0",
+          "carryless",
+          "count",
+          "lhs_sign",
+          "padd_cout",
+          "padd_result",
+          "pw_16",
+          "pw_2",
+          "pw_32",
+          "pw_4",
+          "pw_8",
+          "rhs_sign",
+          "rs1",
+          "rs2"
+        ],
+        "sink": [
+          "n_acc_r",
+          "n_arg_0_r",
+          "padd_cen_r",
+          "padd_cin_r",
+          "padd_lhs_r",
+          "padd_rhs_r",
+          "padd_sub_r",
+          "ready_r"
+        ]
+      }
+    }
+  },
+  "top_module": "test"
+}

@@ -33,6 +33,7 @@ library
       Iodine.Analyze.GuessQualifiers
       Iodine.Analyze.ModuleDependency
       Iodine.Analyze.ModuleSummary
+      Iodine.ConstantConfig
       Iodine.IodineArgs
       Iodine.Language.Annotation
       Iodine.Language.IR

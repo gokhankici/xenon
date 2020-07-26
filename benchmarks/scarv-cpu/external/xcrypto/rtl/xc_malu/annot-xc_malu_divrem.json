@@ -1,0 +1,39 @@
+{
+  "modules": {
+    "xc_malu_divrem": {
+      "annotations": {
+        "source": [
+          "acc",
+          "arg_0",
+          "arg_1",
+          "clock",
+          "count",
+          "flush",
+          "op_signed",
+          "resetn",
+          "rs1",
+          "rs2",
+          "valid"
+        ],
+        "sink": [
+          "n_acc",
+          "n_arg_0",
+          "n_arg_1",
+          "ready"
+        ],
+        "initial_eq": [
+          "div_run"
+        ],
+        "always_eq": [
+		  "valid",
+          "flush",
+          "resetn"
+        ]
+      },
+      "clock": [
+        "clock"
+      ]
+    }
+  },
+  "top_module": "xc_malu_divrem"
+}

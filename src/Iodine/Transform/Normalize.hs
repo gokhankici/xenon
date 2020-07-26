@@ -29,6 +29,7 @@ import           Data.Functor
 import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
+import           Data.Maybe
 import qualified Data.Sequence as SQ
 
 
@@ -407,10 +408,7 @@ inlineVerilogFunction Select{..} =
 replaceVar :: [(Id, Expr Int)] -> Expr Int -> Expr Int
 replaceVar vs = go
   where
-    go e@Variable{..} =
-      case lookup varName vs of
-        Nothing -> e
-        Just e' -> e'
+    go e@Variable{..} = fromMaybe e $ lookup varName vs
     go VFCall{}           = error "replaceVar should not be called with VFCall"
     go e@Constant{}       = e
     go e@Str{}            = e

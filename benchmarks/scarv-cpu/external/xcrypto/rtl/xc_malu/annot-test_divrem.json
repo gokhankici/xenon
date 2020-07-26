@@ -1,0 +1,40 @@
+{
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "acc",
+          "arg_0",
+          "arg_1",
+          "clock",
+          "count",
+          "flush",
+          "op_signed",
+          "resetn",
+          "rs1",
+          "rs2",
+          "valid"
+        ],
+        "sink": [
+          "n_acc_r",
+          "n_arg_0_r",
+          "n_arg_1_r",
+          "ready_r"
+        ],
+        "always_eq": [
+		  "valid",
+          "flush",
+          "resetn"
+        ]
+      },
+      "clock": [ "clock" ]
+    },
+    "xc_malu_divrem": {
+      "annotations": {
+        "initial_eq": [ "div_run" ]
+	  },
+      "clock": [ "clock" ]
+	}
+  },
+  "top_module": "test"
+}

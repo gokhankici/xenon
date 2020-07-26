@@ -1,0 +1,31 @@
+{
+  "modules": {
+    "xc_aessub_sbox_fwd": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_aessub_sbox_inv": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_aessub_sbox": {
+      "annotations": {
+        "sink": [
+          "out_r"
+        ],
+        "source": [
+          "in",
+          "inv"
+        ]
+      },
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "xc_aessub_sbox"
+}

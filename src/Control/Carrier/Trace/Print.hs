@@ -77,5 +77,5 @@ instance (MonadIO m, Algebra sig m) => Algebra (Trace :+: sig) (TraceC m) where
     where prnt Nothing  = ctx <$ return ()
           prnt (Just h) = ctx <$ liftIO (hPutStrLn h s)
 
-  alg hdl (R other) ctx = TraceC (\b -> (alg ((runTrace b) . hdl) other ctx))
+  alg hdl (R other) ctx = TraceC (\b -> alg (runTrace b . hdl) other ctx)
   {-# INLINE alg #-}

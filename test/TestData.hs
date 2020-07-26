@@ -250,7 +250,7 @@ scarv = TestCollection "scarv" [ scarvStubs ]
 --------------------------------------------------------------------------------
 scarvStubs :: TestTree
 --------------------------------------------------------------------------------
-scarvStubs = mkCollection "scarv-stubs" ts
+scarvStubs = mkCollection "scarv-xcrypto" ts
   where
     d = benchmarkDir </> "scarv-cpu"
     x = d </> "external" </> "xcrypto" </> "rtl"
@@ -260,6 +260,16 @@ scarvStubs = mkCollection "scarv-stubs" ts
                        , x </> "p_addsub"  </> "p_addsub_unrolled.v"
                        , x </> "p_shfrot"  </> "p_shfrot.v"
                        , x </> "xc_aesmix" </> "xc_aesmix_unrolled.v"
+                       , x </> "xc_aessub" </> "xc_aessub_sbox.v"
+                       , x </> "xc_aessub" </> "xc_aessub.v"
+                       , x </> "xc_malu"   </> "xc_malu_divrem.v"
+                       , x </> "xc_malu"   </> "xc_malu_long.v"
+                       , x </> "xc_malu"   </> "xc_malu_mul.v"
+                       , x </> "xc_malu"   </> "xc_malu_pmul.v"
+                       , x </> "xc_malu"   </> "test_divrem.v"
+                       , x </> "xc_malu"   </> "test_mul.v"
+                       , x </> "xc_malu"   </> "test_pmul.v"
+                       , x </> "xc_malu"   </> "xc_malu_muldivrem.v"
                        ]
          ]
 

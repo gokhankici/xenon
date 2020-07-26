@@ -1,0 +1,33 @@
+{
+  "modules": {
+    "xc_aessub": {
+      "annotations": {
+        "source": [
+          "clock",
+          "enc",
+          "flush",
+          "flush_data",
+          "reset",
+          "rot",
+          "rs1",
+          "rs2",
+          "valid"
+        ],
+        "sink": [
+          "ready_r",
+          "result_r"
+        ]
+      }
+    },
+    "xc_aessub_sbox": {
+      "inline": false
+    },
+    "xc_aessub_sbox_fwd": {
+      "inline": true
+    },
+    "xc_aessub_sbox_inv": {
+      "inline": true
+    }
+  },
+  "top_module": "xc_aessub"
+}

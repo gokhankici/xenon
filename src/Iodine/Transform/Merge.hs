@@ -104,7 +104,7 @@ mergeAlwaysStarBlocks as = do
       let cycleNodes = snd $
                        head $
                        sortOn fst $
-                       fmap (\l -> (length l, l)) $
+                       (\l -> (length l, l)) <$>
                        filter (\l -> length l > 1) (GQ.scc g)
           g' = G.nfilter (`elem` cycleNodes) g
           dotStr = GD.showDot $ GD.fglToDotString $ G.nemap show (const "") g'

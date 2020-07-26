@@ -639,7 +639,6 @@ focusOnIterNo iterNo varNameStr = do
         FSM.TraceUntainted    _  -> False
         FSM.TraceSummary   _ _   -> False
       fltr = HS.filter $ qmv varsToLookFor
-      swap (a,b) = (b,a)
 
   putStrLn (T.unpack varName)
   for_ (fmap (second sort) $ groupSort $ swap <$> deps) print
@@ -647,22 +646,46 @@ focusOnIterNo iterNo varNameStr = do
 
   let fpList = [ (i, cid, m')
                | a@(i, (cid, m)) <- IM.toList fpTrace
-               , abs (iterNo - i) < 2
+               , iterNo - i `elem` [1, 0]
                , let m' = HM.filter (not . HS.null) $ HM.map fltr m
                , not (HM.null m')
                ]
   let sep = replicate 80 '-'
   for_ fpList $ \(i, cid, m) -> do
-    printf "%s\niter no %d\n%s\nconstraint %d:%s\n\n" sep i sep cid (FT.showFix $ cm IM.! cid)
+    printf "%s\niter no %d\n%s\nconstraint %d: %s\n\n" sep i sep cid (FT.showFix $ cm IM.! cid)
     HM.traverseWithKey (\k qs -> print k >> for_ (prettyQualif <$> sort (HS.toList qs)) putStrLn >> putStrLn "") m
     putStrLn ""
 
-tst :: IO ()
-tst = do
+fpCheckMIOutputs :: IO ()
+fpCheckMIOutputs = do
+  ((af, mm, sm), cm, _, _) <- readDebugOutput
+  fpTrace <- readFixpointTrace
+  let tpm           = af ^. afTopModule
+      m@Module{..}  = mm HM.! tpm
+      ma            = toModuleAnnotations tpm af
+      miOutputs mi  = snd $ moduleInstanceReadsAndWrites (mm HM.! moduleInstanceType mi) (ma ^. clocks) mi
+      vs            = toList $ mfold miOutputs moduleInstances
+      lastTraceElem = snd . snd . fromJust $ IM.lookupMax fpTrace
+      btm           = firstNonCT $ calculateSolverTraceDiff fpTrace
+      btmc v        = v `elem` (getData <$> alwaysBlocks)
+      isCT varName = let v = T.unpack varName
+                         helper (FSM.TraceConstantTime tv) = toTVName tv == v
+                         helper _ = False
+                     in any (any helper) lastTraceElem
+      getCTNo v     = btmLookupF btmc btm Q_CT v <|>
+                      if isCT v then Nothing else Just 0
+  print vs
+  let res = vs >>= (\v -> let r = getCTNo v in if isJust r then return (v, fromJust r) else mempty)
+  print res
+  return ()
+
+tst_guessQualifiers :: IO ()
+tst_guessQualifiers = do
   ((af, moduleMap, summaryMap), constraintTypes, FQOutAnalysisOutput {..}, moduleSummaries) <- readDebugOutput
   let mn = af ^. afTopModule
+      m = moduleMap HM.! mn
       srcs = af ^. afAnnotations . to (HM.! mn) . moduleAnnotations . sources
       ms = summaryMap HM.! mn
   print srcs
-  traverse_ print $ guessQualifiers srcs ms
+  traverse_ print $ guessQualifiers m srcs ms
   return ()

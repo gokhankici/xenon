@@ -57,8 +57,7 @@ normalizeIR
 normalizeIR af irReader ia = do
   let topModuleName = af ^. afTopModule
   initialIR <- topsortModules topModuleName <$> irReader
-  let (af', ir) = inlineInstances $
-                  (af, assignThreadIds initialIR)
+  let (af', ir) = inlineInstances (af, assignThreadIds initialIR)
       irMap = mkModuleMap ir
 
   normalizedOutput <- runReader af' $ runReader irMap $ do
@@ -96,8 +95,9 @@ pipeline af irReader ia = do
     & runReader af1
   let af2 = initVars moduleSummaries normalizedIR af1
       af3 = let tpm = af ^. afTopModule
+                m = normalizedIRMap HM.! tpm
                 updateQuals m_name m_af =
-                  let qs = guessQualifiers (m_af ^. moduleAnnotations . sources) (moduleSummaries HM.! m_name)
+                  let qs = guessQualifiers m (m_af ^. moduleAnnotations . sources) (moduleSummaries HM.! m_name)
                   in m_af & moduleQualifiers %~ mappend qs
             in af2 & afAnnotations %~ HM.adjust (updateQuals tpm) tpm
       addGuessedQuals = True

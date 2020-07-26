@@ -8,6 +8,10 @@
 //  - remainder (signed/unsigned)
 //  - packed multiplication (16,8,4,2)
 //
+`include "xc_malu_mul.v"
+`include "xc_malu_divrem.v"
+`include "xc_malu_pmul.v"
+
 module xc_malu_muldivrem (
 
 input  wire         clock           ,
