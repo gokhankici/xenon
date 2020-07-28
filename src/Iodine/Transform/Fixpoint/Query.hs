@@ -20,6 +20,7 @@ import           Iodine.Transform.Fixpoint.SummaryQualifiers
 import           Iodine.Transform.Horn
 import           Iodine.Transform.VCGen
 import           Iodine.Types
+import           Iodine.Utils
 
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
@@ -28,6 +29,7 @@ import           Control.Monad
 import           Data.Foldable
 import           Data.Maybe
 import qualified Data.Sequence as SQ
+import qualified Data.Text as T
 import qualified Language.Fixpoint.Types as FT
 
 -- -----------------------------------------------------------------------------
@@ -47,8 +49,9 @@ constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ d
     topModuleName <- asks (view afTopModule)
     unless (moduleName == topModuleName) $ do
       simpleCheck <- isModuleSimple m
+      trace ("simplecheck of " <> T.unpack moduleName) simpleCheck
       if simpleCheck
-        then addSimpleModuleQualifiers m
+        then addSimpleModuleQualifiers True m
         else addSummaryQualifiers m
   toFInfo
   where

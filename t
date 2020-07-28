@@ -3,10 +3,12 @@
 import sys
 import os
 import subprocess
+from pathlib import Path 
 
 PACKAGE_NAME = "iodine"
 O0 = True
 USE_STACK = False
+THIS_DIR = Path(__file__).parent.resolve()
 
 def add_quotes(s):
     i = s.find(" ")
@@ -33,7 +35,7 @@ def run_tests_cabal(test_args):
     if test_args:
         cmd += ["--"] + test_args
     try:
-        return subprocess.run(cmd).returncode
+        return subprocess.run(cmd, cwd=THIS_DIR).returncode
     except KeyboardInterrupt:
         return 1
 

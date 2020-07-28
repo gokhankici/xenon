@@ -40,8 +40,8 @@ import qualified Language.Fixpoint.Types as FT
 -- -----------------------------------------------------------------------------
 
 -- | if all inputs are ct and some of them are public, define the output color
-addSimpleModuleQualifiers :: FD sig m => Module Int -> m ()
-addSimpleModuleQualifiers m =
+addSimpleModuleQualifiers :: FD sig m => Bool -> Module Int -> m ()
+addSimpleModuleQualifiers _withTagDefs m =
   (zip [0..] <$> asks (HM.toList . portDependencies . (HM.! moduleName m))) >>=
     traverse_
     (\(n1, (o, qd)) -> do
@@ -51,17 +51,18 @@ addSimpleModuleQualifiers m =
             allVarsL = toList allVars
             name n2  = "SimpleModule_" <> T.unpack (moduleName m) <> "_"
                        <> show n1 <> "_" <> show n2
-            qs = [ mkSimpleModuleQualifierHelper m (name 0) allVarsL []       o Tag
-                 , mkSimpleModuleQualifierHelper m (name 1) allVarsL aeVarsL  o Tag
-                 , mkSimpleModuleQualifierHelper m (name 2) allVarsL allVarsL o Tag
-                 , mkSimpleModuleQualifierHelper m (name 0) allVarsL allVarsL o Value
+            withTagDefs = False
+            qs = [ mkSimpleModuleQualifierHelper withTagDefs m (name 0) allVarsL []       o Tag
+                 , mkSimpleModuleQualifierHelper withTagDefs m (name 1) allVarsL aeVarsL  o Tag
+                 , mkSimpleModuleQualifierHelper withTagDefs m (name 2) allVarsL allVarsL o Tag
+                 , mkSimpleModuleQualifierHelper withTagDefs m (name 3) allVarsL allVarsL o Value
                  ]
         traverse_ addQualifier qs
     )
 
 
-mkSimpleModuleQualifierHelper :: Module Int -> String -> [Id] -> [Id] -> Id -> HornVarType -> FT.Qualifier
-mkSimpleModuleQualifierHelper m qualifierName inputs valEqInputs rhsName rhsType =
+mkSimpleModuleQualifierHelper :: Bool -> Module Int -> String -> [Id] -> [Id] -> Id -> HornVarType -> FT.Qualifier
+mkSimpleModuleQualifierHelper withTagDefs m qualifierName inputs valEqInputs rhsName rhsType =
   FT.mkQual
   (FT.symbol qualifierName)
   ([ FT.QP vSymbol FT.PatNone FT.FInt
@@ -84,8 +85,8 @@ mkSimpleModuleQualifierHelper m qualifierName inputs valEqInputs rhsName rhsType
   where
     rhsExpr =
       case rhsType of
-        Tag   -> FT.PAnd $ rhsEq:rhsTagDefs
-        Value -> rhsEq
+        Tag | withTagDefs -> FT.PAnd $ rhsEq:rhsTagDefs
+        _                 -> rhsEq
     (fpop, rt) = hornTypeToFP rhsType
     inputLen = length inputs
     rhsEq = FT.eVar @String "rl" `fpop`  FT.eVar @String "rr"
@@ -119,7 +120,7 @@ mkSimpleModuleQualifierHelper m qualifierName inputs valEqInputs rhsName rhsType
 
 addSummaryQualifiers :: FD sig m => Module Int -> m ()
 addSummaryQualifiers m@Module{..} = do
-  addSimpleModuleQualifiers m
+  addSimpleModuleQualifiers False m
   traverse_ (addSummaryQualifiersAB moduleName) alwaysBlocks
 
 

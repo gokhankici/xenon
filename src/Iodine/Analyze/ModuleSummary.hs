@@ -30,6 +30,7 @@ import           Control.Applicative
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Effect.Lens (use)
+import           Control.Effect.Trace (Trace)
 import           Control.Lens hiding (use)
 import           Control.Monad
 import           Data.Bifunctor
@@ -107,6 +108,7 @@ data ModuleSummary =
 Create a summary for each given module
 -}
 createModuleSummaries :: ( Has (Reader AnnotationFile) sig m
+                         , Has Trace sig m
                          -- , Effect sig
                          )
                       => L (Module Int) -- ^ modules (filtered & topologically sorted)
@@ -123,6 +125,7 @@ createModuleSummaries orderedModules moduleMap =
 createModuleSummary :: ( Has (Reader AnnotationFile) sig m
                        , Has (State SummaryMap) sig m
                        , Has (Reader ModuleMap) sig m
+                       , Has Trace sig m
                        -- , Effect sig
                        )
                     => Module Int
@@ -185,6 +188,7 @@ createModuleSummary m@Module{..} = do
         not hasClock &&
         submodulesCanBeSummarized &&
         HS.null readBeforeWrittenVars
+  trace (T.unpack moduleName <> " is comb? ") isComb
 
   let (sccG, toSCCNodeMap) = sccGraph varDepGraph
       twm = let toSingle ts = case IS.toList ts of

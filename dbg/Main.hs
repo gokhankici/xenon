@@ -664,7 +664,7 @@ fpCheckMIOutputs = do
       m@Module{..}  = mm HM.! tpm
       ma            = toModuleAnnotations tpm af
       miOutputs mi  = snd $ moduleInstanceReadsAndWrites (mm HM.! moduleInstanceType mi) (ma ^. clocks) mi
-      vs            = toList $ mfold miOutputs moduleInstances
+      allOutputs    = toList $ mfold miOutputs moduleInstances
       lastTraceElem = snd . snd . fromJust $ IM.lookupMax fpTrace
       btm           = firstNonCT $ calculateSolverTraceDiff fpTrace
       btmc v        = v `elem` (getData <$> alwaysBlocks)
@@ -674,10 +674,26 @@ fpCheckMIOutputs = do
                      in any (any helper) lastTraceElem
       getCTNo v     = btmLookupF btmc btm Q_CT v <|>
                       if isCT v then Nothing else Just 0
-  print vs
-  let res = vs >>= (\v -> let r = getCTNo v in if isJust r then return (v, fromJust r) else mempty)
-  print res
-  return ()
+      nonCtOutputPorts = allOutputs >>= (\v -> let r = getCTNo v in if isJust r then return v else mempty)
+
+  let t2s Implicit         = "imp" :: String
+      t2s (Explicit True)  = "exp-nb"
+      t2s (Explicit False) = "exp-b"
+  for_ nonCtOutputPorts $ \o -> do
+    print o
+    for_ (getVariableDependencies o m sm) $ \(v,t) ->
+      printf "%-10s %s\n" (t2s t) v
+    putStrLn $ replicate 80 '-'
+
+  -- when False $ do
+  --   let ctOutputs = filter (`notElem` nonCtOutputPorts) allOutputs
+  --   for_ [1..4] (\_ -> putStrLn "")
+  --   for_ ctOutputs $ printf "reg %s_tmp_r;\n"
+  --   putStrLn "\nalways @(*) begin"
+  --   for_ ctOutputs $ \v -> printf "    %-30s = %s;\n" (v <> "_tmp_r") v
+  --   putStrLn "end"
+  --   print $ (<> "_tmp_r") <$> ctOutputs
+
 
 tst_guessQualifiers :: IO ()
 tst_guessQualifiers = do

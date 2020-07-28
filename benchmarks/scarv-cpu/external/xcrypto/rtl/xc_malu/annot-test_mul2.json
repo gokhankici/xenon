@@ -1,0 +1,51 @@
+{
+  "modules": {
+    "test": {
+      "annotations": {
+        "source": [
+          "acc",
+          "arg_0",
+          "arg_1",
+          "clock",
+          "count",
+          "do_clmul",
+          "do_div",
+          "do_divu",
+          "do_mul",
+          "do_mulsu",
+          "do_mulu",
+          "do_pclmul",
+          "do_pmul",
+          "do_rem",
+          "do_remu",
+          "flush",
+          "padd_cout",
+          "padd_result",
+          "pw_16",
+          "pw_2",
+          "pw_32",
+          "pw_4",
+          "pw_8",
+          "resetn",
+          "rs1",
+          "rs2",
+          "rs3",
+          "valid"
+        ],
+        "sink": [
+          "n_acc",
+          "n_arg_0",
+          "padd_cen",
+          "padd_cin",
+          "padd_lhs",
+          "padd_rhs",
+          "padd_sub",
+          "ready",
+          "result"
+        ]
+      },
+      "clock": [ "clock" ]
+    }
+  },
+  "top_module": "test"
+}
