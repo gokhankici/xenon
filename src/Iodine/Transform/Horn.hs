@@ -43,7 +43,6 @@ data HornType = Init
               | WellFormed
               | InstanceCheck
               | Summary
-              | VF -- verilog function
               deriving (Eq, Show, Generic, Read)
 
 data HornVarType = Tag | Value
@@ -243,7 +242,6 @@ instance FT.Fixpoint HornType where
        toFix WellFormed     = PP.text "wellformed"
        toFix InstanceCheck  = PP.text "instance-check"
        toFix Summary        = PP.text "module-summary"
-       toFix VF             = PP.text "verilog-function"
        toFix (Interference l) =
          let arr = PP.brackets . PP.hsep . PP.punctuate PP.comma . fmap PP.int
          in PP.text "interference" PP.<+> arr l

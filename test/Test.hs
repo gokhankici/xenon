@@ -129,7 +129,7 @@ testArgs = mode programName def detailsText (flagArg argUpd "HSPEC_ARG") flags
 
 parseOpts :: IO TestArgs
 parseOpts = do
-  res <-  fmap post . process testArgs <$> getArgs
+  res <-  process testArgs <$> getArgs
   case res of
     Left errMsg -> error errMsg
     Right opts  -> do
@@ -137,14 +137,6 @@ parseOpts = do
         print $ helpText [] HelpFormatDefault testArgs
         exitSuccess
       return opts
-  where
-    post o =
-      if o ^. runAbduction
-      then over hspecArgs  (++ ["--match", '/':abductionRoot]) .
-           over iodineArgs (++ ["--abduction"]) .
-           set  verbose    True $
-           o
-      else over hspecArgs (++ ["--skip",  '/':abductionRoot]) o
 
 --------------------------------------------------------------------------------
 main :: IO ()

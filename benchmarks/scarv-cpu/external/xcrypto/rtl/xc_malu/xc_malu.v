@@ -12,6 +12,11 @@
 //  - clmul, clmulr, clmulh
 //  - madd, msub, macc, mmul
 //
+
+`include "../p_addsub/p_addsub_unrolled.v"
+`include "xc_malu_muldivrem.v"
+`include "xc_malu_long.v"
+
 module xc_malu (
 
 input  wire         clock           ,

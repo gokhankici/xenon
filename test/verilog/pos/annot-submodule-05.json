@@ -1,0 +1,25 @@
+{
+  "modules": {
+    "test": {
+      "annotations": {
+        "sink": [
+          "out"
+        ],
+        "source": [
+          "cond",
+          "x",
+          "y",
+          "z"
+        ]
+      },
+      "clock": [ "clk" ]
+    },
+    "add3": {
+      "inline": false
+    },
+    "add": {
+      "inline": false
+    }
+  },
+  "top_module": "test"
+}

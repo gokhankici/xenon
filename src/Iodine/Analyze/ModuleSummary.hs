@@ -30,7 +30,7 @@ import           Control.Applicative
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Effect.Lens (use)
-import           Control.Effect.Trace (Trace)
+import qualified Control.Effect.Trace as CET
 import           Control.Lens hiding (use)
 import           Control.Monad
 import           Data.Bifunctor
@@ -108,8 +108,7 @@ data ModuleSummary =
 Create a summary for each given module
 -}
 createModuleSummaries :: ( Has (Reader AnnotationFile) sig m
-                         , Has Trace sig m
-                         -- , Effect sig
+                         , Has CET.Trace sig m
                          )
                       => L (Module Int) -- ^ modules (filtered & topologically sorted)
                       -> ModuleMap      -- ^ same modules, in a hash map
@@ -125,8 +124,7 @@ createModuleSummaries orderedModules moduleMap =
 createModuleSummary :: ( Has (Reader AnnotationFile) sig m
                        , Has (State SummaryMap) sig m
                        , Has (Reader ModuleMap) sig m
-                       , Has Trace sig m
-                       -- , Effect sig
+                       , Has CET.Trace sig m
                        )
                     => Module Int
                     -> m ModuleSummary
@@ -188,7 +186,7 @@ createModuleSummary m@Module{..} = do
         not hasClock &&
         submodulesCanBeSummarized &&
         HS.null readBeforeWrittenVars
-  trace (T.unpack moduleName <> " is comb? ") isComb
+  CET.trace $ T.unpack moduleName <> " is comb? " <> show isComb
 
   let (sccG, toSCCNodeMap) = sccGraph varDepGraph
       twm = let toSingle ts = case IS.toList ts of
@@ -237,28 +235,28 @@ addPortDependencies :: Has (Reader SummaryMap) sig m
                     -> VarDepGraph
                     -> HM.HashMap Id Int
                     -> m VarDepGraph
-addPortDependencies ModuleInstance{..} g varDepMap =
+addPortDependencies ModuleInstance{..} g varDepMap = do
+  isComb <- isCombinatorial <$> asks (HM.! moduleInstanceType)
   HM.foldlWithKey'
-  (\accG o qd ->
-     let toNode v = hmGet 0 v varDepMap
-         oVar = varName $ hmGet 1 o moduleInstancePorts
-         oNode = toNode oVar
-         fromNodes = fmap toNode . toList . getVariables . (\v -> hmGet 2 v moduleInstancePorts)
-         accG' =
-           foldl'
-           (\g2 i -> insEdge (i, oNode, Implicit) g2)
-           accG
-           (concatMap fromNodes $ toList $ qd ^. implicitVars)
-         accG'' =
-           foldl'
-           -- mark non blocking as True since the taints of inputs of outputs
-           -- won't be the same anyway
-           (\g2 i -> insEdge (i, oNode, Explicit True) g2)
-           accG'
-           (concatMap fromNodes $ toList $ qd ^. explicitVars)
-     in accG''
-  ) g
-  <$> asks (portDependencies . hmGet 3 moduleInstanceType)
+    (\accG o qd ->
+       let toNode v = hmGet 0 v varDepMap
+           oVar = varName $ hmGet 1 o moduleInstancePorts
+           oNode = toNode oVar
+           fromNodes = fmap toNode . toList . getVariables . (\v -> hmGet 2 v moduleInstancePorts)
+           accG' =
+             foldl'
+             (\g2 i -> insEdge (i, oNode, Implicit) g2)
+             accG
+             (concatMap fromNodes $ toList $ qd ^. implicitVars)
+           accG'' =
+             foldl'
+             -- if module is combinatorial, non-blocking should be false
+             (\g2 i -> insEdge (i, oNode, Explicit (not isComb)) g2)
+             accG'
+             (concatMap fromNodes $ toList $ qd ^. explicitVars)
+       in accG''
+    ) g
+    <$> asks (portDependencies . hmGet 3 moduleInstanceType)
 
 mapLookup :: Show a => Int -> Id -> HM.HashMap Id a -> a
 mapLookup n k m =
@@ -472,7 +470,9 @@ getVariableDependencies varName m@Module{..} summaryMap =
             let vs = mconcat $
                      getVariables . (moduleInstancePorts mi HM.!) <$> HS.toList ps
             in (, typ) <$> HS.toList vs
-      in toVarDeps (portDeps ^. explicitVars) (Explicit True) ++
+
+          isExpNB = not (isCombinatorial miSummary)
+      in toVarDeps (portDeps ^. explicitVars) (Explicit isExpNB) ++
          toVarDeps (portDeps ^. implicitVars) Implicit
   where
     toNode = (variableDependencyNodeMap moduleSummary HM.!)

@@ -29,7 +29,7 @@ import           Iodine.Utils
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Effect.Error
-import           Control.Effect.Trace (Trace)
+import qualified Control.Effect.Trace as CET
 import           Control.Effect.Writer
 import           Control.Lens
 import           Control.Monad
@@ -45,6 +45,7 @@ import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Data.Traversable
+import           Text.Printf
 
 -- | State relevant to statements
 data ThreadSt =
@@ -65,17 +66,21 @@ makeLenses ''ThreadSt
 -- | global state
 type G sig m = ( Has (Reader AnnotationFile) sig m
                , Has (Error IodineException) sig m
-               , Has Trace sig m
+               , Has CET.Trace sig m
                , Has (Reader ModuleMap) sig m
                , Has (Reader SummaryMap) sig m
                , Has (Writer Output) sig m
-               -- , Effect sig
                )
 
-type G' sig m = (G sig m, Has (Reader InitialEqualVariables) sig m)
+type G' sig m = ( G sig m
+                , Has (Reader InitialEqualVariables) sig m
+                )
 
 -- | vcgen state  = global effects + next var map
-type FD sig m = (G' sig m, Has (Reader NextVars) sig m, Has (State  HornVariableMap) sig m)
+type FD sig m = ( G' sig m
+                , Has (Reader NextVars) sig m
+                , Has (State  HornVariableMap) sig m
+                )
 
 -- | module state = vcgen state + current module
 type FDM sig m = ( FD sig m
@@ -87,8 +92,9 @@ type FDM sig m = ( FD sig m
 -- | stmt state = module state + current statement state
 type FDS sig m = (FDM sig m, Has (Reader ThreadSt) sig m)
 
-type A = Int
-type M = Module A
+type A  = Int
+type M  = Module A
+type MI = ModuleInstance A
 
 {- |
 Verification condition generation creates the following 7 type of horn
@@ -117,12 +123,28 @@ different always blocks are consistent under interference.
 vcgen :: G sig m => NormalizeOutput -> m VCGenOutput
 vcgen (normalizedIR, trNextVariables) = do
   ievs <- computeAllInitialEqualVars normalizedIR
-  combine vcgenMod normalizedIR
+  out@(_, horns) <- combine vcgenMod normalizedIR
     & runReader (InitialEqualVariables ievs)
     & runReader (NextVars trNextVariables)
     & runReader (moduleInstancesMap normalizedIR)
     & runState  (HornVariableMap mempty)
+  traceHorns horns
+  return out
 
+traceHorns :: G sig m => Horns -> m ()
+traceHorns horns = do
+  t "threads:"
+  mm <- ask @ModuleMap
+  for_ mm $ \m -> do
+    t $ printf "* %d : %s" (getData m) (moduleName m)
+    for_ (alwaysBlocks m) $ \ab ->
+      t $ printf "    * %d : %s - %s" (getData ab) (moduleName m) (prettyShow $ abEvent ab)
+    for_ (moduleInstances m) $ \mi ->
+      t $ printf "    * %d : %s - %s" (getData mi) (moduleName m) (moduleInstanceName mi)
+  t "horns:"
+  for_ horns $ \h -> t $ printf "%3d: %s" (hornStmtId h) (show $ hornType h)
+  t ""
+  where t = CET.trace
 
 vcgenMod :: FD sig m => Module Int -> m Horns
 vcgenMod m@Module {..} = do
@@ -162,17 +184,14 @@ moduleClauses = do
   m@Module{..} <- ask
   simpleCheck <- isModuleSimple m
   if simpleCheck
-    then SQ.singleton <$> combinatorialModuleInit
+    then return <$> combinatorialModuleInit
     else do
     let allThreads = (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
+        miCheck mi = let t = MI mi in withAB t $ sinkCheck t <||> assertEqCheck t
     combine alwaysBlockClauses alwaysBlocks
-      <||> combine (\mi -> let t = MI mi
-                           in withAB t $
-                              sinkCheck t <||> assertEqCheck t
-                   ) moduleInstances
+      <||> combine miCheck moduleInstances
       <||> interferenceChecks allThreads
-      <||> (SQ.singleton <$> summaryConstraint)
-      -- <||> debuggingConstraints
+      <||> summaryConstraint
 
 isModuleSimple :: ( Has (Reader AnnotationFile) sig m
                   , Has (Reader SummaryMap) sig m
@@ -183,14 +202,14 @@ isModuleSimple m =
   (&&) <$> (not <$> isTopModule' m) <*> asks (isCombinatorial . hmGet 8 (moduleName m))
 
 alwaysBlockClauses :: FDM sig m => AlwaysBlock Int -> m Horns
-alwaysBlockClauses ab =
-  withAB t
-  $ (SQ.singleton <$> initialize ab)
-  <||> (maybeToMonoid <$> tagSet ab)
-  <||> (maybeToMonoid <$> srcTagReset ab)
-   ||> next ab
-  <||> sinkCheck t
-  <||> assertEqCheck t
+alwaysBlockClauses ab = withAB t $ mconcat <$> sequence
+  [ return        <$> initialize ab
+  , maybeToMonoid <$> tagSet ab
+  , maybeToMonoid <$> srcTagReset ab
+  , return        <$> next ab
+  , sinkCheck t
+  , assertEqCheck t
+  ]
   where t = AB ab
 
 
@@ -244,6 +263,7 @@ initialize ab = do
     if isStar ab
     then do nxt <- HM.map (+1) <$> getNextVars ab
             tr <- sti . uvi <$> transitionRelation (abStmt ab)
+            miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
             let cond1 = uvi . mkEqual <$> tagSubs
                 cond2 = uvi . mkEqual <$> valSubs
                 cond3 =
@@ -260,7 +280,7 @@ initialize ab = do
                        then nxt
                        else HM.filterWithKey (\v _ -> v `notElem` readOnlyVars) nxt
                 subs = sti2 <$> toSubs currentModuleName nxt'
-            return (HAnd (cond1 <> cond2 <> cond3 |> tr), subs)
+            return (HAnd (cond1 <> cond2 <> cond3 <> miExprs |> tr), subs)
     else return (HBool True, tagSubs <> valSubs)
 
   -- for non-top module blocks, we do not assume that the sources are constant time
@@ -289,18 +309,25 @@ combinatorialModuleInit :: FDM sig m => m H
 combinatorialModuleInit = do
   m@Module{..} <- ask
   let sti = setThreadId m
-      ab = case alwaysBlocks of
-             a SQ.:<| Empty | abEvent a == Star -> a
-             _ -> error "unreachable"
-  abTR <- sti . updateVarIndex (+ 1) <$>
-          transitionRelation (abStmt ab)
   miExprs <- for moduleInstances instantiateMI
-  abNext <- HM.map (+ 1) <$> getNextVars ab
-  moduleAlwaysEqs <- moduleAlwaysEquals 1 abNext
-  let moduleSubs = second sti <$> toSubs moduleName abNext
+  (moduleSubs, abExprs) <- case alwaysBlocks of
+    ab SQ.:<| Empty | abEvent ab == Star -> do
+      abTR <- sti . updateVarIndex (+ 1) <$>
+              transitionRelation (abStmt ab)
+      abNext <- HM.map (+ 1) <$> getNextVars ab
+      moduleAlwaysEqs <- moduleAlwaysEquals 1 abNext
+      let moduleSubs = second sti <$> toSubs moduleName abNext
+      return (moduleSubs, moduleAlwaysEqs |> abTR)
+    Empty -> do
+      let ps = variableName . portVariable <$> ports
+          subs = mfold (\v -> second sti <$> mkAllSubs v moduleName 0 1) ps
+      moduleAlwaysEqs <- moduleAlwaysEquals 1 mempty
+      for_ miExprs $ \e -> trace "miexpr" e
+      return (subs, moduleAlwaysEqs)
+    _ -> error "unreachable"
   return $
     Horn { hornHead   = makeKVar m moduleSubs
-         , hornBody   = HAnd $ moduleAlwaysEqs <> miExprs |> abTR
+         , hornBody   = HAnd $ abExprs <> miExprs
          , hornType   = Init
          , hornStmtId = getThreadId m
          , hornData   = ()
@@ -323,14 +350,16 @@ tagSet ab = withTopModule $ do
   (body', subs) <-
     if isStar ab
     then do
-      aes      <- fmap (updateVarIndex (+ 1)) <$> alwaysEqualEqualities thread
+      let uvi = updateVarIndex (+ 1)
+      aes      <- fmap uvi <$> alwaysEqualEqualities thread
       nextVars <- HM.map (+ 1) <$> getNextVars ab
-      tr <- updateVarIndex (+ 1) <$> transitionRelation (abStmt ab)
+      tr <- uvi <$> transitionRelation (abStmt ab)
+      miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
       -- inv holds on 0 indices
       -- increment all indices, keep values but update tags
       -- always_eq on 1 indices and last hold
       -- transition starting from 1 indices
-      return ( HAnd ((body <| aes) |> tr)
+      return ( HAnd ((body <| aes) <> miExprs |> tr)
              , toSubsTags moduleName nextVars
              )
     else return (body, setSubs <> clearSubs)
@@ -370,13 +399,15 @@ srcTagReset ab = withTopModule $ do
     then do
       let nonSrcs = HS.difference vars srcs
           nonSrcUpdates = keepEverything 1 $ addModuleName <$> toList nonSrcs
-      aes       <- fmap (updateVarIndex (+ 1)) <$> alwaysEqualEqualities thread
-      nextVars  <- HM.map (+ 1) <$> getNextVars ab
-      tr <- updateVarIndex (+ 1) <$> transitionRelation (abStmt ab)
+          uvi = updateVarIndex (+ 1)
+      aes <- fmap uvi <$> alwaysEqualEqualities thread
+      nextVars <- HM.map (+ 1) <$> getNextVars ab
+      tr <- uvi <$> transitionRelation (abStmt ab)
+      miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
       -- increment indices of non srcs, keep everything
       -- always_eq on 1 indices and last hold
       -- transition starting from 1 indices
-      return ( HAnd $ body <| nonSrcUpdates <> (aes |> tr)
+      return ( HAnd $ body <| nonSrcUpdates <> miExprs <> (aes |> tr)
              , toSubsTags moduleName nextVars
              )
     else return (body, clearSubs)
@@ -416,9 +447,10 @@ nextStar ab@AlwaysBlock{..} = do
   tr <- sti . uvi <$> transitionRelation abStmt
   nextVars <- HM.map (+ 1) <$> getNextVars ab
   let subs  = second sti <$> toSubs moduleName nextVars
+  miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
   return $
     Horn { hornHead   = makeKVar ab subs
-         , hornBody   = HAnd $ (threadKVar <| aes) |> tr
+         , hornBody   = HAnd $ (threadKVar <| aes) <> miExprs |> tr
          , hornType   = Next
          , hornStmtId = getThreadId ab
          , hornData   = ()
@@ -429,7 +461,7 @@ nextStar ab@AlwaysBlock{..} = do
 
 nextTopClk ab@AlwaysBlock{..} = do
   Module {..} <- ask @M
-  let mkSub v = second (setThreadId ab) <$> mkAllSubs v moduleName 0 1
+  let mkSub v = second sti <$> mkAllSubs v moduleName 0 1
   case find ((/= thisTid) . getThreadId) alwaysBlocks of
     Nothing     -> nextStar ab
     Just starAB -> do
@@ -443,18 +475,12 @@ nextTopClk ab@AlwaysBlock{..} = do
       return $ h { hornBody = HAnd $ starKVar |:> hornBody h }
   where
     thisTid = getThreadId ab
+    sti = setThreadId ab
 
 nextSubClock ab@AlwaysBlock{..} = do
   m@Module{..} <- ask
   ms :: ModuleSummary <- asks (hmGet 9 moduleName)
   depThreadIds <- IS.delete (getData ab) <$> getAllDependencies (AB ab) & runReader ms
-  -- srcs <- moduleInputs m <$> getClocks moduleName
-  -- hornVars <- getHornVariables ab
-  -- let abReadOnlyVars = getReadOnlyVariables abStmt
-  --     extraSrcs     = srcs `HS.difference` abReadOnlyVars
-      -- readOnlyVars  = abReadOnlyVars <> extraSrcs
-  --     writtenVars   = hornVars `HS.difference` readOnlyVars
-  -- trace "nextSubClock" (getThreadId ab, toList writtenVars)
   depThreadInstances <-
     for (IS.foldl' (|>) SQ.empty depThreadIds) $ \depThreadId -> do
     depThread <- asks (IM.! depThreadId)
@@ -469,12 +495,10 @@ nextSubClock ab@AlwaysBlock{..} = do
   let subs = case hd of
                KVar _ s -> s
                _ -> error "unreachable"
-  -- let extraSrcSubs =
-  --       foldMap (\v -> second sti <$> mkAllSubs v moduleName 0 1) extraSrcs
+  miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi1))
   return $
-    -- Horn { hornHead   = makeKVar ab $ extraSrcSubs <> subs
     Horn { hornHead   = makeKVar ab subs
-         , hornBody   = HAnd $ depThreadInstances <> body |> tr
+         , hornBody   = HAnd $ depThreadInstances <> miExprs <> body |> tr
          , hornType   = Next
          , hornStmtId = getThreadId ab
          , hornData   = ()
@@ -560,10 +584,10 @@ interferenceCheck :: (FDM sig m, Has (State Horns) sig m)
 interferenceCheck (MI _)  = return ()
 interferenceCheck (AB readAB) = do
   Module{..} <- ask @M
-  ModuleSummary{..} <- asks (hmGet 1 moduleName)
-  -- trace "threadDependencies" threadDependencies
-  let readTid = getThreadId readAB
-      threadDeps = filter (/= readTid) $ G.pre threadDependencies readTid
+  moduleSummaries <- ask
+  let moduleSummary = hmGet 1 moduleName moduleSummaries
+      readTid = getThreadId readAB
+      threadDeps = filter (/= readTid) $ G.pre (threadDependencies moduleSummary) readTid
   for_ threadDeps $ \writeTid -> do
     writeThread <- asks (IM.! writeTid)
     overlappingVars <-
@@ -576,8 +600,10 @@ interferenceCheck (AB readAB) = do
     case writeThread of
       AB writeAB ->
         interferenceCheckAB writeAB readAB overlappingVars >>= addHorn
-      MI writeMI ->
-        interferenceCheckMI writeMI readAB overlappingVars >>= addHorn
+      MI writeMI -> do
+        let miSummary = moduleSummaries HM.! moduleInstanceType writeMI
+        unless (isCombinatorial miSummary) $
+          interferenceCheckMI writeMI readAB overlappingVars >>= addHorn
 
 addHorn :: Has (State Horns) sig m => H -> m ()
 addHorn h = modify (SQ.|> h)
@@ -655,9 +681,10 @@ interferenceCheckAB writeAB readAB overlappingVars= do
   -- trace "interferenceCheckAB" (getData writeAB, getData readAB, toList overlappingVars)
   currentModule <- ask @(Module Int)
   writeInstance <- instantiateAB writeAB mempty
-  let sti     = setThreadId currentModule
-      uvi1    = updateVarIndex (+ 1)
+  let sti  = setThreadId currentModule
+      uvi1 = updateVarIndex (+ 1)
   writeTR <- uvi1 . sti <$> transitionRelation (abStmt writeAB)
+  miExprs <- combinatorialInstances writeAB >>= traverse (instantiateMI' (uvi1 . sti))
   aes <-
     let t = AB writeAB
     in withAB t $
@@ -667,16 +694,16 @@ interferenceCheckAB writeAB readAB overlappingVars= do
   (body, hd) <- interferenceReaderExpr readAB overlappingVars writeNext
   return $
     Horn { hornHead   = hd
-         , hornBody   = HAnd $ writeInstance <| (aes |> writeTR) <> body
+         , hornBody   = HAnd $ writeInstance <| (aes <> miExprs |> writeTR) <> body
          , hornType   = Interference [getData writeAB]
          , hornStmtId = getThreadId readAB
          , hornData   = ()
          }
 
 interferenceReaderExpr :: FDM sig m
-                       => AlwaysBlock Int              -- ^ always block being updated (reader)
-                       -> Ids                          -- ^ the variables being updated
-                       -> Substitutions                -- ^ substitution map of the write thread
+                       => AlwaysBlock Int          -- ^ always block being updated (reader)
+                       -> Ids                      -- ^ the variables being updated
+                       -> Substitutions            -- ^ substitution map of the write thread
                        -> m (L HornExpr, HornExpr) -- ^ body & head expression
 interferenceReaderExpr readAB overlappingVars writeNext = do
   currentModule <- ask @(Module Int)
@@ -703,11 +730,14 @@ interferenceReaderExpr readAB overlappingVars writeNext = do
             )
             readHornVars
       readTR <- uviN . sti <$> transitionRelation (abStmt readAB)
-      return ( pullVarsToN |> readTR
+      miExprs <- combinatorialInstances readAB >>= traverse (instantiateMI' (uviN . sti))
+      return ( pullVarsToN <> miExprs |> readTR
              , HM.map (+ maxWriteN) readNext
              )
-    else
-      return ( mempty
+    else do
+      miExprs <- combinatorialInstances readAB >>=
+                 traverse (instantiateMI' (updateVarIndex (+ 1) . sti))
+      return ( miExprs
              , HM.mapWithKey (\v _ -> fromMaybe 1 $ HM.lookup v writeNext) readNext
              )
 
@@ -750,10 +780,13 @@ instantiateAB ab excludedVars = do
 -- | instantiate the given module instance with variable index = 1 and thread
 -- index equal to the current module's
 instantiateMI :: FDM sig m => ModuleInstance Int -> m HornExpr
-instantiateMI mi = instantiateMI' mi 1
+instantiateMI mi = do
+  currentModule <- ask @M
+  let fixExpr = setThreadId currentModule . updateVarIndex (const 1)
+  instantiateMI' fixExpr mi
 
-instantiateMI' :: FDM sig m => ModuleInstance Int -> Int -> m HornExpr
-instantiateMI' mi@ModuleInstance{..} varIndex = do
+instantiateMI' :: FDM sig m => (HornExpr -> HornExpr) -> ModuleInstance Int -> m HornExpr
+instantiateMI' fixExpr mi@ModuleInstance{..} = do
   currentModule <- ask
   let currentModuleName = moduleName currentModule
   targetModule <- asks (hmGet 2 moduleInstanceType)
@@ -768,8 +801,7 @@ instantiateMI' mi@ModuleInstance{..} varIndex = do
         let invParam = HVar0 i targetModuleName t r
             invArgVarName = "IodineTmpMIInput_" <> T.pack (show $ getData mi) <> "_" <> i
             invArgVar = sti $ HVar0 invArgVarName currentModuleName t r
-            invArgExpr = sti $ updateVarIndex (const varIndex) $
-                         f r $ hmGet 3 i moduleInstancePorts
+            invArgExpr = fixExpr $ f r $ hmGet 3 i moduleInstancePorts
         return ( mkEqual (invArgVar, invArgExpr)
                , (invParam, invArgVar)
                )
@@ -777,7 +809,7 @@ instantiateMI' mi@ModuleInstance{..} varIndex = do
         (t, r) <- allTagRuns
         let e = hmGet 4 o moduleInstancePorts
             rhs = if isVariable e
-                  then HVar (varName e) currentModuleName varIndex t r 0
+                  then fixExpr $ HVar (varName e) currentModuleName 0 t r 0
                   else error $
                        "output port expresssion of a module instance should be a variable"
                        ++ show ModuleInstance{..}
@@ -790,9 +822,9 @@ instantiateMI' mi@ModuleInstance{..} varIndex = do
   return $ HAnd $ fmap fst inputSubs SQ.|> makeKVar targetModule subs
 
 -- -----------------------------------------------------------------------------
-summaryConstraint :: FDM sig m => m H
+summaryConstraint :: FDM sig m => m (L H)
 -- -----------------------------------------------------------------------------
-summaryConstraint = do
+summaryConstraint = whenNotTop $ do
   m@Module{..} <- ask
   clks <- getClocks moduleName
   let portNames = variableName . portVariable <$> ports
@@ -809,6 +841,10 @@ summaryConstraint = do
          , hornStmtId = getThreadId m
          , hornData   = ()
          }
+  where
+    whenNotTop act = do
+      istop <- isTopModule
+      if istop then return mempty else return <$> act
 
 instantiateAllThreads :: FDM sig m => m HornExpr
 instantiateAllThreads = do
@@ -1103,7 +1139,6 @@ withTopModule act = do
   top <- isTopModule
   if top then act else return Nothing
 
-
 getCurrentSources :: FDS sig m => m Ids
 getCurrentSources = do
   top <- isTopModule
@@ -1159,3 +1194,17 @@ instance Monoid FDEQReason where
 updateValues :: Foldable t => Int -> Id -> t Id -> L HornExpr
 updateValues n moduleName =
   foldl' (\acc v -> acc <> (mkEqual <$> mkValueSubs v moduleName n 0)) mempty
+
+combinatorialInstances :: FDM sig m => AlwaysBlock Int -> m (L MI)
+combinatorialInstances ab = do
+  Module{..} <- ask
+  moduleSummaries <- ask
+  let toMS mn   = moduleSummaries HM.! mn
+      ms        = toMS moduleName
+      abtid     = getThreadId ab
+      isComb mi = isCombinatorial $ toMS $ moduleInstanceType mi
+      lkp tid   = find ((== tid) . getData) moduleInstances >>=
+                  \mi -> if isComb mi then return mi else Nothing
+      mis       = SQ.fromList (G.pre (threadDependencies ms) abtid) >>=
+                  maybeToMonoid . lkp
+  return mis

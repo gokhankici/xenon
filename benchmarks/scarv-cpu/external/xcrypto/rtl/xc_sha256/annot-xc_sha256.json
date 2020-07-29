@@ -1,0 +1,16 @@
+{
+  "modules": {
+    "xc_sha256": {
+      "annotations": {
+        "source": [
+          "rs1",
+          "ss"
+        ],
+        "sink": [
+          "result"
+        ]
+      }
+    }
+  },
+  "top_module": "xc_sha256"
+}

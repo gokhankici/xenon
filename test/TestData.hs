@@ -2,10 +2,27 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE StrictData          #-}
 
-module TestData where
+module TestData
+  ( allTests
+  , TestTree(..)
+  , UnitTest(..)
+  , UnitTestType(..)
+  ) where
 
 import qualified Iodine.IodineArgs as IA
 import           System.FilePath
+
+allTests :: [TestTree]
+allTests =
+  [ simple
+  , negative
+  , mips
+  , fpuStubs
+  , majorStubs
+  , aesStubs
+  , major
+  , scarv
+  ]
 
 data UnitTestType = Succ | Fail deriving (Eq, Show)
 
@@ -40,24 +57,10 @@ data TestTree = SingleTest     UnitTest
 mkCollection :: String -> [UnitTest] -> TestTree
 mkCollection name = TestCollection name . fmap SingleTest
 
-abductionRoot, testDir, benchmarkDir, mipsDir :: FilePath
-abductionRoot = "abduction"
+testDir, benchmarkDir, mipsDir :: FilePath
 testDir       = "test"
 benchmarkDir  = "benchmarks"
 mipsDir       = benchmarkDir </> "472-mips-pipelined"
-
-allTests :: [TestTree]
-allTests =
-  [ simple
-  , negative
-  , mips
-  , abduction
-  , fpuStubs
-  , majorStubs
-  , aesStubs
-  , major
-  , scarv
-  ]
 
 --------------------------------------------------------------------------------
 simple :: TestTree
@@ -91,18 +94,8 @@ simple = mkCollection "simple" $ ts ++ [t']
       , "submodule-04"
       , "tr-test-12"
       , "tr-test-14"
+      , "submodule-05"
       ]
-
-
---------------------------------------------------------------------------------
-abduction :: TestTree
---------------------------------------------------------------------------------
-abduction = mkCollection "abduction" ts
-  where
-    ts      = go <$> names
-    go name = T name $ d </> name <.> "v"
-    d       = testDir </> "abduction" </> "pos"
-    names   = ["abduction-01"]
 
 
 --------------------------------------------------------------------------------
@@ -190,6 +183,7 @@ negative = mkCollection "negative" $ go <$> names
             , "neg-submodule-02"
             , "neg-submodule-03"
             , "neg-submodule-04"
+            , "neg-submodule-05"
             ]
 
 
@@ -271,6 +265,9 @@ scarvStubs = mkCollection "xcrypto" ts
                        , x </> "xc_malu"   </> "test_mul2.v"
                        , x </> "xc_malu"   </> "test_pmul.v"
                        , x </> "xc_malu"   </> "xc_malu_muldivrem.v"
+                      --  , x </> "xc_malu"   </> "xc_malu.v"
+                       , x </> "xc_sha256" </> "xc_sha256.v"
+                       , x </> "xc_sha3"   </> "xc_sha3.v"
                        ]
          ]
 

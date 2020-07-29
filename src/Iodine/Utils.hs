@@ -73,23 +73,19 @@ foldlM' :: (Foldable t, Monad m)
 foldlM' b as act = foldlM act b as
 
 class Monoid (m a) => LiftToMonoid m a where
-  liftToMonoid :: a -> m a
-
-instance LiftToMonoid SQ.Seq a where
-  liftToMonoid = SQ.singleton
-
-instance LiftToMonoid [] a where
-  liftToMonoid = (: [])
+  toMonoid :: a -> m a
 
 instance (Hashable a, Eq a) => LiftToMonoid HS.HashSet a where
-  liftToMonoid = HS.singleton
+  toMonoid = HS.singleton
+
+instance (Monad m, Monoid (m a)) => LiftToMonoid m a where
+  toMonoid = return
 
 maybeToMonoid :: LiftToMonoid m a => Maybe a -> m a
-maybeToMonoid (Just a) = liftToMonoid a
-maybeToMonoid Nothing  = mempty
+maybeToMonoid = maybe mempty toMonoid
 
 catMaybes' :: (Foldable t, LiftToMonoid t a) => t (Maybe a) -> t a
-catMaybes' = foldl' (\acc -> maybe acc (mappend acc . liftToMonoid)) mempty
+catMaybes' = foldl' (\acc -> maybe acc (mappend acc . toMonoid)) mempty
 
 toSequence :: Foldable t => t a -> L a
 toSequence = foldl' (|>) mempty

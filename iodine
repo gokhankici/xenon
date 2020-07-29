@@ -8,6 +8,13 @@ import sys
 O0 = True
 USE_STACK = False
 
+def fix_path_in_cmd(arg):
+    p = Path(arg)
+    if p.exists():
+        return str(p.resolve())
+    else:
+        return arg
+
 def get_args():
     argparser = argparse.ArgumentParser(prog="iodine", add_help=False)
     argparser.add_argument("-b", "--build", help="Build the project", action="store_true")
@@ -15,10 +22,7 @@ def get_args():
     argparser.add_argument("--debug", help="Run the debugging script", action="store_true")
     argparser.add_argument("--help", "-h", action="store_true")
     args, unknown_args = argparser.parse_known_args()
-    for i, arg in enumerate(unknown_args):
-        p = Path(arg)
-        if p.is_file():
-            unknown_args[i] = p.resolve()
+    unknown_args = [fix_path_in_cmd(a) for a in unknown_args]
     return argparser, args, unknown_args
 
 argparser, args, unknown_args = get_args()
@@ -42,15 +46,16 @@ if args.help:
     subprocess.run(RUN_CMD + ["--", "--help"], cwd=THIS_DIR)
     print(f"{'-' * 80}\nExtra arguments:")
     argparser.print_help()
+    sys.exit(0)
+
+if args.build:
+    cmd = BUILD_CMD + PROFILE_ARGS
 else:
-    if args.build:
-        cmd = BUILD_CMD + PROFILE_ARGS
-    else:
-        cmd = RUN_CMD + PROFILE_ARGS
-        cmd += ["--", "--iverilog-dir", IVERILOG_DIR]
-        cmd += unknown_args
-        cmd += PROFILE_RUN_ARGS
-    # print(" ".join(str(a) for a in cmd))
-    # sys.exit(0)
-    r = subprocess.run(cmd, cwd=THIS_DIR)
-    sys.exit(r.returncode)
+    cmd = RUN_CMD + PROFILE_ARGS
+    cmd += ["--", "--iverilog-dir", IVERILOG_DIR]
+    cmd += unknown_args
+    cmd += PROFILE_RUN_ARGS
+
+# print(" ".join(str(a) for a in cmd))
+r = subprocess.run(cmd, cwd=THIS_DIR)
+sys.exit(r.returncode)

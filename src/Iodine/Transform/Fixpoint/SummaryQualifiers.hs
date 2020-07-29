@@ -17,7 +17,7 @@ import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Horn
 import           Iodine.Types
-import           Iodine.Utils (trace, hmGet)
+import           Iodine.Utils hiding (output)
 
 import           Control.Carrier.State.Strict
 import           Control.Effect.Reader
@@ -128,7 +128,7 @@ addSummaryQualifiersAB :: FD sig m => Id -> AlwaysBlock Int -> m ()
 addSummaryQualifiersAB moduleName ab = do
   sqvs <- summaryQualifierVariablesAB moduleName ab
   for_ (HM.toList sqvs) $ \(v, lqds) -> flip SQ.traverseWithIndex lqds $ \n qds -> do
-    trace "addSummaryQualifiersAB" (getThreadId ab, v, qds)
+    -- trace "addSummaryQualifiersAB" (getThreadId ab, v, qds)
     let evs    = qds ^. explicitVars
         ivs    = qds ^. implicitVars
         allEqs = HS.toList (evs <> ivs)

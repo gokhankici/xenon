@@ -680,9 +680,13 @@ fpCheckMIOutputs = do
       t2s (Explicit True)  = "exp-nb"
       t2s (Explicit False) = "exp-b"
   for_ nonCtOutputPorts $ \o -> do
-    print o
-    for_ (getVariableDependencies o m sm) $ \(v,t) ->
+    putStrLn $ T.unpack o
+    let deps = getVariableDependencies o m sm
+        exps = SQ.fromList [ v | (v, t) <- deps, t /= Implicit ]
+        iterNo = fromJust $ getCTNo o
+    for_ deps $ \(v,t) ->
       printf "%-10s %s\n" (t2s t) v
+    print iterNo
     putStrLn $ replicate 80 '-'
 
   -- when False $ do

@@ -1,26 +1,10 @@
 {
   "modules": {
-    "xc_malu_muldivrem": {
+    "xc_malu": {
       "annotations": {
         "source": [
-          "acc",
-          "arg_0",
-          "arg_1",
-          "clock",
-          "count",
-          "do_clmul",
-          "do_div",
-          "do_divu",
-          "do_mul",
-          "do_mulsu",
-          "do_mulu",
-          "do_pclmul",
-          "do_pmul",
-          "do_rem",
-          "do_remu",
           "flush",
-          "padd_cout",
-          "padd_result",
+          "flush_data",
           "pw_16",
           "pw_2",
           "pw_32",
@@ -30,17 +14,23 @@
           "rs1",
           "rs2",
           "rs3",
+          "uop_clmul",
+          "uop_div",
+          "uop_divu",
+          "uop_macc",
+          "uop_madd",
+          "uop_mmul",
+          "uop_msub",
+          "uop_mul",
+          "uop_mulsu",
+          "uop_mulu",
+          "uop_pclmul",
+          "uop_pmul",
+          "uop_rem",
+          "uop_remu",
           "valid"
         ],
         "sink": [
-          "n_acc",
-          "n_arg_0",
-          "n_arg_1",
-          "padd_cen",
-          "padd_cin",
-          "padd_lhs",
-          "padd_rhs",
-          "padd_sub",
           "ready",
           "result"
         ],
@@ -54,6 +44,12 @@
         "clock"
       ]
     },
+    "xc_malu_muldivrem": {
+      "clock": [
+        "clock"
+      ],
+      "inline": false
+    },
     "xc_malu_divrem": {
       "annotations": {
         "initial_eq": [
@@ -66,5 +62,5 @@
       ]
     }
   },
-  "top_module": "xc_malu_muldivrem"
+  "top_module": "xc_malu"
 }

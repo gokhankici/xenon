@@ -1,0 +1,25 @@
+{
+  "modules": {
+    "xc_sha3": {
+      "annotations": {
+        "sink": [
+          "result"
+        ],
+        "source": [
+          "f_x1",
+          "f_x2",
+          "f_x4",
+          "f_xy",
+          "f_yx",
+          "rs1",
+          "rs2",
+          "shamt"
+        ]
+      },
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "xc_sha3"
+}
