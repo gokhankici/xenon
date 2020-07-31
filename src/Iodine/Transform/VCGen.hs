@@ -138,9 +138,9 @@ traceHorns horns = do
   for_ mm $ \m -> do
     t $ printf "* %d : %s" (getData m) (moduleName m)
     for_ (alwaysBlocks m) $ \ab ->
-      t $ printf "    * %d : %s - %s" (getData ab) (moduleName m) (prettyShow $ abEvent ab)
+      t $ printf "    * %d : %s" (getData ab) (prettyShow $ abEvent ab)
     for_ (moduleInstances m) $ \mi ->
-      t $ printf "    * %d : %s - %s" (getData mi) (moduleName m) (moduleInstanceName mi)
+      t $ printf "    * %d : %s" (getData mi) (moduleInstanceName mi)
   t "horns:"
   for_ horns $ \h -> t $ printf "%3d: %s" (hornStmtId h) (show $ hornType h)
   t ""
@@ -322,7 +322,7 @@ combinatorialModuleInit = do
       let ps = variableName . portVariable <$> ports
           subs = mfold (\v -> second sti <$> mkAllSubs v moduleName 0 1) ps
       moduleAlwaysEqs <- moduleAlwaysEquals 1 mempty
-      for_ miExprs $ \e -> trace "miexpr" e
+      -- for_ miExprs $ \e -> trace "miexpr" e
       return (subs, moduleAlwaysEqs)
     _ -> error "unreachable"
   return $
