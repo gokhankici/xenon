@@ -199,7 +199,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
                 , isJust childIterNo
                 ]
               go acc@(g2, ws2) (childName, childIterNo, edgeType) =
-                if childIterNo <= parentIterNo
+                if childIterNo <= parentIterNo || parentIterNo == 0
                   then
                     let
                       childNode  = toNode childName
@@ -269,21 +269,29 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
   let showEdge Implicit         = "imp"
       showEdge (Explicit True ) = "exp-nb"
       showEdge (Explicit False) = "exp-b"
-  writeFile "nonCtTree.dot" $ toDotStr $ G.nemap show showEdge nonCtTree
-  system "dot -Tpdf nonCtTree.dot -o nonCtTree.pdf"
 
-  let nonCtTreeLeaves = first toName <$> getLeaves nonCtTree
+  let nonCtTreeLeaves =
+        filter ((> 0) . snd) $
+        first toName <$>
+        getLeaves nonCtTree
 
   putStrLn "### NON CT TREE LEAVES ##########################################################"
   for_ nonCtTreeLeaves print
   putStrLn ""
 
-  let minCtTreeLeaf = snd $ minimum $ swap <$> nonCtTreeLeaves
-  printf "Min leaf %s\n\n" minCtTreeLeaf
+  let minCtTreeLeaf@(minCtTreeLeafName, _) = swap $ minimum $ swap <$> nonCtTreeLeaves
+  printf "Min leaf: %s\n\n" minCtTreeLeafName
+  -- printf "Non public min leaf dependencies: %s\n\n"
+  --   (show $ fmap fst $ HS.toList $ hasToBePublic minCtTreeLeafName)
+
+  writeFile "nonCtTree.dot" $ toDotStr $ G.nemap show showEdge $
+    let nodesToKeep = G.reachable (toNode minCtTreeLeafName) $ G.grev nonCtTree
+    in G.nfilter (`elem` nodesToKeep) nonCtTree
+  system "dot -Tpdf nonCtTree.dot -o nonCtTree.pdf"
 
   let
     createPubTree   = createDepTree getPubNo
-    nonPubTreeRoots = nonCtTreeLeaves >>= HS.toList . hasToBePublic . fst
+    nonPubTreeRoots = {- nonCtTreeLeaves -} [minCtTreeLeaf] >>= HS.toList . hasToBePublic . fst
     iterToConstraintType iterNo = do
       constraintNo   <- fst <$> fpTrace ^. at iterNo
       constraintType <- cm ^. at constraintNo

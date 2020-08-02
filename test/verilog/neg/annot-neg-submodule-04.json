@@ -14,11 +14,10 @@
           "out2"
         ],
         "always_eq": [
-            "ct1"
-	]
+          "ct1"
+        ]
       }
     },
-    "test_sub_1": {
-    }
+    "test_sub_1": {}
   }
 }

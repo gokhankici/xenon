@@ -140,6 +140,7 @@ createModuleSummary m@Module{..} = do
   let hasClock = not $ HS.null clks
 
   summaryMap <- get @SummaryMap
+  annotMap <- ask @AnnotationFile
   let nodeMap = IM.fromList $ swap <$> HM.toList varDepMap
       varDepGraph' =
         foldl'
@@ -194,15 +195,29 @@ createModuleSummary m@Module{..} = do
                                 _ -> error $ "multiple update threads: " ++ show ts
             in toSingle <$> dgState ^. varUpdates
 
+  let isThreadActive tid =
+        case threadMap IM.! tid of
+          AB _  -> True
+          MI mi -> let mn = moduleInstanceType mi
+                   in not $
+                      isCombinatorial (summaryMap HM.! mn) ||
+                      (toModuleAnnotations mn annotMap ^. canInline)
+
+  -- Do not include a variable in the horn clause if:
+  -- 1. It is a wire,
+  -- 2. It is read by only one or none of the active threads,
+  -- 3. It is updated by a single active thread t, and t can be the one that reads the variable.
   annotVars <- annotationVariables <$> getAnnotations moduleName
   let nonTmpVars = foldl' (flip HS.insert) annotVars (variableName . portVariable <$> ports)
-      starBlockId = getData <$> find ((== Star). abEvent) alwaysBlocks
       tmpVars0 =
-        let writeTidCheck readTids wtid = Just wtid == starBlockId &&
-                                          wtid `IS.member` readTids
-            isTemporary v readTids = IS.size readTids <= 1 &&
-                                     maybe False (writeTidCheck readTids) (twm ^. at v)
-            upd vs v readTids = if isTemporary v readTids then HS.insert v vs else vs
+        let writeTidCheck readTids wtid =
+              IS.null readTids || not (isThreadActive wtid) || wtid `IS.member` readTids
+            isWire v = Wire v `elem` variables
+            isTemporary v readTids =
+              isWire v &&
+              IS.size readTids <= 1 &&
+              maybe False (writeTidCheck readTids) (twm ^. at v)
+            upd vs v readTids = if isTemporary v (IS.filter isThreadActive readTids) then HS.insert v vs else vs
         in HM.foldlWithKey' upd mempty (dgState ^. varReads) `HS.difference` nonTmpVars
       tostr (Register r) = "reg " <> T.unpack r
       tostr (Wire w)     = "wire " <> T.unpack w
@@ -229,6 +244,8 @@ createModuleSummary m@Module{..} = do
     }
   where
     inputsSet = moduleInputs m mempty
+    threadMap = IM.fromList $ fmap (\t -> (getData t, t)) $ toList $
+                (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
 
 addPortDependencies :: Has (Reader SummaryMap) sig m
                     => ModuleInstance Int

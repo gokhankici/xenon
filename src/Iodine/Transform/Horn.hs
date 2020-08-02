@@ -118,11 +118,13 @@ instance MakeKVar Module where
 setThreadId :: MakeKVar m => m Int -> HornExpr -> HornExpr
 setThreadId t = updateThreadId (const $ getThreadId t)
 
+updateVarIndex :: (Int -> Int) -> HornExpr -> HornExpr
+updateVarIndex f = updateVarIndex2 (\_v n -> f n)
 
 -- | update the variable index with the given function
-updateVarIndex :: (Int -> Int) -> HornExpr -> HornExpr
-updateVarIndex f = \case
-  HVar{..}    -> HVar{ hVarIndex = f hVarIndex, .. }
+updateVarIndex2 :: (Id -> Int -> Int) -> HornExpr -> HornExpr
+updateVarIndex2 f = \case
+  HVar{..}    -> HVar{ hVarIndex = f hVarName hVarIndex, .. }
   HAnd es     -> HAnd $ go <$> es
   HOr es      -> HOr $ go <$> es
   HBinary{..} -> HBinary{ hBinaryLhs = go hBinaryLhs
@@ -139,7 +141,7 @@ updateVarIndex f = \case
                       , hIteThen = go hIteThen
                       , hIteElse = go hIteElse
                       }
-  where go = updateVarIndex f
+  where go = updateVarIndex2 f
 
 -- | update the thread index with the given function
 updateThreadId :: (Int -> Int) -> HornExpr -> HornExpr

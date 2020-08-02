@@ -1,33 +1,18 @@
-module test(clk, ct1, ct2, in, out1, out2);
+module test(clk, ct, in, out);
    input wire clk;
    input wire in;
-   input wire ct1;
-   input wire ct2;
-   output reg out1;
-   output reg out2;
+   input wire ct;
+   output reg out;
 
-   wire       tmp1;
-   wire       tmp2;
+   wire tmp;
+   reg  in_r;
 
-   reg in_r;
+   test_sub_1 INS1(.ct(ct), .x(in_r), .y(tmp));
 
-   test_sub_1 INS1(.ct(ct1), .x(in_r), .y(tmp1));
-
-   always @(*) begin
-	   if (ct1)
-		   tmp2 = 0;
-	   else
-		   tmp2 = in_r;
-   end
-
-   always @(posedge clk)
+   always @(posedge clk) begin
 	   in_r <= in;
-
-   always @(posedge clk)
-	   out1 <= tmp1 + 1;
-
-   always @(posedge clk)
-	   out2 <= tmp2 + 1;
+	   out <= tmp + 1;
+   end
 
 endmodule // test
 

@@ -6,19 +6,12 @@
       "annotations": {
         "source": [
           "in",
-          "ct1",
-          "ct2"
+          "ct"
         ],
         "sink": [
-          "out1",
-          "out2"
-        ],
-        "always_eq": [
-            "ct1"
-	]
+          "out"
+        ]
       }
-    },
-    "test_sub_1": {
     }
   }
 }

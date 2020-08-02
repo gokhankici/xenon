@@ -57,7 +57,7 @@ data ThreadSt =
            , _currentInitialEquals    :: Ids
            , _currentAlwaysEquals     :: Ids
            , _currentAssertEquals     :: Ids
-
+           , _currentBlockingIndices  :: HM.HashMap Id Int
            }
   deriving (Show)
 
@@ -157,14 +157,7 @@ vcgenMod m@Module {..} = do
   mClks <- getClocks moduleName
   setHornVariables m $ getVariables m `HS.difference` mClks
 
-  -- set each thread's horn variables
   isTop <- isTopModule' m
-  for_ alwaysBlocks $ \ab -> do
-    let abVars = getVariables ab
-        hVars = if isTop || isStar ab
-                then abVars
-                else abVars <> moduleInputs m mClks
-    setHornVariables ab hVars
 
   runReader m $ runReader threadMap $ do
     threadStMap :: IM.IntMap ThreadSt <-
@@ -172,6 +165,15 @@ vcgenMod m@Module {..} = do
       for allThreads $ \thread -> do
       threadSt  <- computeThreadStM m thread
       modify (IM.insert (getData thread) threadSt)
+
+    -- set each thread's horn variables
+    for_ alwaysBlocks $ \ab -> do
+      let abVars = (threadStMap IM.! getThreadId ab) ^. currentVariables
+          hVars = if isTop || isStar ab
+                  then abVars
+                  else abVars <> moduleInputs m mClks
+      setHornVariables ab hVars
+
     moduleClauses & runReader threadStMap
   where
     allThreads          = (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
@@ -256,14 +258,11 @@ initialize ab = do
   trace "initialize - zero" (toList zeroTagVars)
   trace "initialize - valeq" (toList valEqVars)
 
-  -- hornVars <- getHornVariables ab
-  -- trace "non initial_eq vals" (getData ab, toList $ hornVars `HS.difference` valEqVars)
-
   (cond, subs) <-
     if isStar ab
     then do nxt <- HM.map (+1) <$> getNextVars ab
             tr <- sti . uvi <$> transitionRelation (abStmt ab)
-            miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
+            miExprs <- combinatorialInstanceExprs ab (sti . uvi)
             let cond1 = uvi . mkEqual <$> tagSubs
                 cond2 = uvi . mkEqual <$> valSubs
                 cond3 =
@@ -354,7 +353,7 @@ tagSet ab = withTopModule $ do
       aes      <- fmap uvi <$> alwaysEqualEqualities thread
       nextVars <- HM.map (+ 1) <$> getNextVars ab
       tr <- uvi <$> transitionRelation (abStmt ab)
-      miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
+      miExprs <- combinatorialInstanceExprs ab (sti . uvi)
       -- inv holds on 0 indices
       -- increment all indices, keep values but update tags
       -- always_eq on 1 indices and last hold
@@ -380,7 +379,12 @@ tagSet ab = withTopModule $ do
 {- HLINT ignore tagSet -}
 
 tagSetHelper :: FDS sig m => m (Module Int, Ids, Ids)
-tagSetHelper = (,,) <$> ask @(Module Int) <*> getCurrentSources <*> asks (^. currentVariables)
+tagSetHelper = do
+  m <- ask @(Module Int)
+  ms <- asks (HM.! moduleName m)
+  vs <- asks (^. currentVariables)
+  srcs <- getCurrentSources
+  return (m, srcs, vs `HS.difference` temporaryVariables ms)
 
 
 -- -------------------------------------------------------------------------------------------------
@@ -403,7 +407,7 @@ srcTagReset ab = withTopModule $ do
       aes <- fmap uvi <$> alwaysEqualEqualities thread
       nextVars <- HM.map (+ 1) <$> getNextVars ab
       tr <- uvi <$> transitionRelation (abStmt ab)
-      miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
+      miExprs <- combinatorialInstanceExprs ab (sti . uvi)
       -- increment indices of non srcs, keep everything
       -- always_eq on 1 indices and last hold
       -- transition starting from 1 indices
@@ -447,7 +451,8 @@ nextStar ab@AlwaysBlock{..} = do
   tr <- sti . uvi <$> transitionRelation abStmt
   nextVars <- HM.map (+ 1) <$> getNextVars ab
   let subs  = second sti <$> toSubs moduleName nextVars
-  miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi))
+  miExprs <- combinatorialInstanceExprs ab (sti . uvi)
+  -- trace "miExprs nextStar" miExprs
   return $
     Horn { hornHead   = makeKVar ab subs
          , hornBody   = HAnd $ (threadKVar <| aes) <> miExprs |> tr
@@ -488,14 +493,14 @@ nextSubClock ab@AlwaysBlock{..} = do
       AB depAB -> instantiateAB depAB mempty
       MI depMI -> instantiateMI depMI
   let sti  = setThreadId m
-      uvi1 = updateVarIndex (+ 1)
-  tr <- uvi1 . sti <$> transitionRelation abStmt
+      uvi = updateVarIndex (+ 1)
+  tr <- uvi . sti <$> transitionRelation abStmt
   abNext <- HM.map (+ 1) <$> getNextVars ab
   (body, hd) <- interferenceReaderExpr ab mempty abNext
   let subs = case hd of
                KVar _ s -> s
                _ -> error "unreachable"
-  miExprs <- combinatorialInstances ab >>= traverse (instantiateMI' (sti . uvi1))
+  miExprs <- combinatorialInstanceExprs ab (sti . uvi)
   return $
     Horn { hornHead   = makeKVar ab subs
          , hornBody   = HAnd $ depThreadInstances <> miExprs <> body |> tr
@@ -594,15 +599,15 @@ interferenceCheck (AB readAB) = do
       HS.intersection
       <$> asks (view currentWrittenVariables . (IM.! writeTid))
       <*> asks (view currentVariables . (IM.! readTid))
-    when (HS.null overlappingVars) $ do
-      trace "overlapping variables" (toList overlappingVars)
-      throw "overlapping variables should not be empty here"
+    let sanityCheck = when (HS.null overlappingVars) $ throw "overlapping variables should not be empty here"
     case writeThread of
-      AB writeAB ->
+      AB writeAB -> do
+        sanityCheck
         interferenceCheckAB writeAB readAB overlappingVars >>= addHorn
       MI writeMI -> do
         let miSummary = moduleSummaries HM.! moduleInstanceType writeMI
-        unless (isCombinatorial miSummary) $
+        unless (isCombinatorial miSummary) $ do
+          sanityCheck
           interferenceCheckMI writeMI readAB overlappingVars >>= addHorn
 
 addHorn :: Has (State Horns) sig m => H -> m ()
@@ -681,10 +686,11 @@ interferenceCheckAB writeAB readAB overlappingVars= do
   -- trace "interferenceCheckAB" (getData writeAB, getData readAB, toList overlappingVars)
   currentModule <- ask @(Module Int)
   writeInstance <- instantiateAB writeAB mempty
+  writeThreadSt :: ThreadSt <- asks (IM.! getThreadId writeAB)
   let sti  = setThreadId currentModule
       uvi1 = updateVarIndex (+ 1)
   writeTR <- uvi1 . sti <$> transitionRelation (abStmt writeAB)
-  miExprs <- combinatorialInstances writeAB >>= traverse (instantiateMI' (uvi1 . sti))
+  miExprs <- combinatorialInstanceExprs writeAB (uvi1 . sti) & runReader writeThreadSt
   aes <-
     let t = AB writeAB
     in withAB t $
@@ -710,6 +716,7 @@ interferenceReaderExpr readAB overlappingVars writeNext = do
   let currentModuleName = moduleName currentModule
       sti = setThreadId currentModule
   readNext <- getNextVars readAB
+  readThreadSt :: ThreadSt <- asks (IM.! getThreadId readAB)
   (body, subNext) <-
     if isStar readAB
     then do
@@ -730,13 +737,12 @@ interferenceReaderExpr readAB overlappingVars writeNext = do
             )
             readHornVars
       readTR <- uviN . sti <$> transitionRelation (abStmt readAB)
-      miExprs <- combinatorialInstances readAB >>= traverse (instantiateMI' (uviN . sti))
+      miExprs <- combinatorialInstanceExprs readAB (uviN . sti) & runReader readThreadSt
       return ( pullVarsToN <> miExprs |> readTR
              , HM.map (+ maxWriteN) readNext
              )
     else do
-      miExprs <- combinatorialInstances readAB >>=
-                 traverse (instantiateMI' (updateVarIndex (+ 1) . sti))
+      miExprs <- combinatorialInstanceExprs readAB (updateVarIndex (+ 1) . sti) & runReader readThreadSt
       return ( miExprs
              , HM.mapWithKey (\v _ -> fromMaybe 1 $ HM.lookup v writeNext) readNext
              )
@@ -773,7 +779,9 @@ instantiateAB ab excludedVars = do
   m@Module{..} <- ask
   let sti = setThreadId m
       mkEqs = fmap (mkEqual . bimap (setThreadId ab) sti) . foldMap (\v -> mkAllSubs v moduleName 0 1)
-  instanceVars <- mkEqs . (`HS.difference` excludedVars) <$> getHornVariables ab
+  tempVars <- asks (temporaryVariables . (HM.! moduleName))
+  let excludedVars' = excludedVars <> tempVars
+  instanceVars <- mkEqs . (`HS.difference` excludedVars') <$> getHornVariables ab
   return $ HAnd $ makeKVar ab mempty <| instanceVars
 
 
@@ -817,8 +825,7 @@ instantiateMI' fixExpr mi@ModuleInstance{..} = do
                , rhs
                )
       inputSubs = foldMap mkInputSubs inputs
-      subs = second (setThreadId currentModule)
-             <$> (fmap snd inputSubs <> foldMap mkOutputSubs outputs)
+      subs = fmap snd inputSubs <> foldMap mkOutputSubs outputs
   return $ HAnd $ fmap fst inputSubs SQ.|> makeKVar targetModule subs
 
 -- -----------------------------------------------------------------------------
@@ -932,8 +939,18 @@ withAB t act = do
 computeThreadStM :: G' sig m => Module Int -> TI -> m ThreadSt
 computeThreadStM m@Module{..} thread = do
   as <- getAnnotations moduleName
+  moduleMap <- ask @ModuleMap
+  inlinedMIs <- case thread of
+                  AB ab -> combinatorialInstances ab & runReader m
+                  MI _  -> return mempty
+  let inlinedMIOutputs =
+        let go mi = moduleInstanceReadsAndWrites (moduleMap HM.! moduleInstanceType mi) mempty mi
+        in mfold (snd . go) inlinedMIs
+  let vs =
+        (getVariables thread <> mfold (getVariables . MI) inlinedMIs)
+        `HS.difference` inlinedMIOutputs
   let filterAs l = HS.intersection (as ^. l) vs
-  wvs <- getUpdatedVariables thread
+  wvs <- mfoldM getUpdatedVariables (thread <| (MI <$> inlinedMIs))
   extraInitEquals <- asks (hmGet 15 moduleName . getInitialEqualVariables)
   unless (HS.null extraInitEquals) $
     trace
@@ -952,11 +969,22 @@ computeThreadStM m@Module{..} thread = do
     , _currentAlwaysEquals  = filterAs alwaysEquals
     , _currentAssertEquals  = filterAs assertEquals
     , _currentWrittenVariables = wvs
+    , _currentBlockingIndices = mfold getBlockingIndices alwaysBlocks
     }
   where
-    vs = getVariables thread
     inputs = moduleAllInputs m
 
+    getBlockingIndices ab = getBlockingIndicesHs (SQ.singleton $ abStmt ab)
+    getBlockingIndicesHs  = mfold getBlockingIndicesH
+    getBlockingIndicesH = \case
+      Block{..}      -> mfold getBlockingIndicesH blockStmts
+      Assignment{..} ->
+        case assignmentType of
+          NonBlocking -> mempty
+          _           -> mempty & at (varName assignmentLhs) ?~ exprData assignmentLhs
+      Skip{}         -> mempty
+      IfStmt{..}     -> getBlockingIndicesH ifStmtThen <>
+                        getBlockingIndicesH ifStmtElse
 
 data FDEQReadSt = FDEQReadSt
   { sccG      :: G.Gr IS.IntSet VarDepEdgeType
@@ -1195,7 +1223,11 @@ updateValues :: Foldable t => Int -> Id -> t Id -> L HornExpr
 updateValues n moduleName =
   foldl' (\acc v -> acc <> (mkEqual <$> mkValueSubs v moduleName n 0)) mempty
 
-combinatorialInstances :: FDM sig m => AlwaysBlock Int -> m (L MI)
+type FDCI sig m = ( Has (Reader (Module Int)) sig m
+                  , Has (Reader SummaryMap) sig m
+                  )
+
+combinatorialInstances :: FDCI sig m => AlwaysBlock Int -> m (L MI)
 combinatorialInstances ab = do
   Module{..} <- ask
   moduleSummaries <- ask
@@ -1208,3 +1240,13 @@ combinatorialInstances ab = do
       mis       = SQ.fromList (G.pre (threadDependencies ms) abtid) >>=
                   maybeToMonoid . lkp
   return mis
+
+combinatorialInstanceExprs :: (FDM sig m, Has (Reader ThreadSt) sig m)
+                           => AlwaysBlock Int
+                           -> (HornExpr -> HornExpr)
+                           -> m (L HornExpr)
+combinatorialInstanceExprs ab fixExpr = do
+  mis <- combinatorialInstances ab
+  bInds <- asks (^. currentBlockingIndices)
+  let uvi2 v _ = fromMaybe 0 $ bInds ^. at v
+  traverse (instantiateMI' (fixExpr . updateVarIndex2 uvi2)) mis

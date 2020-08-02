@@ -34,10 +34,19 @@
           "ready",
           "result"
         ],
+        "initial_eq": [
+          "fsm",
+          "count",
+          "arg_0"
+        ],
         "always_eq": [
           "valid",
           "flush",
-          "resetn"
+          "resetn",
+          "uop_macc",
+          "uop_msub",
+          "uop_mmul",
+          "insn_mdr"
         ]
       },
       "clock": [
@@ -48,7 +57,7 @@
       "clock": [
         "clock"
       ],
-      "inline": false
+      "inline": true
     },
     "xc_malu_divrem": {
       "annotations": {
@@ -60,6 +69,18 @@
       "clock": [
         "clock"
       ]
+    },
+    "xc_malu_long": {
+      "inline": false
+    },
+    "xc_malu_mul": {
+      "inline": false
+    },
+    "xc_malu_pmul": {
+      "inline": false
+    },
+    "p_addsub": {
+      "inline": false
     }
   },
   "top_module": "xc_malu"

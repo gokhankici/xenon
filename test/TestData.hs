@@ -182,6 +182,7 @@ negative = mkCollection "negative" $ go <$> names
             , "secverilog-neg-02"
             , "neg-submodule-02"
             , "neg-submodule-03"
+            , "neg-submodule-06"
             , "neg-submodule-04"
             , "neg-submodule-05"
             ]
@@ -265,7 +266,7 @@ scarvStubs = mkCollection "xcrypto" ts
                        , x </> "xc_malu"   </> "test_mul2.v"
                        , x </> "xc_malu"   </> "test_pmul.v"
                        , x </> "xc_malu"   </> "xc_malu_muldivrem.v"
-                      --  , x </> "xc_malu"   </> "xc_malu.v"
+                       , x </> "xc_malu"   </> "xc_malu.v"
                        , x </> "xc_sha256" </> "xc_sha256.v"
                        , x </> "xc_sha3"   </> "xc_sha3.v"
                        ]
@@ -281,9 +282,9 @@ major = mkCollection "major" ts
     ts = [ T  "mips"        $ mipsDir </> "mips_pipeline.v"
          , T  "yarvi"       $ b </> "yarvi" </> "shared" </> "yarvi.v"
          , T  "sha"         $ c </> "sha_core" </> "trunk" </> "rtl" </> "sha256.v"
-         , T  "fpu"         $ b </> "fpu" </> "verilog" </> "fpu.v"
-         , TF "fpu-divider" $ b </> "fpu2" </> "divider" </> "divider.v"
-         , TF "modexp"      $ c </> "RSA4096" </> "ModExp2" </> "ModExp.v"
+        --  , T  "fpu"         $ b </> "fpu" </> "verilog" </> "fpu.v"
+        --  , TF "fpu-divider" $ b </> "fpu2" </> "divider" </> "divider.v"
+        --  , TF "modexp"      $ c </> "RSA4096" </> "ModExp2" </> "ModExp.v"
          , T  "ctalu"       $ b </> "xcrypto-ref" </> "rtl" </> "coprocessor" </> "scarv_cop_palu.v"
          , T  "aes"         $ c </> "tiny_aes" </> "trunk" </> "rtl" </> "aes_256.v"
          ]

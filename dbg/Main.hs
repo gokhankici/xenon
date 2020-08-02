@@ -565,7 +565,7 @@ fpTraceCTLoopkup arg = do
 fpTraceLookupAll :: String -> IO ()
 fpTraceLookupAll varName = do
   fpTrace <- readFixpointTrace
-  ((af, _, summaryMap), _, _, _) <- readDebugOutput
+  ((af, _, summaryMap), constraintTypes, _, _) <- readDebugOutput
   let helper2 qs = let qs' = HS.filter (qualifMentionsVar varName) qs
                    in if HS.null qs' then Nothing else Just qs'
       tostr = \case
@@ -579,8 +579,9 @@ fpTraceLookupAll varName = do
     for_ (IM.toList fpTrace) $ \(iterNo, (cid, m)) -> do
       let m' = fmap (second (catMaybes . fmap tostr . HS.toList)) <$> HM.toList $ HM.mapMaybe helper2 m
       seenNull <- get
-      unless (null m' && seenNull) $
-        sendIO $ printf "%-3d %s\n" iterNo (show m')
+      unless (null m' && seenNull) $ do
+        let iterConstraint = constraintTypes IM.! (fst $ fpTrace IM.! iterNo)
+        sendIO $ printf "%-3d %-30s %s\n" iterNo (FT.showFix iterConstraint) (show m')
       modify (|| null m')
   return ()
 

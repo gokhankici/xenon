@@ -64,9 +64,18 @@ mergeModule Module {..} = do
   alwaysBlocks' <- mergeAlwaysBlocks $ alwaysBlocks <> gateBlocks
   return $
     Module { gateStmts    = mempty
-           , alwaysBlocks = alwaysBlocks'
+           , alwaysBlocks = fix alwaysBlocks'
            , ..
            }
+  where
+    fix Empty                       = Empty
+    fix (a SQ.:<| Empty)            = return a
+    fix (a1 SQ.:<| a2 SQ.:<| Empty) = return $ mrg a1 a2
+    fix _                           = error "unreachable"
+
+    mrg a1 a2 | abEvent a1 == Star =
+      a2 { abStmt = Block (abStmt a1 |:> abStmt a2) 0 }
+    mrg a1 a2 = mrg a2 a1
 
 {- |
 All blocks with the same non-star event are merged into a single block (with

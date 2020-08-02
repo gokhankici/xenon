@@ -29,6 +29,8 @@ import           Control.Monad
 import           Data.Foldable
 import           Data.Maybe
 import qualified Data.Sequence as SQ
+import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
 import qualified Data.Text as T
 import qualified Language.Fixpoint.Types as FT
 
@@ -90,7 +92,8 @@ generateWFConstraint :: (FD sig m, MakeKVar t)
                      -> t Int
                      -> m ()
 generateWFConstraint threadModuleName thread = do
-  varNames <- askHornVariables thread
+  ModuleSummary{..} <- asks (HM.! threadModuleName)
+  varNames <- (`HS.difference` temporaryVariables) <$> askHornVariables thread
   let hornVars = setThreadId thread
                  <$> foldMap (`allHornVars` threadModuleName) varNames
   (ienv,_) <- traverse_ convertExpr hornVars & runState mempty
