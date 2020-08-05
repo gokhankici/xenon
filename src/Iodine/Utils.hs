@@ -200,3 +200,10 @@ groupSort = fmap go . groupBy (\(a1,_) (a2, _) -> a1 == a2) . sortOn fst
 
 swap :: (a,b) -> (b,a)
 swap (a,b) = (b,a)
+
+nub' :: (Eq b, Hashable b) => (a -> b) ->  [a] -> [a]
+nub' f xs = snd $ foldr' go (HS.empty, []) xs
+  where go x (hist, xs') =
+          if   HS.member (f x) hist
+          then (hist, xs)
+          else (HS.insert (f x) hist, x : xs')

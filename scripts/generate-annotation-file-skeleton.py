@@ -14,6 +14,7 @@ def toabs(f):
 def indent_json(filename):
     with open(filename, "r") as f:
         j = json.load(f)
+    print(json.dumps(j, indent=2))
     with open(filename, "w") as f:
         json.dump(j, f, indent=2)
 
@@ -32,12 +33,13 @@ if not args.topmodule:
 if not args.annot_file:
     args.annot_file = vf.parent / ('annot-' + vf.stem + '.json')
 
-subprocess.run(
+r = subprocess.run(
       ["cabal", "v2-run", "iodine-debug", "--", "generate-annotation-file",
        vf, args.topmodule, toabs(args.annot_file)],
       cwd=ROOT_DIR)
 
-indent_json(args.annot_file)
+if r.returncode == 0:
+    indent_json(args.annot_file)
 
 if args.check:
     subprocess.run(["./iodine", toabs(args.verilog_file), toabs(args.annot_file)], cwd=ROOT_DIR)

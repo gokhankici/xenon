@@ -81,6 +81,9 @@ simple = mkCollection "simple" $ ts ++ [t']
       , "tr-test-9"
       , "tr-test-10"
       , "tr-test-11"
+      , "tr-test-12"
+      , "tr-test-14"
+      , "tr-test-15"
       , "merge-02"
       , "merge03"
       , "merge04-1"
@@ -92,8 +95,6 @@ simple = mkCollection "simple" $ ts ++ [t']
       , "submodule-02"
       , "submodule-03"
       , "submodule-04"
-      , "tr-test-12"
-      , "tr-test-14"
       , "submodule-05"
       ]
 

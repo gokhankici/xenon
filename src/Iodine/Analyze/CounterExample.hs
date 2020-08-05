@@ -50,6 +50,7 @@ import           GHC.Generics            hiding ( moduleName )
 import qualified Debug.Trace                   as DT
 import           System.Process
 import qualified Language.Fixpoint.Types       as FT
+import           Text.Read (readMaybe)
 
 type ConstraintTypes = IM.IntMap HornClauseId
 type ModuleMap = HM.HashMap Id (Module Int)
@@ -225,14 +226,6 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
               foldl' go acc' nonCTChildren
 
   let createSinkTree = createDepTree getCTNo
-  let
-    toDotStr = GD.showDot . GD.fglToDotString . G.gmap
-      (\(ps, n, a, ss) ->
-        let
-          lbl =
-            printf "%s (%s)" (T.unpack (invVariableDependencyNodeMap IM.! n)) a
-        in  (ps, n, lbl, ss)
-      )
   let isPublic varName =
         let v = T.unpack varName
             helper (FSM.TracePublic tv) = toTVName tv == v
@@ -264,11 +257,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
               (initTree roots, initws)
               roots
         in finalTree
-  let nonCtTree =
-        nonCtTreeLoop [ (s, n) | s <- snks, n <- toList (getCTNo s) ] mempty
-  let showEdge Implicit         = "imp"
-      showEdge (Explicit True ) = "exp-nb"
-      showEdge (Explicit False) = "exp-b"
+  let nonCtTree = nonCtTreeLoop [ (s, n) | s <- snks, n <- toList (getCTNo s) ] mempty
 
   let nonCtTreeLeaves =
         filter ((> 0) . snd) $
@@ -279,19 +268,24 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
   for_ nonCtTreeLeaves print
   putStrLn ""
 
-  let minCtTreeLeaf@(minCtTreeLeafName, _) = swap $ minimum $ swap <$> nonCtTreeLeaves
-  printf "Min leaf: %s\n\n" minCtTreeLeafName
-  -- printf "Non public min leaf dependencies: %s\n\n"
-  --   (show $ fmap fst $ HS.toList $ hasToBePublic minCtTreeLeafName)
+  let minCtTreeLeaves = let minIterNo = minimum $ snd <$> nonCtTreeLeaves
+                        in filter ((== minIterNo) . snd) nonCtTreeLeaves
+  printf "Min leaves: %s\n\n" $ show $ fst <$> minCtTreeLeaves
 
-  writeFile "nonCtTree.dot" $ toDotStr $ G.nemap show showEdge $
-    let nodesToKeep = G.reachable (toNode minCtTreeLeafName) $ G.grev nonCtTree
-    in G.nfilter (`elem` nodesToKeep) nonCtTree
-  system "dot -Tpdf nonCtTree.dot -o nonCtTree.pdf"
+  let toCtTreeDotStr =
+        toDotStr (invVariableDependencyNodeMap IM.!) (\i -> if i >= 0 then printf " #%d" i else "")
+
+  writeFile "nonCtTree.dot" $
+    let revG         = G.grev nonCtTree
+        go ntk (v,_) = ntk <> IS.fromList (G.reachable (toNode v) revG)
+        nodesToKeep  = foldl' go IS.empty minCtTreeLeaves
+        subG = G.nfilter (`IS.member` nodesToKeep) revG
+    in toCtTreeDotStr subG
+  callDot "nonCtTree.dot" "nonCtTree.pdf"
 
   let
     createPubTree   = createDepTree getPubNo
-    nonPubTreeRoots = {- nonCtTreeLeaves -} [minCtTreeLeaf] >>= HS.toList . hasToBePublic . fst
+    nonPubTreeRoots = minCtTreeLeaves >>= HS.toList . hasToBePublic . fst
     iterToConstraintType iterNo = do
       constraintNo   <- fst <$> fpTrace ^. at iterNo
       constraintType <- cm ^. at constraintNo
@@ -335,17 +329,30 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
             foldl' (\acc e@(_, n, _) -> insEdge e $ insNode n 0 acc) g newEdges
         in
           nonPubTreeLoop g' leaves (HS.insert wire ws)
-  let nonPubTree = nonPubTreeLoop nonPubTree0 nonPubTreeInitLeaves mempty
-  writeFile "nonPubTree.dot" $ toDotStr $ G.nemap
-    (\n ->
-      (if iterToConstraintType n == Just Init then "Init " else "")
+  let nonPubTree = G.grev $ nonPubTreeLoop nonPubTree0 nonPubTreeInitLeaves mempty
+  writeFile "nonPubTree.dot" $ toDotStr (invVariableDependencyNodeMap IM.!)
+    (\i ->
+      (if iterToConstraintType i == Just Init then "Init " else "")
         <> "#"
-        <> show n
+        <> show i
     )
-    showEdge
     nonPubTree
-  system "dot -Tpdf nonPubTree.dot -o nonPubTree.pdf"
+  callDot "nonPubTree.dot" "nonPubTree.pdf"
 
+  writeFile "nonCtTree-full.dot" $
+    let completeNonCtGraph =
+          G.gmap (\(ps, n, _a, cs) ->
+            let a = fromMaybe (-1) $ getCTNo (toName n)
+            in (ps, n, a, cs)
+          ) variableDependencies
+    in toCtTreeDotStr completeNonCtGraph
+  callDot "nonCtTree-full.dot" "nonCtTree-full.pdf"
+
+  return ()
+
+callDot :: String -> String -> IO ()
+callDot i o = do
+  system $ printf "dot -Tpdf -Gmargin=0 %s -o %s" i o
   return ()
 
 getLeafLikeNodes :: Eq b => G.Gr a b -> [G.LNode a]
@@ -354,3 +361,31 @@ getLeafLikeNodes g = (\n -> (n, fromJust $ G.lab g n)) <$> ls
   (sccG, _) = sccGraph g
   go acc (sccN, sccNs) = if G.outdeg sccG sccN == 0 then acc <> sccNs else acc
   ls = IS.toList (foldl' go mempty (G.labNodes sccG))
+
+
+newtype GraphNode a = GraphNode { getGraphNode :: a } deriving (Show, Read)
+newtype GraphEdge b = GraphEdge { getGraphEdge :: b } deriving (Show, Read)
+
+toDotStr :: (G.DynGraph gr, Show a, Read a)
+         => (G.Node -> Id) -- ^ convert node number to text
+         -> (a -> String)  -- ^ convert node label to text
+         -> gr a VarDepEdgeType
+         -> String
+toDotStr nodeConv nodeLabelConv g = GD.showDot $ GD.fglToDotGeneric (fixG g) show show attrConv
+  where
+    toNodeLabel, toEdgeLabel :: String -> Maybe [(String, String)]
+    toNodeLabel lbl = do
+      (n, a) <- getGraphNode <$> readMaybe lbl
+      Just [("label", T.unpack (nodeConv n) <> nodeLabelConv a)]
+    toEdgeLabel lbl = do
+      lbl' <- getGraphEdge <$> readMaybe lbl
+      Just $ case lbl' of
+        Implicit   -> [("style", "dashed")]
+        Explicit _ -> [("style", "solid")]
+
+    attrConv = \case
+      [("label", lbl)] -> fromJust $ toNodeLabel lbl <|> toEdgeLabel lbl
+      _                -> error "unreachable"
+
+    fixG = G.emap GraphEdge .
+           G.gmap (\(ps, n, a, ss) -> (ps, n, GraphNode (n, a), ss))

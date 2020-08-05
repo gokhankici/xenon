@@ -30,6 +30,6 @@ graph*.pdf
 merge-cycle.*
 iodine.prof.html*
 /output
-/non*Tree.*
+/non*Tree*.*
 
 /report.html
