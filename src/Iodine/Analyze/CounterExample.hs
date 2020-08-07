@@ -51,6 +51,7 @@ import qualified Debug.Trace                   as DT
 import           System.Process
 import qualified Language.Fixpoint.Types       as FT
 import           Text.Read (readMaybe)
+import           Data.List (sortBy)
 
 type ConstraintTypes = IM.IntMap HornClauseId
 type ModuleMap = HM.HashMap Id (Module Int)
@@ -260,16 +261,25 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
   let nonCtTree = nonCtTreeLoop [ (s, n) | s <- snks, n <- toList (getCTNo s) ] mempty
 
   let nonCtTreeLeaves =
-        filter ((> 0) . snd) $
-        first toName <$>
+        fmap (first toName) <$>
         getLeaves nonCtTree
 
   putStrLn "### NON CT TREE LEAVES ##########################################################"
-  for_ nonCtTreeLeaves print
-  putStrLn ""
+  for_ nonCtTreeLeaves $ \l -> for_ l print >> putStrLn ""
 
-  let minCtTreeLeaves = let minIterNo = minimum $ snd <$> nonCtTreeLeaves
-                        in filter ((== minIterNo) . snd) nonCtTreeLeaves
+  let minCtTreeLeaves =
+        let getMinRegNo l =
+              case find ((> 0) . snd) l of
+                Nothing     -> 0
+                Just (_, i) -> i
+            cmp2 (_,i1) (_,i2) = compare i1 i2
+            clustersWithMinIterNos = (\l -> (l, getMinRegNo l)) . sortBy cmp2 <$> nonCtTreeLeaves
+            minClusterIterNo = getMinRegNo clustersWithMinIterNos
+        in [ l
+           | (c, i) <- clustersWithMinIterNos
+           , i == minClusterIterNo
+           , l <- c
+           ]
   printf "Min leaves: %s\n\n" $ show $ fst <$> minCtTreeLeaves
 
   let toCtTreeDotStr =
@@ -295,7 +305,8 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
                                nonPubTreeRoots
     nonPubTreeInitLeaves =
       [ toName l
-      | (l, _lbl) <- getLeaves nonPubTree0
+      | ls  <- getLeaves nonPubTree0
+      , (l, _lbl) <- ls
       , hid <- toList $ iterToConstraintType $ G.lab' $ G.context nonPubTree0 l
       , hid == Init
       ]
@@ -355,12 +366,12 @@ callDot i o = do
   system $ printf "dot -Tpdf -Gmargin=0 %s -o %s" i o
   return ()
 
-getLeafLikeNodes :: Eq b => G.Gr a b -> [G.LNode a]
-getLeafLikeNodes g = (\n -> (n, fromJust $ G.lab g n)) <$> ls
+getLeafLikeNodes :: Eq b => G.Gr a b -> [[G.LNode a]]
+getLeafLikeNodes g = fmap (\n -> (n, fromJust $ G.lab g n)) <$> ls
  where
   (sccG, _) = sccGraph g
-  go acc (sccN, sccNs) = if G.outdeg sccG sccN == 0 then acc <> sccNs else acc
-  ls = IS.toList (foldl' go mempty (G.labNodes sccG))
+  go acc (sccN, sccNs) = if G.outdeg sccG sccN == 0 then IS.toList sccNs : acc else acc
+  ls = foldl' go mempty (G.labNodes sccG)
 
 
 newtype GraphNode a = GraphNode { getGraphNode :: a } deriving (Show, Read)

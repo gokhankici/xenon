@@ -205,5 +205,5 @@ nub' :: (Eq b, Hashable b) => (a -> b) ->  [a] -> [a]
 nub' f xs = snd $ foldr' go (HS.empty, []) xs
   where go x (hist, xs') =
           if   HS.member (f x) hist
-          then (hist, xs)
+          then (hist, xs')
           else (HS.insert (f x) hist, x : xs')

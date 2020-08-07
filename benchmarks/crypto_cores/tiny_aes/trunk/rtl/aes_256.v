@@ -63,7 +63,7 @@ module aes_256 (clk, state, key, out);
         a8 (clk, k8, k9, k8b),
         a10 (clk, k10, k11, k10b),
         a12 (clk, k12, k13, k12b);
-    
+
     one_round
          r1 (clk, s0, k0b, s1),
          r2 (clk, s1, k1b, s2),
@@ -105,7 +105,7 @@ module expand_key_type_A_256 (clk, in, rcon, out_1, out_2);
     assign k5 = in[ 95: 64];
     assign k6 = in[ 63: 32];
     assign k7 = in[ 31:  0];
-    
+
     assign v0 = {k0[31:24] ^ rcon, k0[23:0]};
     assign v1 = v0 ^ k1;
     assign v2 = v1 ^ k2;
@@ -124,9 +124,7 @@ module expand_key_type_A_256 (clk, in, rcon, out_1, out_2);
         k7a <= k7;
     end
 
-
-    S4
-        S4_0 (clk, {k7[23:0], k7[31:24]}, k8a);
+    S4 S4_0 (clk, {k7[23:0], k7[31:24]}, k8a);
 
     assign k0b = k0a ^ k8a;
     assign k1b = k1a ^ k8a;
@@ -167,7 +165,7 @@ module expand_key_type_B_256 (clk, in, out_1, out_2);
     assign k5 = in[ 95: 64];
     assign k6 = in[ 63: 32];
     assign k7 = in[ 31:  0];
-    
+
     assign v5 = k4 ^ k5;
     assign v6 = v5 ^ k6;
     assign v7 = v6 ^ k7;
@@ -185,8 +183,7 @@ module expand_key_type_B_256 (clk, in, out_1, out_2);
         k7a <= v7;
     end
 
-    S4
-        S4_0 (clk, k3, k8a);
+    S4 S4_0 (clk, k3, k8a);
 
     // REWRITE
     // assign {k0b, k1b, k2b, k3b} = {k0a, k1a, k2a, k3a};
@@ -205,4 +202,3 @@ module expand_key_type_B_256 (clk, in, out_1, out_2);
 
     assign out_2 = {k4b, k5b, k6b, k7b};
 endmodule
-

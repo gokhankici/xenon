@@ -19,7 +19,7 @@ module table_lookup (clk, state, p0, p1, p2, p3);
     input [31:0] state;
     output [31:0] p0, p1, p2, p3;
     wire [7:0] b0, b1, b2, b3;
-    
+
     // REWRITE
     // assign {b0, b1, b2, b3} = state;
     assign b0 = state[31: 24];
@@ -38,12 +38,10 @@ module table_lookup (clk, state, p0, p1, p2, p3);
 	assign p1 = {y[15:0], y[31:16]};
 	assign p2 = {z[23:0], z[31:24]};
 
-    T
-        t0 (clk, b0, x),
-        t1 (clk, b1, y),
-        t2 (clk, b2, z),
-        t3 (clk, b3, p3);
-
+    T t0 (clk, b0, x),
+      t1 (clk, b1, y),
+      t2 (clk, b2, z),
+      t3 (clk, b3, p3);
 
 endmodule
 
@@ -52,7 +50,7 @@ module S4 (clk, in, out);
     input clk;
     input [31:0] in;
     output [31:0] out;
-    
+
 	// REWRITE
     // S
     //     S_0 (clk, in[31:24], out[31:24]),
@@ -63,11 +61,11 @@ module S4 (clk, in, out);
 	wire [7:0] out_1;
 	wire [7:0] out_2;
 	wire [7:0] out_3;
-    S
-        S_0 (clk, in[31:24], out_3),
-        S_1 (clk, in[23:16], out_2),
-        S_2 (clk, in[15:8],  out_1),
-        S_3 (clk, in[7:0],   out_0 );
+
+    S S_0 (clk, in[31:24], out_3),
+      S_1 (clk, in[23:16], out_2),
+      S_2 (clk, in[15:8],  out_1),
+      S_3 (clk, in[7:0],   out_0 );
 	assign out = {out_3, out_2, out_1, out_0};
 endmodule
 
@@ -81,14 +79,13 @@ module T (clk, in, out);
 	wire [7:0] out_2;
 	wire [7:0] out_1;
 	wire [7:0] out_0;
-    
+
 	// REWRITE
     // S
     //     s0 (clk, in, out[31:24]);
     // assign out[23:16] = out[31:24];
 
-    S
-        s0 (clk, in, out_3);
+    S s0 (clk, in, out_3);
     assign out_2 = out_3;
 
 
@@ -97,8 +94,7 @@ module T (clk, in, out);
     //     s4 (clk, in, out[7:0]);
     // assign out[15:8] = out[23:16] ^ out[7:0];
 
-    xS
-        s4 (clk, in, out_0);
+    xS s4 (clk, in, out_0);
     assign out_1 = out_2 ^ out_0;
 
 	assign out = {out_3, out_2, out_1, out_0};
