@@ -9,9 +9,8 @@
 module Iodine.Transform.VCGen
   ( vcgen
   , VCGenOutput
-  , HornVariableMap
-  , askHornVariables
-  , isModuleSimple
+  -- , askHornVariables
+  -- , isModuleSimple
   , computeAllInitialEqualVars
   )
 where
@@ -194,14 +193,6 @@ moduleClauses = do
       <||> combine miCheck moduleInstances
       <||> interferenceChecks allThreads
       <||> summaryConstraint
-
-isModuleSimple :: ( Has (Reader AnnotationFile) sig m
-                  , Has (Reader SummaryMap) sig m
-                  )
-               => Module Int
-               -> m Bool
-isModuleSimple m =
-  (&&) <$> (not <$> isTopModule' m) <*> asks (isCombinatorial . hmGet 8 (moduleName m))
 
 alwaysBlockClauses :: FDM sig m => AlwaysBlock Int -> m Horns
 alwaysBlockClauses ab = withAB t $ mconcat <$> sequence
@@ -877,14 +868,10 @@ type ModuleInstanceMap = HM.HashMap Id (L (ModuleInstance Int))
 type ExprPair          = (HornExpr, HornExpr)
 
 newtype NextVars              = NextVars { _nextVars :: IM.IntMap Substitutions }
-newtype HornVariableMap       = HornVariableMap { _getHornVariables :: IM.IntMap Ids }
 newtype InitialEqualVariables = InitialEqualVariables { getInitialEqualVariables :: HM.HashMap Id Ids }
 
-askHornVariables :: (Has (Reader HornVariableMap) sig m, MakeKVar t) => t Int -> m Ids
-askHornVariables t = (IM.! getThreadId t) <$> asks _getHornVariables
-
 getHornVariables :: (Has (State HornVariableMap) sig m, MakeKVar t) => t Int -> m Ids
-getHornVariables t = (IM.! getThreadId t) <$> gets _getHornVariables
+getHornVariables t = (IM.! getThreadId t) <$> gets getHornVariablesMap
 
 setHornVariables :: (Has (State HornVariableMap) sig m, MakeKVar t) => t Int -> Ids -> m ()
 setHornVariables t vs = do

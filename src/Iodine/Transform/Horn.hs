@@ -20,6 +20,8 @@ import qualified Data.Text as T
 import           GHC.Generics
 import qualified Language.Fixpoint.Types as FT
 import qualified Text.PrettyPrint as PP
+import qualified Data.IntMap as IM
+import           Control.Effect.Reader
 
 data Horn a =
        Horn { hornHead   :: HornExpr
@@ -317,3 +319,8 @@ mkHornVar e@Variable{..} t r =
        }
 mkHornVar _ _ _ =
   error "mkHornVar must be called with an IR variable"
+
+newtype HornVariableMap = HornVariableMap { getHornVariablesMap :: IM.IntMap Ids }
+
+askHornVariablesMap :: (Has (Reader HornVariableMap) sig m, MakeKVar t) => t Int -> m Ids
+askHornVariablesMap t = (IM.! getThreadId t) <$> asks getHornVariablesMap

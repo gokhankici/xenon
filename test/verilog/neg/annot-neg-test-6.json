@@ -9,9 +9,6 @@
         ],
         "sink": [
           "y"
-        ],
-        "initial_eq": [
-          "slow"
         ]
       },
       "clock": "clk"

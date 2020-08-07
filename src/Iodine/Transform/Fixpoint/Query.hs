@@ -18,7 +18,7 @@ import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Fixpoint.Qualifiers
 import           Iodine.Transform.Fixpoint.SummaryQualifiers
 import           Iodine.Transform.Horn
-import           Iodine.Transform.VCGen
+import           Iodine.Transform.VCGen2
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -46,9 +46,9 @@ constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ d
   traverse_ generateConstraint horns
   ask >>= generateAutoQualifiers
   for_ modules $ \m@Module{..} -> do
-    generateWFConstraints m
-    (getQualifiers moduleName >>= traverse_ generateQualifiers) & runReader m
     topModuleName <- asks (view afTopModule)
+    generateWFConstraints m (moduleName == topModuleName)
+    (getQualifiers moduleName >>= traverse_ generateQualifiers) & runReader m
     unless (moduleName == topModuleName) $ do
       simpleCheck <- isModuleSimple m
       trace ("simplecheck of " <> T.unpack moduleName) simpleCheck
@@ -80,9 +80,9 @@ generateConstraint Horn {..} = do
 
 
 -- | Create a well formedness constraint for every statement of the module
-generateWFConstraints :: FD sig m => Module Int -> m ()
-generateWFConstraints m@Module{..} = do
-  generateWFConstraint moduleName m
+generateWFConstraints :: FD sig m => Module Int -> Bool -> m ()
+generateWFConstraints m@Module{..} isTop = do
+  unless isTop $ generateWFConstraint moduleName m
   traverse_ (generateWFConstraint moduleName) alwaysBlocks
 
 
@@ -93,7 +93,7 @@ generateWFConstraint :: (FD sig m, MakeKVar t)
                      -> m ()
 generateWFConstraint threadModuleName thread = do
   ModuleSummary{..} <- asks (HM.! threadModuleName)
-  varNames <- (`HS.difference` temporaryVariables) <$> askHornVariables thread
+  varNames <- (`HS.difference` temporaryVariables) <$> askHornVariablesMap thread
   let hornVars = setThreadId thread
                  <$> foldMap (`allHornVars` threadModuleName) varNames
   (ienv,_) <- traverse_ convertExpr hornVars & runState mempty

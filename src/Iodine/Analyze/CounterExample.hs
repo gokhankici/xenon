@@ -275,7 +275,8 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
             cmp2 (_,i1) (_,i2) = compare i1 i2
             clustersWithMinIterNos = (\l -> (l, getMinRegNo l)) . sortBy cmp2 <$> nonCtTreeLeaves
             minClusterIterNo = getMinRegNo clustersWithMinIterNos
-        in [ l
+        in nub' id
+           [ l
            | (c, i) <- clustersWithMinIterNos
            , i == minClusterIterNo
            , l <- c

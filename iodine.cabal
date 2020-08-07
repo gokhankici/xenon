@@ -54,6 +54,7 @@ library
       Iodine.Transform.TransitionRelation
       Iodine.Transform.VariableRename
       Iodine.Transform.VCGen
+      Iodine.Transform.VCGen2
       Iodine.Types
       Iodine.Utils
   other-modules:

@@ -38,6 +38,7 @@ module Iodine.Language.IR
   , prettyShow
   , prettyShowWithConfig
   , Doc(..)
+  , ShowIndex(..)
   )
 where
 
@@ -263,8 +264,8 @@ instance GetData Module where
 -- -----------------------------------------------------------------------------
 -- Typeclass Instances
 -- -----------------------------------------------------------------------------
-class ShowIndex a where
-  showIndex    :: a -> String
+class (Show a, Eq a, Hashable a) => ShowIndex a where
+  showIndex :: a -> String
 
 instance ShowIndex () where
   showIndex () = ""

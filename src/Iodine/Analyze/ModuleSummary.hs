@@ -17,6 +17,7 @@ module Iodine.Analyze.ModuleSummary
   , addPortDependencies
   , getVariableDependencies
   , writtenByAB
+  , isModuleSimple
   ) where
 
 import           Iodine.Analyze.DependencyGraph hiding (getNode)
@@ -495,3 +496,12 @@ getVariableDependencies varName m@Module{..} summaryMap =
     toNode = (variableDependencyNodeMap moduleSummary HM.!)
     toName = (invVariableDependencyNodeMap moduleSummary IM.!)
     moduleSummary = summaryMap HM.! moduleName
+
+isModuleSimple :: ( Has (Reader AnnotationFile) sig m
+                  , Has (Reader SummaryMap) sig m
+                  )
+               => Module Int
+               -> m Bool
+isModuleSimple m = do
+  topModuleName <- asks @AnnotationFile (^. afTopModule)
+  (moduleName m /= topModuleName &&) <$> asks (isCombinatorial . hmGet 8 (moduleName m))

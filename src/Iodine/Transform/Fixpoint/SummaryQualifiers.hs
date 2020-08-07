@@ -5,6 +5,13 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -Wno-unused-binds #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+{-# OPTIONS_GHC -Wno-unused-matches #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 module Iodine.Transform.Fixpoint.SummaryQualifiers
   ( addSimpleModuleQualifiers
   , addSummaryQualifiers
@@ -41,7 +48,7 @@ import qualified Language.Fixpoint.Types as FT
 
 -- | if all inputs are ct and some of them are public, define the output color
 addSimpleModuleQualifiers :: FD sig m => Bool -> Module Int -> m ()
-addSimpleModuleQualifiers _withTagDefs m =
+addSimpleModuleQualifiers _ {- withTagDeps -} m =
   (zip [0..] <$> asks (HM.toList . portDependencies . (HM.! moduleName m))) >>=
     traverse_
     (\(n1, (o, qd)) -> do
@@ -249,6 +256,51 @@ summaryQualifierVariablesAB moduleName ab = do
           modify @QDM (at vName ?~ addParent l uName oldQD)
 
     return $ mergeQDMaps m1 m2
+
+_summaryQualifierVariablesAB2 :: ( Has (Reader SummaryMap) sig m
+                               , Has (Reader (HM.HashMap Id M)) sig m
+                               , Has (Reader AnnotationFile) sig m
+                               -- , Effect sig
+                               )
+                            => Id -- ^ module name
+                            -> AlwaysBlock Int
+                            -> m QDMs
+_summaryQualifierVariablesAB2 moduleName ab = do
+  currentModule :: M <- asks (hmGet 1 moduleName)
+  moduleSummary <- asks (hmGet 2 moduleName)
+  sinkVars <- (^. moduleAnnotations . sinks) <$> getModuleAnnotations moduleName
+  let toNode v = variableDependencyNodeMap moduleSummary HM.! v
+  let toVar n = invVariableDependencyNodeMap moduleSummary IM.! n
+      addParent l uName =
+        case l of
+          Implicit   -> implicitVars %~ HS.insert uName
+          Explicit _ -> explicitVars %~ HS.insert uName
+  let brokenG = variableDependencies moduleSummary
+  newEdges <-
+    fmap concat $
+    forM (toList $ moduleInstances currentModule) $ \mi -> do
+      let mn = moduleInstanceType mi
+      mims :: ModuleSummary <- asks (hmGet 4 mn)
+      let es = concat $ flip fmap (HM.toList $ portDependencies mims) $ \(o, qds) ->
+               let oNode = toNode $ varName $ moduleInstancePorts mi HM.! o
+                   helper l = toList $ foldl' (\acc i -> acc <> getVariables (moduleInstancePorts mi HM.! i)) mempty (qds ^. l)
+                   exp_ivs = helper explicitVars
+                   imp_ivs = helper implicitVars
+               in [(iNode, oNode, Explicit True) | iNode <- toNode <$> exp_ivs] ++
+                  [(iNode, oNode, Implicit)      | iNode <- toNode <$> imp_ivs]
+      return es
+  let fixedG = foldl' (flip insEdge) brokenG newEdges
+      (sccG, sccNodes) = sccGraph fixedG
+  execState mempty $
+    for_ sinkVars $ \sv -> do
+      let sccNode = sccNodes IM.! toNode sv
+      -- for ct ones, check reachability
+      -- for pub ones, check nodes that
+      undefined
+
+-- | return components that reach the given node through a implicit edge
+getPubDependencies :: Int -> G.Gr IS.IntSet VarDepEdgeType -> IM.IntMap Int -> IS.IntSet
+getPubDependencies = undefined
 
 mergeQDMaps :: (Eq k, Hashable k, Eq a)
             => HM.HashMap k a

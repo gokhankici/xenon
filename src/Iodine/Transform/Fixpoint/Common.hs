@@ -14,7 +14,6 @@ import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Horn
-import           Iodine.Transform.VCGen
 import           Iodine.Types
 
 import           Control.DeepSeq

@@ -14,6 +14,10 @@ module Iodine.Transform.Normalize
   , assignThreadIds
   , NormalizeOutput
   , NormalizeIR
+  , normalize2
+  , NormalizeOutput2
+  , TRSubs2
+  , UpdateIndices(..)
   )
 where
 
@@ -37,18 +41,25 @@ import qualified Data.Sequence as SQ
 
 type NormalizeIR     = L (Module Int)
 type NormalizeOutput = (NormalizeIR, TRSubs)
+type NormalizeOutput2 = (NormalizeIR, TRSubs2)
 
 type VarId  = HM.HashMap Id Int
 type TRSubs = IM.IntMap VarId
+type TRSubs2 = IM.IntMap UpdateIndices -- always block # -> update indices of the variables
 
 -- | Global state
 data St =
   St { _exprId :: Int    -- ^ counter for statements
      , _funId  :: Int    -- ^ counter for functions
-     , _trSubs :: TRSubs -- ^ This substitution map is used to determine the
+     , _trSubs :: TRSubs2 -- ^ This substitution map is used to determine the
                          -- kvar in the head position of the horn clauses. Has
                          -- type (stmt -> var -> var index)
      }
+
+data UpdateIndices =
+  UpdateIndices { lastBlockingIndex    :: VarId
+                , lastNonBlockingIndex :: VarId
+                }
 
 -- | State only relevant to assignments
 data StmtSt =
@@ -81,9 +92,13 @@ assigned only in one of the branches of an if statement, the missing assignment
 is added to the corresponding branch. This way the substitutions that implement
 the transition relation in the kvars become simple.
 -}
-normalize :: (Has (Error IodineException) sig m) --, Effect sig)
+normalize :: Has (Error IodineException) sig m
           => L (Module Int) -> m NormalizeOutput
 normalize modules = traverse normalizeModule modules & runNormalize
+
+normalize2 :: Has (Error IodineException) sig m
+           => L (Module Int) -> m NormalizeOutput2
+normalize2 modules = traverse normalizeModule modules & runNormalize2
 
 -- | Run normalize on all the statements inside the given module.
 normalizeModule :: (FD sig m, Has (Error IodineException) sig m)
@@ -134,8 +149,10 @@ statements that appear inside the code block, use 'normalizeStmt'.
 normalizeStmtTop :: FDM sig m => AlwaysBlock Int -> m (Stmt Int)
 normalizeStmtTop ab = do
   (stmtSt, stmt') <- normalizeStmt (abStmt ab) & runState initialStmtSt
-  let stmtSubs = HM.union (stmtSt ^. lastBlocking) (stmtSt ^. lastNonBlocking)
-  modify $ trSubs %~ IM.insert (getData ab) stmtSubs
+  let ui = UpdateIndices { lastBlockingIndex    = stmtSt ^. lastBlocking
+                         , lastNonBlockingIndex = stmtSt ^. lastNonBlocking
+                         }
+  modify $ trSubs %~ IM.insert (getData ab) ui
   return stmt'
 
 {- |
@@ -297,6 +314,13 @@ initialStmtSt = StmtSt mempty mempty mempty
 
 runNormalize :: Monad m => StateC St m a -> m (a, TRSubs)
 runNormalize act = do
+  (st, res) <- act & runState initialSt
+  return (res, mkUI <$> st ^. trSubs)
+  where
+    mkUI UpdateIndices{..} = lastBlockingIndex <> lastNonBlockingIndex
+
+runNormalize2 :: Monad m => StateC St m a -> m (a, TRSubs2)
+runNormalize2 act = do
   (st, res) <- act & runState initialSt
   return (res, st ^. trSubs)
 

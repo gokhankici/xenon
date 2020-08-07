@@ -22,7 +22,7 @@ import           Iodine.Transform.Inline
 import           Iodine.Transform.Merge
 import           Iodine.Transform.Normalize
 import           Iodine.Transform.SanityCheck
-import           Iodine.Transform.VCGen
+import           Iodine.Transform.VCGen2
 import           Iodine.Types
 import           Iodine.Utils
 
@@ -53,7 +53,7 @@ normalizeIR
   => AnnotationFile                      -- ^ annotation file
   -> m (L (Module ()))                   -- ^ ir parser
   -> IA.IodineArgs                       -- ^ iodine args
-  -> m (AnnotationFile, NormalizeOutput) -- ^ annotation file & normalized IR
+  -> m (AnnotationFile, NormalizeOutput2) -- ^ annotation file & normalized IR
 normalizeIR af irReader ia = do
   let topModuleName = af ^. afTopModule
   initialIR <- topsortModules topModuleName <$> irReader
@@ -64,7 +64,7 @@ normalizeIR af irReader ia = do
     unless (IA.benchmarkMode ia) $
       sanityCheck
       & runReader ir
-    merge ir >>= normalize
+    merge ir >>= normalize2
 
   return (af', normalizedOutput)
 
