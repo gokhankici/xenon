@@ -13,7 +13,11 @@
 -- {-# OPTIONS_GHC -Wno-unused-matches #-}
 -- {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
-module Iodine.Transform.VCGen2 (vcgen, VCGenOutput) where
+module Iodine.Transform.VCGen2
+  ( vcgen
+  , VCGenOutput
+  , getAllMIOutputs
+  ) where
 
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
@@ -331,14 +335,20 @@ combinatorialModuleInit = do
 
 -- | the output ports of the instances do not show up in the next variable map.
 -- this is used to increment the update index of these variables.
+getAllMIOutputs :: (Has (Reader ModuleMap) sig m)
+                 => M -> m Ids
+getAllMIOutputs Module{..} =
+  fmap fix $
+  for (toList moduleInstances) $ \mi -> do
+    targetModule :: M <- asks (HM.! moduleInstanceType mi)
+    let ps = toList $ moduleOutputs targetModule mempty
+        vs = varName . (moduleInstancePorts mi HM.!) <$> ps
+    return vs
+  where fix = HS.fromList . mconcat
+
 miOutputIncrementer :: FDM sig m => M -> m (HornExpr -> HornExpr)
-miOutputIncrementer Module{..} = do
-  miOutputs <-
-    fmap (HS.fromList . mconcat) $
-    for (toList moduleInstances) $ \mi -> do
-      targetModule :: M <- asks (HM.! moduleInstanceType mi)
-      let os = toList $ moduleOutputs targetModule mempty
-      return $ varName . (moduleInstancePorts mi HM.!) <$> os
+miOutputIncrementer m = do
+  miOutputs <- getAllMIOutputs m
   return $
     updateVarIndex2 $
     \v n -> if v `elem` miOutputs then n + 1 else n

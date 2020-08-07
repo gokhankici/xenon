@@ -5,12 +5,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 
-{-# OPTIONS_GHC -Wno-missing-signatures #-}
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_GHC -Wno-unused-binds #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
-{-# OPTIONS_GHC -Wno-unused-matches #-}
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+-- {-# OPTIONS_GHC -Wno-missing-signatures #-}
+-- {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+-- {-# OPTIONS_GHC -Wno-unused-binds #-}
+-- {-# OPTIONS_GHC -Wno-unused-imports #-}
+-- {-# OPTIONS_GHC -Wno-unused-matches #-}
+-- {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Iodine.Transform.Fixpoint.SummaryQualifiers
   ( addSimpleModuleQualifiers
@@ -23,6 +23,7 @@ import           Iodine.Language.Annotation
 import           Iodine.Language.IR
 import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Horn
+import           Iodine.Transform.VCGen2 (getAllMIOutputs)
 import           Iodine.Types
 import           Iodine.Utils hiding (output)
 
@@ -41,6 +42,8 @@ import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import qualified Language.Fixpoint.Types as FT
+
+-- import qualified Debug.Trace as DT
 
 -- -----------------------------------------------------------------------------
 -- Summaries for combinatorial modules
@@ -133,7 +136,8 @@ addSummaryQualifiers m@Module{..} = do
 
 addSummaryQualifiersAB :: FD sig m => Id -> AlwaysBlock Int -> m ()
 addSummaryQualifiersAB moduleName ab = do
-  sqvs <- summaryQualifierVariablesAB moduleName ab
+  -- sqvs <- summaryQualifierVariablesAB moduleName ab
+  sqvs <- summaryQualifierVariablesAB2 moduleName ab
   for_ (HM.toList sqvs) $ \(v, lqds) -> flip SQ.traverseWithIndex lqds $ \n qds -> do
     -- trace "addSummaryQualifiersAB" (getThreadId ab, v, qds)
     let evs    = qds ^. explicitVars
@@ -165,7 +169,7 @@ addSummaryQualifiersAB moduleName ab = do
 type QDM  = HM.HashMap Id QualifierDependencies
 type QDMs = HM.HashMap Id (L QualifierDependencies)
 
-summaryQualifierVariablesAB :: ( Has (Reader SummaryMap) sig m
+_summaryQualifierVariablesAB :: ( Has (Reader SummaryMap) sig m
                                , Has (Reader (HM.HashMap Id M)) sig m
                                , Has (Reader AnnotationFile) sig m
                                -- , Effect sig
@@ -173,7 +177,7 @@ summaryQualifierVariablesAB :: ( Has (Reader SummaryMap) sig m
                             => Id -- ^ module name
                             -> AlwaysBlock Int
                             -> m QDMs
-summaryQualifierVariablesAB moduleName ab = do
+_summaryQualifierVariablesAB moduleName ab = do
   ModuleSummary{..} <- asks (hmGet 2 moduleName)
   abVars <- getUpdatedVariables (AB ab)
   let toNode v = variableDependencyNodeMap HM.! v
@@ -257,24 +261,26 @@ summaryQualifierVariablesAB moduleName ab = do
 
     return $ mergeQDMaps m1 m2
 
-_summaryQualifierVariablesAB2 :: ( Has (Reader SummaryMap) sig m
+-- trc :: Show a => String -> a -> a
+-- trc msg a = DT.trace (msg <> " " <> show a) a
+trc :: String -> a -> a
+trc _msg a = a
+
+summaryQualifierVariablesAB2 :: ( Has (Reader SummaryMap) sig m
                                , Has (Reader (HM.HashMap Id M)) sig m
-                               , Has (Reader AnnotationFile) sig m
-                               -- , Effect sig
                                )
                             => Id -- ^ module name
                             -> AlwaysBlock Int
                             -> m QDMs
-_summaryQualifierVariablesAB2 moduleName ab = do
+summaryQualifierVariablesAB2 moduleName ab = do
   currentModule :: M <- asks (hmGet 1 moduleName)
   moduleSummary <- asks (hmGet 2 moduleName)
-  sinkVars <- (^. moduleAnnotations . sinks) <$> getModuleAnnotations moduleName
+  miOutputs <- getAllMIOutputs currentModule
   let toNode v = variableDependencyNodeMap moduleSummary HM.! v
-  let toVar n = invVariableDependencyNodeMap moduleSummary IM.! n
-      addParent l uName =
-        case l of
-          Implicit   -> implicitVars %~ HS.insert uName
-          Explicit _ -> explicitVars %~ HS.insert uName
+  let inputVars  = moduleInputs currentModule mempty
+  let outputVars0 = moduleOutputs currentModule mempty
+      outputVars1 = readBeforeWrittenTo ab mempty `HS.difference` (inputVars <> miOutputs)
+      outputVars = outputVars0 <> outputVars1
   let brokenG = variableDependencies moduleSummary
   newEdges <-
     fmap concat $
@@ -289,18 +295,46 @@ _summaryQualifierVariablesAB2 moduleName ab = do
                in [(iNode, oNode, Explicit True) | iNode <- toNode <$> exp_ivs] ++
                   [(iNode, oNode, Implicit)      | iNode <- toNode <$> imp_ivs]
       return es
-  let fixedG = foldl' (flip insEdge) brokenG newEdges
-      (sccG, sccNodes) = sccGraph fixedG
+  let fixedG = trc "fixedG" $ foldl' (flip insEdge) brokenG newEdges
+      (_sccG, sccNodes) = sccGraph fixedG
+      sccG = trc "sccG" _sccG
+      sccGR = G.grev sccG
   execState mempty $
-    for_ sinkVars $ \sv -> do
-      let sccNode = sccNodes IM.! toNode sv
+    for_ outputVars $ \ov -> do
+      let sccNode = sccNodes IM.! toNode ov
       -- for ct ones, check reachability
+      let lookupComp n = any (\c -> n `IS.member` fromJust (G.lab sccG c))
+      let reachable = trc "reachable" $ G.reachable sccNode sccGR
+      let addToCt n = lookupComp n reachable
       -- for pub ones, check nodes that
-      undefined
+      let addToPub n = lookupComp n $ getPubDependencies sccNode reachable sccGR fixedG
+      _qd <-
+        execState mempty $ do
+          forM_ inputVars $ \iVar -> do
+            let iNode = toNode iVar
+            when (addToCt iNode) $
+              modify @QualifierDependencies $ explicitVars %~ HS.insert iVar
+            when (addToPub iNode) $
+              modify @QualifierDependencies $ implicitVars %~ HS.insert iVar
+      let qd = trc "qd" _qd
+      modify @QDMs $ HM.alter (Just . maybe (return qd) (SQ.:|> qd)) ov
 
 -- | return components that reach the given node through a implicit edge
-getPubDependencies :: Int -> G.Gr IS.IntSet VarDepEdgeType -> IM.IntMap Int -> IS.IntSet
-getPubDependencies = undefined
+getPubDependencies :: Int -> [Int] -> G.Gr IS.IntSet VarDepEdgeType -> VarDepGraph -> [Int]
+getPubDependencies sourceNode reachable g origG =
+  [ n | (n, b) <- IM.toList pubMap, b ]
+  where
+    ts = filter (`elem` reachable) $ G.topsort g
+    pubMap = trc "pubMap" $ foldl' go (IM.insert sourceNode False mempty) ts
+    hasImplicitEdge n =
+      let ns = trc "ns" $ fromJust $ G.lab g n
+      in or [ l == Implicit
+            | n1 <- IS.toList ns
+            , (n2, l) <- G.lsuc origG n1
+            , n2 `IS.member` ns
+            ]
+    go acc n =
+      IM.insert n (any (\(p, l) -> l == Implicit || IM.findWithDefault False p acc) (G.lpre g n) || hasImplicitEdge n) acc
 
 mergeQDMaps :: (Eq k, Hashable k, Eq a)
             => HM.HashMap k a

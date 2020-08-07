@@ -38,12 +38,13 @@ done
 # TEST="test/verilog/pos/merge03.v"
 # TEST="test/verilog/pos/nb-test-01.v"
 # TEST="test/verilog/pos/submodule-02.v"
-TEST="test/verilog/pos/submodule-05.v"
+# TEST="test/verilog/pos/submodule-05.v"
 # TEST="test/verilog/pos/tr-submodule-01.v"
 # TEST="test/verilog/pos/tr-test-14.v"
 # TEST="benchmarks/scarv-cpu/external/xcrypto/rtl/b_lut/b_lut_unrolled.v"
 # TEST="benchmarks/scarv-cpu/external/xcrypto/rtl/p_addsub/p_addsub_unrolled.v"
 # TEST="test/verilog/neg/neg-submodule-02.v"
+TEST="benchmarks/472-mips-pipelined/mem32_test_01.v"
 
 TEST_DIR="${TEST:h}"
 TEST_NAME="${TEST:t:r}"
@@ -73,4 +74,4 @@ if [ -n "${PRINT_FQ_INFO}" ]; then
 fi
 
 ./iodine --build $ARGS && \
-	./iodine "${TEST_FILE}" "${TEST_ANNOT}" --verbose $ARGS
+	./iodine "${TEST_FILE}" "${TEST_ANNOT}" --verbose --print-solution $ARGS
