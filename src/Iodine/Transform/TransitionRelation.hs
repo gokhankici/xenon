@@ -28,7 +28,7 @@ import qualified Data.HashSet as HS
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Text.Read (readEither)
-import Data.Hashable (Hashable)
+import           Data.Hashable (Hashable)
 
 type S = Stmt Int
 type M = Module Int
@@ -51,14 +51,15 @@ transitionRelationH conds r stmt =
 
     Assignment {..} ->
       return $ toAnd
-      (val r assignmentLhs `heq` val r assignmentRhs)
-      (tag r assignmentLhs `hiff` tagWithCond r conds assignmentRhs)
+      (val r assignmentLhs `heq`  wcu Value (val r assignmentRhs))
+      (tag r assignmentLhs `hiff` wcu Tag (tagWithCond r conds assignmentRhs))
+      where wcu = withClockedUpdate assignmentType
 
     IfStmt {..} -> do
       let conds' = ifStmtCondition <| conds
           hc     = val r ifStmtCondition
-          c      = hc `heq` HInt 0
-          not_c  = HBinary HNotEquals hc (HInt 0)
+          c      = hc `hne` HInt 0
+          not_c  = hc `heq` HInt 0
       t <- transitionRelationH conds' r ifStmtThen
       e <- transitionRelationH conds' r ifStmtElse
       return $ HOr $ toAnd c t |:> toAnd not_c e
@@ -195,14 +196,15 @@ transitionRelationH' toVarIndex conds r stmt =
 
     Assignment {..} ->
       return $ toAnd
-      (val' toVarIndex r assignmentLhs `heq` val' toVarIndex r assignmentRhs)
-      (tag' toVarIndex r assignmentLhs `hiff` tagWithCond' toVarIndex r conds assignmentRhs)
+      (val' toVarIndex r assignmentLhs `heq`  wcu Value (val' toVarIndex r assignmentRhs))
+      (tag' toVarIndex r assignmentLhs `hiff` wcu Tag (tagWithCond' toVarIndex r conds assignmentRhs))
+      where wcu = withClockedUpdate assignmentType
 
     IfStmt {..} -> do
       let conds' = ifStmtCondition <| conds
           hc     = val' toVarIndex r ifStmtCondition
-          c      = hc `heq` HInt 0
-          not_c  = HBinary HNotEquals hc (HInt 0)
+          c      = hc `hne` HInt 0
+          not_c  = hc `heq` HInt 0
       t <- transitionRelationH' toVarIndex conds' r ifStmtThen
       e <- transitionRelationH' toVarIndex conds' r ifStmtElse
       return $ HOr $ toAnd c t |:> toAnd not_c e
@@ -270,3 +272,17 @@ tag' toVarIndex r = \case
 
 ufTag' :: ShowIndex a => ToVarIndex -> HornVarRun -> L (Expr a) -> HornExpr
 ufTag' toVarIndex r = HOr . fmap (tag' toVarIndex r) . keepVariables
+
+
+withClockedUpdate :: AssignmentType -> HornVarType -> HornExpr -> HornExpr
+withClockedUpdate asgnType _ arg | asgnType /= NonBlocking = arg
+withClockedUpdate _ t arg =
+  HApp { hAppFun  = fn
+       , hAppRet  = rt
+       , hAppArgs = return arg
+       }
+  where
+    (rt, fn) =
+       case t of
+         Tag   -> (HornBool, "iodine_clock_tag")
+         Value -> (HornInt , "iodine_clock_value")

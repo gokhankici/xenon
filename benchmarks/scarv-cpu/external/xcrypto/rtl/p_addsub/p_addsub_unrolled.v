@@ -39,6 +39,40 @@ wire [32:0] carry_chain;
 // Invert RHS iff subtracting.
 wire [31:0] rhs_m          = sub ? ~rhs : rhs;
 
+assign carry_mask = { carry_mask_0 
+                    , carry_mask_1 
+                    , carry_mask_2 
+                    , carry_mask_3 
+                    , carry_mask_4 
+                    , carry_mask_5 
+                    , carry_mask_6 
+                    , carry_mask_7 
+                    , carry_mask_8 
+                    , carry_mask_9 
+                    , carry_mask_10
+                    , carry_mask_11
+                    , carry_mask_12
+                    , carry_mask_13
+                    , carry_mask_14
+                    , carry_mask_15
+                    , carry_mask_16
+                    , carry_mask_17
+                    , carry_mask_18
+                    , carry_mask_19
+                    , carry_mask_20
+                    , carry_mask_21
+                    , carry_mask_22
+                    , carry_mask_23
+                    , carry_mask_24
+                    , carry_mask_25
+                    , carry_mask_26
+                    , carry_mask_27
+                    , carry_mask_28
+                    , carry_mask_29
+                    , carry_mask_30
+                    , carry_mask_31
+					};
+
 //
 // Generate the carry mask bits.
 	assign carry_mask_0  = c_en && 1'b1;

@@ -174,8 +174,13 @@ convertExpr HApp {..} = do
  where
   arity = SQ.length hAppArgs
   ret   = toFSort hAppRet
+  argType =
+    case hAppFun of
+      "iodine_clock_tag"   -> FT.boolSort
+      "iodine_clock_value" -> FT.intSort
+      _                    -> FT.intSort
   sort  = if arity > 0
-          then FT.mkFFunc 0 $ replicate arity FT.intSort ++ [ret]
+          then FT.mkFFunc 0 $ replicate arity argType ++ [ret]
           else ret
 
 convertExpr KVar {..} = do

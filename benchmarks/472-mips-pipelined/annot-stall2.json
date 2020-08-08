@@ -1,0 +1,52 @@
+{
+  "modules": {
+    "mips_pipeline": {
+      "annotations": {
+        "source": [
+          "reset",
+          "MEM_PCSrc",
+          "MEM_btgt"
+        ],
+        "sink": [
+          "ID_instr"
+        ],
+        "initial_eq": [
+        ],
+        "always_eq": [
+        ]
+      },
+      "annotations_backup": {
+        "initial_eq": [
+          "EX_MemRead",
+          "EX_rt",
+          "ID_instr",
+          "ID_pc4",
+          "IF_pc",
+          "Stall"
+        ],
+        "always_eq": [
+          "IF_pc",
+          "reset"
+        ]
+      },
+      "clock": [
+        "clk"
+      ]
+    },
+    "mux2": {
+      "inline": false
+    },
+    "control_pipeline": {
+      "inline": false
+    },
+    "rom32": {
+      "annotations": {
+        "initial_eq": [
+          "data_out"
+        ]
+      },
+      "inline": true
+    }
+  },
+  "top_module": "mips_pipeline"
+}

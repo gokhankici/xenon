@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 
 module Iodine.Analyze.CounterExample
@@ -51,7 +52,8 @@ import qualified Debug.Trace                   as DT
 import           System.Process
 import qualified Language.Fixpoint.Types       as FT
 import           Text.Read (readMaybe)
-import           Data.List (sortBy)
+import           Data.List
+import           Control.Monad
 
 type ConstraintTypes = IM.IntMap HornClauseId
 type ModuleMap = HM.HashMap Id (Module Int)
@@ -296,7 +298,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
 
   let
     createPubTree   = createDepTree getPubNo
-    nonPubTreeRoots = minCtTreeLeaves >>= HS.toList . hasToBePublic . fst
+    nonPubTreeRoots = nub' id $ minCtTreeLeaves >>= HS.toList . hasToBePublic . fst
     iterToConstraintType iterNo = do
       constraintNo   <- fst <$> fpTrace ^. at iterNo
       constraintType <- cm ^. at constraintNo
@@ -344,12 +346,20 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
   let nonPubTree = G.grev $ nonPubTreeLoop nonPubTree0 nonPubTreeInitLeaves mempty
   writeFile "nonPubTree.dot" $ toDotStr (invVariableDependencyNodeMap IM.!)
     (\i ->
-      (if iterToConstraintType i == Just Init then "Init " else "")
-        <> "#"
-        <> show i
+      if iterToConstraintType i == Just Init
+      then " (Init #" <> show i <> ")"
+      else " (" <> show i <> ")"
     )
     nonPubTree
   callDot "nonPubTree.dot" "nonPubTree.pdf"
+
+  let regsInPubTree =
+        (HS.fromList $ filter isReg $ toName <$> G.nodes nonPubTree)
+        `HS.difference`
+        (topmoduleAnnots ^. initialEquals)
+  unless (null regsInPubTree) $ do
+    putStrLn "Try sanitizing these registers"
+    print $ toList regsInPubTree
 
   writeFile "nonCtTree-full.dot" $
     let completeNonCtGraph =
@@ -364,7 +374,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
 
 callDot :: String -> String -> IO ()
 callDot i o = do
-  system $ printf "dot -Tpdf -Gmargin=0 %s -o %s" i o
+  system $ printf "dot -Tpdf -Gmargin=0 '%s' -o '%s'" i o
   return ()
 
 getLeafLikeNodes :: Eq b => G.Gr a b -> [[G.LNode a]]

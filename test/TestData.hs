@@ -143,6 +143,7 @@ mipsNegatives = mkCollection "neg" $ (go <$> names) ++ mem32 ++ rom32 ++ reg_fil
     rom32 = [ let name = "neg-rom32-test-1"
               in (TF name $ mipsDir </> "rom32-test-1.v")
                  { annotFile = Just $ mipsDir </> "annot-" <> name <.> "json" }
+            , TF "rom32-test-2" (mipsDir </> "rom32-test-2.v")
             ]
     reg_file = [ UnitTest { testName    = name
                           , verilogFile = mipsDir </> "reg_file_test_01.v"
@@ -267,7 +268,7 @@ scarvStubs = mkCollection "xcrypto" ts
                        , x </> "xc_malu"   </> "test_mul2.v"
                        , x </> "xc_malu"   </> "test_pmul.v"
                        , x </> "xc_malu"   </> "xc_malu_muldivrem.v"
-                       , x </> "xc_malu"   </> "xc_malu.v"
+                      --  , x </> "xc_malu"   </> "xc_malu.v"
                        , x </> "xc_sha256" </> "xc_sha256.v"
                        , x </> "xc_sha3"   </> "xc_sha3.v"
                        ]

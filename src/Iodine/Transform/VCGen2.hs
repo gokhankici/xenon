@@ -19,6 +19,7 @@ module Iodine.Transform.VCGen2
   , getAllMIOutputs
   ) where
 
+import           Iodine.Transform.VCGen (computeAllInitialEqualVars)
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR hiding (isStar)
@@ -70,6 +71,7 @@ type G sig m = ( Has (Reader AnnotationFile) sig m
 type FD sig m = ( G sig m
                 , Has (Reader TRSubs2) sig m
                 , Has (State HornVariableMap) sig m
+                , Has (Reader InitialEqualVariables) sig m
                 )
 
 -- | module state = vcgen state + current module
@@ -122,7 +124,9 @@ different always blocks are consistent under interference.
 -}
 vcgen :: G sig m => NormalizeOutput2 -> m VCGenOutput
 vcgen (normalizedIR, trNextVariables2) = do
+  ievs <- computeAllInitialEqualVars normalizedIR
   out@(_, horns) <- combine vcgenMod normalizedIR
+    & runReader (InitialEqualVariables ievs)
     & runReader trNextVariables2
     & runReader (moduleInstancesMap normalizedIR)
     & runState  (HornVariableMap mempty)
@@ -154,8 +158,21 @@ vcgenMod m@Module {..} = do
   -- set module's horn variables
   mClks <- getClocks moduleName
   ModuleSummary{..} <- asks (HM.! moduleName)
-  let allVars = foldl' (flip HS.insert) mempty $ variableName <$> variables
-  let vs = allVars `HS.difference` (mClks <> temporaryVariables)
+  -- let allVars = foldl' (flip HS.insert) mempty $ variableName <$> variables
+  -- let vs = allVars `HS.difference` (mClks <> temporaryVariables)
+
+  annots <- getModuleAnnotations moduleName
+  let annotVars = annotationVariables (annots ^. moduleAnnotations)
+      regs = let go acc (Register r) = HS.insert r acc
+                 go acc (Wire _) = acc
+             in foldl' go mempty variables
+      ps = HS.fromList (toList $ variableName . portVariable <$> ports) `HS.difference` mClks
+      rbw = case alwaysBlocks of
+              Empty -> mempty
+              ab SQ.:<| Empty -> readBeforeWrittenTo ab mempty
+              _ -> error "unreachable"
+      vs = annotVars <> ps <> regs <> rbw
+
 
   (threadSt, ui) <-
     case alwaysBlocks of
@@ -213,7 +230,10 @@ initialize ab = do
       readBeforeWrittenVars = readBeforeWrittenTo ab mempty `HS.difference` nbUpdates
 
   tagEqVars0 <- askHornVariables
-  valEqVars0 <- HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)
+  valEqVars0 <-
+    HS.union <$>
+    (HS.union <$> asks (^. currentInitialEquals) <*> asks (^. currentAlwaysEquals)) <*>
+    asks ((HM.! moduleName currentModule) . getInitialEqualVariables)
 
   isTop <- isTopModule
   -- these are both the module inputs and variables that are written by other
@@ -695,3 +715,4 @@ emptyThreadSt =
            , _currentAlwaysEquals  = mempty
            , _currentAssertEquals  = mempty
            }
+newtype InitialEqualVariables = InitialEqualVariables { getInitialEqualVariables :: HM.HashMap Id Ids }
