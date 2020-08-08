@@ -8,6 +8,7 @@
 - [z3 v4.8.1](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.1)
 - Ghostscript
 - Graphviz
+- [GLPK (GNU Linear Programming Kit)](https://www.gnu.org/software/glpk/#downloading)
 
 Install `ghcup` (GHC version 8.8.3) and run `cabal v2-build`.
 

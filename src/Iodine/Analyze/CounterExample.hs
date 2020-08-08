@@ -54,6 +54,7 @@ import qualified Language.Fixpoint.Types       as FT
 import           Text.Read (readMaybe)
 import           Data.List
 import           Control.Monad
+import           Iodine.Analyze.ILP
 
 type ConstraintTypes = IM.IntMap HornClauseId
 type ModuleMap = HM.HashMap Id (Module Int)
@@ -132,9 +133,9 @@ btmLookupF kvarIdCheck btm qt varName = do
 
 --------------------------------------------------------------------------------
 generateCounterExampleGraphs
-  :: AnnotationFile -> ModuleMap -> SummaryMap -> FInfo -> IO ()
+  :: AnnotationFile -> ModuleMap -> SummaryMap -> FInfo -> Bool -> IO ()
 --------------------------------------------------------------------------------
-generateCounterExampleGraphs af moduleMap summaryMap finfo = do
+generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop = do
   let cm = toConstraintTypes finfo
   fpTrace <- readFixpointTrace
   let lastTraceElem = snd . snd . fromJust $ IM.lookupMax fpTrace
@@ -361,14 +362,32 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo = do
     putStrLn "Try sanitizing these registers"
     print $ toList regsInPubTree
 
-  writeFile "nonCtTree-full.dot" $
-    let completeNonCtGraph =
-          G.gmap (\(ps, n, _a, cs) ->
-            let a = fromMaybe (-1) $ getCTNo (toName n)
-            in (ps, n, a, cs)
-          ) variableDependencies
-    in toCtTreeDotStr completeNonCtGraph
-  callDot "nonCtTree-full.dot" "nonCtTree-full.pdf"
+  let ilpGraph = nonPubTree
+  -- let (pubSCC, pubSCCNodes) = sccGraph nonPubTree
+  --     mustBePublic = nub' id $ (pubSCCNodes IM.!) . toNode . fst <$> nonPubTreeRoots
+  --     cannotBeMarked = []
+  -- ilpResult <- runILP mustBePublic cannotBeMarked pubSCC
+  -- let pubSCCToName n = [ toName i | i <- IS.toList (fromJust $ G.lab pubSCC n) ]
+  --     fixILPResult = let f = fmap pubSCCToName
+  --                    in f . snd
+  let mustBePublic   = toNode . fst <$> nonPubTreeRoots
+      cannotBeMarked = []
+  ilpResult <- if enableAbductionLoop
+               then runILPLoop mustBePublic cannotBeMarked ilpGraph toName
+               else runILP mustBePublic cannotBeMarked ilpGraph
+  let fixILPResult = fmap toName . snd
+  print $ fixILPResult <$> ilpResult
+  writeFile "nonPubTreeSCC.dot" $ toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") ilpGraph
+  callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
+
+  -- writeFile "nonCtTree-full.dot" $
+  --   let completeNonCtGraph =
+  --         G.gmap (\(ps, n, _a, cs) ->
+  --           let a = fromMaybe (-1) $ getCTNo (toName n)
+  --           in (ps, n, a, cs)
+  --         ) variableDependencies
+  --   in toCtTreeDotStr completeNonCtGraph
+  -- callDot "nonCtTree-full.dot" "nonCtTree-full.pdf"
 
   return ()
 

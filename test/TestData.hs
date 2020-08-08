@@ -163,6 +163,7 @@ mipsStubs = mkCollection "stub" $ go <$> names
             , ("v2", "472-mips-fragment-2")
             , ("v3", "472-mips-fragment-3")
             , ("v4", "472-mips-fragment-4")
+            , ("stall2", "stall2")
             ]
 
 --------------------------------------------------------------------------------

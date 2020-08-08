@@ -11,8 +11,17 @@
           "ID_instr"
         ],
         "initial_eq": [
+          "ID_pc4",
+          "ID_instr",
+          "IF_instr_tmp",
+          "EX_rt",
+          "EX_MemRead",
+          "IF_pc",
+          "Stall"
         ],
         "always_eq": [
+          "reset",
+          "IF_pc"
         ]
       },
       "annotations_backup": {

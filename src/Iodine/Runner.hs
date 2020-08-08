@@ -164,7 +164,7 @@ checkIR (ia@IodineArgs{..}, af)
         for_ (IS.toList tids) $ \tid ->
           printf "Thread #%d: %s\n" tid (show $ threadTypes IM.! tid)
       unless (safe || benchmarkMode) $
-        generateCounterExampleGraphs af' moduleMap summaryMap finfo
+        generateCounterExampleGraphs af' moduleMap summaryMap finfo abduction
       when printSolution $
         (readFile fqoutFile >>= traverse_ putStrLn . take 300 . lines)
         `E.catch` (\(_ :: E.IOException) -> return ())
