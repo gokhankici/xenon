@@ -1,5 +1,14 @@
 with-compiler: ghc-8.8.4
 
+package glpk-hs
+  extra-lib-dirs:     /home/rami/.local/lib
+  extra-include-dirs: /home/rami/.local/include
+
 packages:
     ./
   , ./liquid-fixpoint/
+
+source-repository-package
+    type: git
+    location: https://github.com/aergus/glpk-hs.git
+    tag: 2f408cf804f8328551ae68197588862903486243
