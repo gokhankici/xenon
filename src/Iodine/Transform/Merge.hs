@@ -101,12 +101,13 @@ same connected components are ordered according to their topological sort.
 However, the order between connected components are random.
 -}
 mergeAlwaysStarBlocks :: G sig m => L (AlwaysBlock A) -> m (AlwaysBlock A)
+mergeAlwaysStarBlocks (a SQ.:<| Empty) = return a
 mergeAlwaysStarBlocks as = do
   (depGraph, stmtIds) <- buildDependencyGraph (abStmt <$> as)
   unless (G.noNodes depGraph == SQ.length as) $
     throwError . IE Merge  $ "graph size does not match up with the initial statements"
   let components = G.components depGraph
-      graphs = (\ns -> G.nfilter (`elem` ns) depGraph) <$> components
+      graphs = (`G.subgraph` depGraph) <$> components
   stmts' <- foldlM' mempty graphs $ \acc g -> do
     let stmtOrder = GQ.topsort g
     when (hasCycle g) $ do

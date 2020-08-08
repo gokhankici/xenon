@@ -1,0 +1,53 @@
+{
+  "top_module": "aes_256",
+  "modules": {
+    "aes_256": {
+      "annotations": {
+        "source": [
+          "state",
+          "key"
+        ],
+        "sink": [
+          "iodine_out"
+        ]
+      },
+      "clock": "clk"
+    },
+    "expand_key_type_A_256": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "expand_key_type_B_256": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "one_round": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "final_round": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "table_lookup": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "S4": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "T": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "S": {
+		"inline": true,
+      "clock": "clk"
+    },
+    "xS": {
+		"inline": true,
+      "clock": "clk"
+    }
+  }
+}
