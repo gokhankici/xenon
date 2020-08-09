@@ -29,6 +29,7 @@ runILPLoop mustBePublic cannotMark graph toName = do
   res <- runILP mustBePublic cannotMark graph
   case res of
     Left _ -> return res
+    Right (_, ms) | null ms -> return res
     Right (_, ms) -> do
       let ms' = (\m -> (toName m, m)) <$> ms
           sep = putStrLn $ replicate 80 '-'

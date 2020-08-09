@@ -28,6 +28,7 @@ import           Iodine.Transform.Normalize (NormalizeOutput2, TRSubs2, UpdateIn
 import           Iodine.Transform.TransitionRelation
 import           Iodine.Types
 import           Iodine.Utils
+import           Iodine.ConstantConfig
 
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
@@ -158,21 +159,23 @@ vcgenMod m@Module {..} = do
   -- set module's horn variables
   mClks <- getClocks moduleName
   ModuleSummary{..} <- asks (HM.! moduleName)
-  -- let allVars = foldl' (flip HS.insert) mempty $ variableName <$> variables
-  -- let vs = allVars `HS.difference` (mClks <> temporaryVariables)
 
-  annots <- getModuleAnnotations moduleName
-  let annotVars = annotationVariables (annots ^. moduleAnnotations)
-      regs = let go acc (Register r) = HS.insert r acc
-                 go acc (Wire _) = acc
-             in foldl' go mempty variables
-      ps = HS.fromList (toList $ variableName . portVariable <$> ports) `HS.difference` mClks
-      rbw = case alwaysBlocks of
-              Empty -> mempty
-              ab SQ.:<| Empty -> readBeforeWrittenTo ab mempty
-              _ -> error "unreachable"
-      vs = annotVars <> ps <> regs <> rbw
-
+  vs <- if includeEveryVariable
+        then return $
+             let allVars = foldl' (flip HS.insert) mempty $ variableName <$> variables
+             in allVars `HS.difference` (mClks <> temporaryVariables)
+        else do
+          annots <- getModuleAnnotations moduleName
+          let annotVars = annotationVariables (annots ^. moduleAnnotations)
+              regs = let go acc (Register r) = HS.insert r acc
+                         go acc (Wire _) = acc
+                     in foldl' go mempty variables
+              ps = HS.fromList (toList $ variableName . portVariable <$> ports) `HS.difference` mClks
+              rbw = case alwaysBlocks of
+                      Empty -> mempty
+                      ab SQ.:<| Empty -> readBeforeWrittenTo ab mempty
+                      _ -> error "unreachable"
+          return $ annotVars <> ps <> regs <> rbw
 
   (threadSt, ui) <-
     case alwaysBlocks of

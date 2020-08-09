@@ -18,6 +18,7 @@ module Iodine.Analyze.CounterExample
   )
 where
 
+import           Iodine.ConstantConfig
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Analyze.DependencyGraph
 import           Iodine.Language.Annotation
@@ -270,7 +271,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
   putStrLn "### NON CT TREE LEAVES ##########################################################"
   for_ nonCtTreeLeaves $ \l -> for_ l print >> putStrLn ""
 
-  let minCtTreeLeaves =
+  let minCtTreeLeaves0 =
         let getMinRegNo l =
               case find ((> 0) . snd) l of
                 Nothing     -> 0
@@ -284,6 +285,15 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
            , i == minClusterIterNo
            , l <- c
            ]
+  let minCtTreeLeaves =
+        if includeEveryVariable
+        then let leafIterNos = foldl' (\acc (_v,n) -> IS.insert n acc) mempty minCtTreeLeaves0
+             in [ (toName n, i)
+                | n <- G.nodes nonCtTree
+                , let i = fromJust $ G.lab nonCtTree n
+                , i `IS.member` leafIterNos
+                ]
+        else minCtTreeLeaves0
   printf "Min leaves: %s\n\n" $ show $ fst <$> minCtTreeLeaves
 
   let toCtTreeDotStr =
@@ -362,21 +372,20 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
     putStrLn "Try sanitizing these registers"
     print $ toList regsInPubTree
 
-  let ilpGraph = nonPubTree
-  -- let (pubSCC, pubSCCNodes) = sccGraph nonPubTree
-  --     mustBePublic = nub' id $ (pubSCCNodes IM.!) . toNode . fst <$> nonPubTreeRoots
-  --     cannotBeMarked = []
-  -- ilpResult <- runILP mustBePublic cannotBeMarked pubSCC
-  -- let pubSCCToName n = [ toName i | i <- IS.toList (fromJust $ G.lab pubSCC n) ]
-  --     fixILPResult = let f = fmap pubSCCToName
-  --                    in f . snd
-  let mustBePublic   = toNode . fst <$> nonPubTreeRoots
+  let ilpGraph       = nonPubTree
+      mustBePublic   = toNode . fst <$> nonPubTreeRoots
       cannotBeMarked = []
   ilpResult <- if enableAbductionLoop
                then runILPLoop mustBePublic cannotBeMarked ilpGraph toName
                else runILP mustBePublic cannotBeMarked ilpGraph
-  let fixILPResult = fmap toName . snd
-  print $ fixILPResult <$> ilpResult
+  case ilpResult of
+    Left errMsg            -> putStrLn errMsg
+    Right (_, markedNodes) | null markedNodes -> do
+      putStrLn "\n\nHuh, there are no nodes to mark ..."
+      putStrLn "Maybe you should mark these non-constant-time leaf variables as public:"
+      print $ fst <$> minCtTreeLeaves
+      putStrLn ""
+    Right (_, markedNodes) -> print $ toName <$> markedNodes
   writeFile "nonPubTreeSCC.dot" $ toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") ilpGraph
   callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
 
@@ -397,10 +406,13 @@ callDot i o = do
   return ()
 
 getLeafLikeNodes :: Eq b => G.Gr a b -> [[G.LNode a]]
-getLeafLikeNodes g = fmap (\n -> (n, fromJust $ G.lab g n)) <$> ls
+getLeafLikeNodes = getLLNHelper G.outdeg
+
+getLLNHelper :: Eq b => (forall c d. G.Gr c d -> Int -> Int) -> G.Gr a b -> [[G.LNode a]]
+getLLNHelper f g = fmap (\n -> (n, fromJust $ G.lab g n)) <$> ls
  where
   (sccG, _) = sccGraph g
-  go acc (sccN, sccNs) = if G.outdeg sccG sccN == 0 then IS.toList sccNs : acc else acc
+  go acc (sccN, sccNs) = if f sccG sccN == 0 then IS.toList sccNs : acc else acc
   ls = foldl' go mempty (G.labNodes sccG)
 
 
