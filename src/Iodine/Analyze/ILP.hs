@@ -7,7 +7,7 @@ import           Control.Monad.LPMonad
 import           Data.LinearProgram.Common
 import           Data.LinearProgram as LP
 import qualified Data.Map as M
-import qualified Data.Graph.Inductive as G
+import           Data.Graph.Inductive (Gr, nodes, pre)
 import           Data.Foldable
 import           Control.Monad
 import           Data.Maybe
@@ -22,11 +22,13 @@ enableTrace = False
 
 runILPLoop :: [Int]
            -> [Int]
-           -> G.Gr a b
+           -> [[Int]]
+           -> Gr a b
            -> (Int -> Id)
            -> IO (Either String ([Int], [Int]))
-runILPLoop mustBePublic cannotMark graph toName = do
-  res <- runILP mustBePublic cannotMark graph
+runILPLoop mustBePublic cannotMark loops graph toName = do
+  for_ loops $ \l -> when (null l) $ error "loop must not be empty"
+  res <- runILP mustBePublic cannotMark loops graph
   case res of
     Left _ -> return res
     Right (_, ms) | null ms -> return res
@@ -40,7 +42,7 @@ runILPLoop mustBePublic cannotMark graph toName = do
       mcmNode <-  (>>= (`lookup` ms')) <$> getUserInput
       case mcmNode of
         Nothing -> return res
-        Just n -> runILPLoop mustBePublic (n:cannotMark) graph toName
+        Just n -> runILPLoop mustBePublic (n:cannotMark) loops graph toName
 
 getUserInput :: IO (Maybe Id)
 getUserInput = do
@@ -52,9 +54,10 @@ getUserInput = do
 
 runILP :: [Int]
        -> [Int]
-       -> G.Gr a b
+           -> [[Int]]
+       -> Gr a b
        -> IO (Either String ([Int], [Int]))
-runILP mustBePublic0 cannotMark graph = do
+runILP mustBePublic0 cannotMark loops graph = do
   let lp = execLPM lpm
   when enableTrace $ printLP lp
   (rc, msol) <- glpSolveVars mipDefaults lp
@@ -66,7 +69,7 @@ runILP mustBePublic0 cannotMark graph = do
     if rc /= Success
       then Left $ "Solver returned " <> show rc
       else let (_cost, sol) = fromJust msol
-               ns = G.nodes graph
+               ns = nodes graph
                publicNodes = [n | n <- ns, let v = sol M.! pubNode n, v > 0.1]
                markedNodes = [n | n <- ns, let v = sol M.! markNode n, v > 0.1]
            in Right (publicNodes, markedNodes)
@@ -82,18 +85,18 @@ runILP mustBePublic0 cannotMark graph = do
       flowConstraints
       goalConstraints
       cannotMarkConstraints
+      loopConstraints
       boundaryConstraints
       varKindConstraints
 
     objFun :: LinFunc String Int
-    objFun = add $ (1 *&) . markNode <$> G.nodes graph
+    objFun = add $ (1 *&) . markNode <$> nodes graph
 
-    flowConstraints, goalConstraints, cannotMarkConstraints, varKindConstraints, boundaryConstraints :: ILPM ()
     flowConstraints =
-      for_ (G.nodes graph) $ \n -> do
+      for_ (nodes graph) $ \n -> do
         let pn = pubNode n
             mn = markNode n
-        let ps = G.pre graph n
+        let ps = pre graph n \\ [n]
         let m = if null ps then 1 else length ps
         let lhs = linCombination [(- m, pn), (m, mn)]
         let lhs' = if null ps
@@ -108,13 +111,18 @@ runILP mustBePublic0 cannotMark graph = do
       for_ cannotMark $ \n -> varEq (markNode n) 0
 
     boundaryConstraints =
-      -- return ()
-      for_ (G.nodes graph) $ \n -> do
+      for_ (nodes graph) $ \n -> do
         varBds (pubNode n) 0 1
         varBds (markNode n) 0 1
 
+    loopConstraints =
+      for_ loops $ \l -> do
+        let s = length l
+            lhs = add [(s *& markNode n) LP.- (1 *& pubNode n) | n <- l]
+        geqTo lhs 0
+
     varKindConstraints =
-      for_ (G.nodes graph) $ \n -> do
+      for_ (nodes graph) $ \n -> do
         setVarKind (pubNode n)  IntVar
         setVarKind (markNode n) IntVar
 

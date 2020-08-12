@@ -125,14 +125,11 @@ inlineInstance mi@ModuleInstance{..} = do
     let e = moduleInstancePorts HM.! i
     lhs <- mkPortVar i
     return $ Assignment Continuous lhs e pureA
-  extraBS <- for (toSequence miOutputs) $ \o -> do
+  miOutputAssigns <- for (toSequence miOutputs) $ \o -> do
     let e = moduleInstancePorts HM.! o
     rhs <- mkPortVar o
     return $ Assignment Blocking e rhs pureA
-  extraAB <-
-    if null extraBS
-    then return mempty
-    else SQ.singleton . AlwaysBlock Star (Block extraBS pureA) <$> freshABIndex
+  extraABs <- forM miOutputAssigns (\s -> AlwaysBlock Star s <$> freshABIndex)
 
   -- update the initial & always equal annotations of the current module
   miMA <- gets (^. afAnnotations
@@ -149,7 +146,7 @@ inlineInstance mi@ModuleInstance{..} = do
   cmn <- asks getCurrentModuleName
   modify $ over afAnnotations $ HM.alter updateMA cmn
 
-  return (vs, cis, gs <> extraGS, as <> extraAB, mis)
+  return (vs, cis, gs <> extraGS, as <> extraABs, mis)
 
 freshABIndex :: Has (State ABCounter) sig m => m Int
 freshABIndex = do

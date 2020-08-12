@@ -21,7 +21,6 @@ import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
-import qualified Data.Graph.Inductive.Dot as GD
 import           Data.Graph.Inductive.PatriciaTree (Gr)
 import qualified Data.Graph.Inductive.Query as GQ
 import qualified Data.HashMap.Strict as HM
@@ -30,6 +29,7 @@ import qualified Data.IntSet as IS
 import qualified Data.Sequence as SQ
 import           Control.Effect.Lift
 import           Data.List (sortOn)
+import qualified Data.Text as T
 
 type A = Int
 type DepGraph = Gr Int ()
@@ -117,7 +117,7 @@ mergeAlwaysStarBlocks as = do
                        (\l -> (length l, l)) <$>
                        filter (\l -> length l > 1) (GQ.scc g)
           g' = G.nfilter (`elem` cycleNodes) g
-          dotStr = GD.showDot $ GD.fglToDotString $ G.nemap show (const "") g'
+          dotStr = toDotStr (T.pack . show) (const "") (const "solid") g'
           sep = replicate 80 '-'
       sendIO $ do writeFile "merge-cycle.dot" dotStr
                   for_ cycleNodes $ \n -> do

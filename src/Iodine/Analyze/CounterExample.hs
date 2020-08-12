@@ -37,7 +37,6 @@ import           Control.Applicative
 import           Data.Bifunctor
 import           Data.Foldable
 import qualified Data.Graph.Inductive          as G
-import qualified Data.Graph.Inductive.Dot      as GD
 import qualified Data.HashMap.Strict           as HM
 import qualified Data.HashSet                  as HS
 import           Data.Hashable
@@ -52,7 +51,6 @@ import           GHC.Generics            hiding ( moduleName )
 import qualified Debug.Trace                   as DT
 import           System.Process
 import qualified Language.Fixpoint.Types       as FT
-import           Text.Read (readMaybe)
 import           Data.List
 import           Control.Monad
 import           Iodine.Analyze.ILP
@@ -297,7 +295,10 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
   printf "Min leaves: %s\n\n" $ show $ fst <$> minCtTreeLeaves
 
   let toCtTreeDotStr =
-        toDotStr (invVariableDependencyNodeMap IM.!) (\i -> if i >= 0 then printf " #%d" i else "")
+        toDotStr
+        (invVariableDependencyNodeMap IM.!)
+        (\i -> if i >= 0 then printf " #%d" i else "")
+        edgeStyle
 
   writeFile "nonCtTree.dot" $
     let revG         = G.grev nonCtTree
@@ -361,6 +362,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
       then " (Init #" <> show i <> ")"
       else " (" <> show i <> ")"
     )
+    edgeStyle
     nonPubTree
   callDot "nonPubTree.dot" "nonPubTree.pdf"
 
@@ -375,18 +377,31 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
   let ilpGraph       = nonPubTree
       mustBePublic   = toNode . fst <$> nonPubTreeRoots
       cannotBeMarked = []
+      loops = let (pubSCC, _) = sccGraph ilpGraph
+              in [ IS.toList l
+                 | n <- G.nodes pubSCC
+                 , l <- toList (G.lab pubSCC n)
+                 , IS.size l > 0
+                 ]
   ilpResult <- if enableAbductionLoop
-               then runILPLoop mustBePublic cannotBeMarked ilpGraph toName
-               else runILP mustBePublic cannotBeMarked ilpGraph
+               then runILPLoop mustBePublic cannotBeMarked loops ilpGraph toName
+               else runILP mustBePublic cannotBeMarked loops ilpGraph
   case ilpResult of
-    Left errMsg            -> putStrLn errMsg
-    Right (_, markedNodes) | null markedNodes -> do
-      putStrLn "\n\nHuh, there are no nodes to mark ..."
-      putStrLn "Maybe you should mark these non-constant-time leaf variables as public:"
-      print $ fst <$> minCtTreeLeaves
-      putStrLn ""
-    Right (_, markedNodes) -> print $ toName <$> markedNodes
-  writeFile "nonPubTreeSCC.dot" $ toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") ilpGraph
+    Left errMsg -> putStrLn errMsg
+    Right (pubNodes, markedNodes) -> do
+      let sep = putStrLn $ replicate 80 '-'
+      sep
+      if null markedNodes
+        then do putStrLn "\n\nHuh, there are no nodes to mark ..."
+                putStrLn "Maybe you should mark these non-constant-time leaf variables as public:"
+                print $ fst <$> minCtTreeLeaves
+        else putStrLn "marked nodes:" >> print (toName <$> markedNodes)
+      sep
+      putStrLn "initial_eq candidates:"
+      print $ filter (isJust . getPubNo) (toName <$> pubNodes)
+      sep
+  writeFile "nonPubTreeSCC.dot" $
+    toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
   callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
 
   -- writeFile "nonCtTree-full.dot" $
@@ -415,30 +430,6 @@ getLLNHelper f g = fmap (\n -> (n, fromJust $ G.lab g n)) <$> ls
   go acc (sccN, sccNs) = if f sccG sccN == 0 then IS.toList sccNs : acc else acc
   ls = foldl' go mempty (G.labNodes sccG)
 
-
-newtype GraphNode a = GraphNode { getGraphNode :: a } deriving (Show, Read)
-newtype GraphEdge b = GraphEdge { getGraphEdge :: b } deriving (Show, Read)
-
-toDotStr :: (G.DynGraph gr, Show a, Read a)
-         => (G.Node -> Id) -- ^ convert node number to text
-         -> (a -> String)  -- ^ convert node label to text
-         -> gr a VarDepEdgeType
-         -> String
-toDotStr nodeConv nodeLabelConv g = GD.showDot $ GD.fglToDotGeneric (fixG g) show show attrConv
-  where
-    toNodeLabel, toEdgeLabel :: String -> Maybe [(String, String)]
-    toNodeLabel lbl = do
-      (n, a) <- getGraphNode <$> readMaybe lbl
-      Just [("label", T.unpack (nodeConv n) <> nodeLabelConv a)]
-    toEdgeLabel lbl = do
-      lbl' <- getGraphEdge <$> readMaybe lbl
-      Just $ case lbl' of
-        Implicit   -> [("style", "dashed")]
-        Explicit _ -> [("style", "solid")]
-
-    attrConv = \case
-      [("label", lbl)] -> fromJust $ toNodeLabel lbl <|> toEdgeLabel lbl
-      _                -> error "unreachable"
-
-    fixG = G.emap GraphEdge .
-           G.gmap (\(ps, n, a, ss) -> (ps, n, GraphNode (n, a), ss))
+edgeStyle :: VarDepEdgeType -> String
+edgeStyle Implicit     = "dashed"
+edgeStyle (Explicit _) = "solid"

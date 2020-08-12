@@ -4,7 +4,13 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TupleSections #-}
 
-module Iodine.Utils where
+module Iodine.Utils
+  ( combine, mfold, mfoldM, intersects, notSupported, (||>), (<||>), (|:>)
+  , uncurry3, curry3
+  , maybeToMonoid, catMaybes', toSequence
+  , toHSet, twoPairs, insEdge, find', hmGet, hmGetEmpty, mkMap, sccGraph
+  , assert, trace, output, groupSort, swap, nub', toDotStr, foldlM'
+  ) where
 
 import           Iodine.Types
 
@@ -18,6 +24,7 @@ import qualified Data.DList as DL
 import           Data.Foldable
 import           Data.List
 import qualified Data.Graph.Inductive as G
+import qualified Data.Graph.Inductive.Dot as GD
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.Hashable
@@ -25,7 +32,8 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.IntSet as IS
 import           Data.Maybe
 import qualified Data.Sequence as SQ
-import           Text.Printf
+import qualified Data.Text as T
+import           Text.Read (readMaybe)
 
 combine :: (Monad f, Monoid m, Traversable t) => (a -> f m) -> t a -> f m
 combine act as = fold <$> traverse act as
@@ -56,14 +64,8 @@ infixl 9 <||>
 (|:>) :: (Snoc s s a a, Monoid s) => a -> a -> s
 (|:>) a1 a2 = mempty |> a1 |> a2
 
-uncurry2 :: (a -> b -> c) -> (a, b) -> c
-uncurry2 f (a, b) = f a b
-
 uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
 uncurry3 f (a, b, c) = f a b c
-
-curry2 :: ((a, b) -> c) -> (a -> b -> c)
-curry2 f a b = f (a, b)
 
 curry3 ::((a, b, c) -> d) -> (a -> b -> c -> d)
 curry3 f a b c = f (a, b, c)
@@ -112,15 +114,6 @@ find' q as =
   case find q as of
     Just a  -> a
     Nothing -> error $ "Could not find matching element in " ++ show (toList as)
-
-printGraph :: Show b => G.Gr a b -> (Int -> String) -> String
-printGraph g nodeLookup = unlines ls
-  where
-    ls = "digraph iodine {" : edges ++ nodes ++ ["}"]
-    edges = mkEdge <$> G.labEdges g
-    nodes = mkNode <$> G.nodes g
-    mkEdge (x,y,b) = printf "%d -> %d [label=\"%s\"];" x y (show b)
-    mkNode n = printf "%d [label=\"%s\"];" n (nodeLookup n)
 
 hmGet :: (Show k, Show v, Eq k, Hashable k)
       => Int -> k -> HM.HashMap k v -> v
@@ -207,3 +200,33 @@ nub' f xs = snd $ foldr' go (HS.empty, []) xs
           if   HS.member (f x) hist
           then (hist, xs')
           else (HS.insert (f x) hist, x : xs')
+
+newtype GraphNode a = GraphNode { getGraphNode :: a } deriving (Show, Read)
+newtype GraphEdge b = GraphEdge { getGraphEdge :: b } deriving (Show, Read)
+
+toDotStr :: ( G.DynGraph gr
+            , Show a, Read a
+            , Show b, Read b
+            )
+         => (G.Node -> Id) -- ^ convert node number to text
+         -> (a -> String)  -- ^ convert node label to text
+         -> (b -> String)  -- ^ edge style
+         -> gr a b
+         -> String
+toDotStr nodeConv nodeLabelConv edgeStyle g =
+  GD.showDot $ GD.fglToDotGeneric (fixG g) show show attrConv
+  where
+    toNodeLabel, toEdgeLabel :: String -> Maybe [(String, String)]
+    toNodeLabel lbl = do
+      (n, a) <- getGraphNode <$> readMaybe lbl
+      Just [("label", T.unpack (nodeConv n) <> nodeLabelConv a)]
+    toEdgeLabel lbl = do
+      lbl' <- getGraphEdge <$> readMaybe lbl
+      Just [("style", edgeStyle lbl')]
+
+    attrConv = \case
+      [("label", lbl)] -> fromJust $ toNodeLabel lbl <|> toEdgeLabel lbl
+      _                -> error "unreachable"
+
+    fixG = G.emap GraphEdge .
+           G.gmap (\(ps, n, a, ss) -> (ps, n, GraphNode (n, a), ss))

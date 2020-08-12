@@ -1,6 +1,4 @@
-{-# OPTIONS_GHC -Wno-missing-signatures #-}
 {-# OPTIONS_GHC -Wno-unused-binds #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# OPTIONS_GHC -Wno-unused-matches #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -23,7 +21,6 @@ import           Iodine.Analyze.GuessQualifiers (guessQualifiers)
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Analyze.DependencyGraph
 import           Iodine.IodineArgs
-import qualified Iodine.IodineArgs             as IA
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR            as IR
 import           Iodine.Language.IRParser
@@ -32,14 +29,10 @@ import           Iodine.Runner                  ( generateIR
                                                 , readIRFile
                                                 )
 import           Iodine.Transform.Fixpoint.Query
-import           Iodine.Transform.Merge
-import           Iodine.Transform.Normalize
 import           Iodine.Transform.VCGen
-import           Iodine.Transform.Horn
-import           Iodine.Transform.VariableRename
 import           Iodine.Types
 import           Iodine.Utils
-import           Iodine.Transform.Fixpoint.Common (HornClauseId, hcType)
+import           Iodine.Transform.Fixpoint.Common (HornClauseId)
 
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
@@ -56,7 +49,6 @@ import           Control.Monad.IO.Class
 import           Data.Bifunctor
 import           Data.Foldable
 import qualified Data.Graph.Inductive          as G
-import qualified Data.Graph.Inductive.Dot      as GD
 import qualified Data.HashMap.Strict           as HM
 import qualified Data.HashSet                  as HS
 import           Data.Hashable
@@ -73,21 +65,12 @@ import qualified Language.Fixpoint.Solver.Monad
 import qualified Language.Fixpoint.Types       as FT
 import qualified Language.Fixpoint.Types.Config
                                                as FC
-import           System.Directory
 import           System.Environment
 import           System.FilePath.Posix
-import           System.Exit
 import           System.IO
-import           System.IO.Error
 import           Text.PrettyPrint.HughesPJ      ( render )
 import qualified Text.PrettyPrint.HughesPJ     as PP
 import           Text.Printf
-import           GHC.Generics            hiding ( to
-                                                , D
-                                                , moduleName
-                                                )
-import qualified Debug.Trace                   as DT
-import           System.Process
 
 -- #############################################################################
 -- Debug Configuration
@@ -710,3 +693,10 @@ tst_guessQualifiers = do
   print srcs
   traverse_ print $ guessQualifiers m srcs ms
   return ()
+
+printGraph :: (Show a, Show b, Read a, Read b)
+           => G.Gr a b -> (Int -> String) -> String
+printGraph g nodeLookup = toDotStr (T.pack . nodeLookup) emp es g
+  where
+    emp = const ""
+    es = const "solid"
