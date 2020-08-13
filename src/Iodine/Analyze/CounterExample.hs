@@ -292,12 +292,11 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
 
   let ilpGraph       = nonPubTree
       mustBePublic   = toNode <$> nonPubTreeLeaves
+      cannotMarkFilter v = T.isPrefixOf inlinePrefix v && not (null $ getDeps v)
       cannotBeMarked =
-        let fltr v = T.isPrefixOf inlinePrefix v &&
-                     not (null $ getDeps v)
-            extraUnmarked =
+        let extraUnmarked =
               if doNotMarkSubmoduleVariables
-              then SQ.filter fltr varNames
+              then SQ.filter cannotMarkFilter varNames
               else mempty
         in toList $ fmap toNode $
            (toSequence $ topmoduleAnnots ^. cannotMarks) <> extraUnmarked
@@ -331,7 +330,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
             pubNodes
       putStrLn "initial_eq candidates:" >> putStrLn "---" >> prints initEqCandidates
       sep
-      putStrLn "cannotMark':" >> putStrLn "---" >> print (toName <$> cannotMark')
+      putStrLn "cannotMark':" >> putStrLn "---" >> print (filter cannotMarkFilter $ toName <$> cannotMark')
       sep
 
   when generateGraphPDF $ do
