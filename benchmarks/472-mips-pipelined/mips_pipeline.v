@@ -125,7 +125,7 @@ input clk, reset;
    always @(posedge clk)
      if (reset)
        IF_PC_d_out <= 0;
-     else 
+     else
        IF_PC_d_out <= IF_pc_next;
    assign IF_pc = IF_PC_d_out;
 
@@ -294,7 +294,7 @@ input clk, reset;
     begin
         // Set ForwardA
         // Forward around EX hazards
-		
+
         if (MEM_RegWrite
             && (MEM_RegRd != 0)
             && (MEM_RegRd == EX_rs))
@@ -363,8 +363,12 @@ input clk, reset;
     //                              MEM Stage
     // ********************************************************************
 
+    // rewrite
+    wire [31:0] MEM_address;
+    assign MEM_address = MEM_ALUOut;
+
     //      module mem32(clk, mem_read,    mem_write,    address,    data_in, data_out);
-    mem32 		MEM_DMEM(clk, MEM_MemRead, MEM_MemWrite, MEM_ALUOut, MEM_rd2, MEM_memout);
+    mem32 		MEM_DMEM(clk, MEM_MemRead, MEM_MemWrite, MEM_address, MEM_rd2, MEM_memout);
 
     and  		MEM_BR_AND(MEM_PCSrc, MEM_Branch, MEM_Zero);
 
@@ -393,11 +397,10 @@ input clk, reset;
 
     mux2 #(32)	WB_WRMUX(WB_MemtoReg, WB_ALUOut, WB_memout, WB_wd);
 
-    // REWRITE: added this reg to find out 
+    // REWRITE: added this reg to find out
     reg [31:0] WB_wd_reg;
 
 	always @(posedge clk)
     	WB_wd_reg <= WB_wd;
 
 endmodule
-

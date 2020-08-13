@@ -160,6 +160,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
       topmoduleName        = af ^. afTopModule
       mAnnots              = toModuleAnnotations topmoduleName af
       topmoduleAnnots      = mAnnots ^. moduleAnnotations
+      snks                 = topmoduleAnnots ^. sinks
       ieVars               = topmoduleAnnots ^. initialEquals
       aeVars               = topmoduleAnnots ^. alwaysEquals
       topModule            = fromJust $ moduleMap ^. at topmoduleName
@@ -188,15 +189,27 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
 
   let createDepTreeHelper = createDepTree varNames (varDepMap HM.!) toNode toName isHorn
 
+  -- writeFile "vardep.dot" $
+  --   toDotStr (invVariableDependencyNodeMap IM.!) (const "") edgeStyle variableDependencies
+  -- callDot "vardep.dot" "vardep.pdf"
+
   -- ---------------------------------------------------------------------------
   -- 1. data-flow graph part
   -- ---------------------------------------------------------------------------
 
   let getHornCTNo = btmLookupF topModuleIdCheck fpTraceDiff Q_CT
 
-  let nonCtTree = createDepTreeHelper getHornCTNo
-
-  -- print nonCtTree >> exitFailure
+  let nonCtTree =
+        let g = createDepTreeHelper getHornCTNo
+            revG = G.grev g
+            nodesToKeep =
+              IS.toList $
+              foldl' (\acc s ->
+                let n = toNode s
+                    ns = G.reachable n revG
+                in IS.fromList ns <> acc
+              ) IS.empty snks
+        in G.subgraph nodesToKeep g
 
   let ns = G.labNodes nonCtTree
       nonPosNodes = filter ((<= 0) . snd) ns
@@ -260,7 +273,8 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
   let nonPubTreeNodes0 = IS.fromList $ G.nodes nonPubTree0
   let hasToBePublic leaf = nub' id
         [ childName
-        | (childName, _) <- getDeps leaf
+        | (childName, edgeType) <- getDeps leaf
+        , edgeType == Implicit
         , toNode childName `IS.member` nonPubTreeNodes0
         ]
   let nonPubTreeLeaves = nub' id $ minCtTreeRoots >>= hasToBePublic . fst
@@ -289,6 +303,8 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
   -- ---------------------------------------------------------------------------
   -- 3. MILP
   -- ---------------------------------------------------------------------------
+
+  putStrLn "### ILP PHASE #####################################################"
 
   let ilpGraph       = nonPubTree
       mustBePublic   = toNode <$> nonPubTreeLeaves
@@ -327,7 +343,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
             filter
             (\n -> let v = toName n
                    in isReg v && v `notElem` ieVars && v `notElem` aeVars)
-            pubNodes
+            (nub' id $ pubNodes <> markedNodes)
       putStrLn "initial_eq candidates:" >> putStrLn "---" >> prints initEqCandidates
       sep
       putStrLn "cannotMark':" >> putStrLn "---" >> print (filter cannotMarkFilter $ toName <$> cannotMark')
@@ -347,17 +363,14 @@ createDepTree :: L Id                            -- ^ variables
               -> (Id -> Maybe Int)               -- ^ get lost iteration no of horn variables
               -> G.Gr Int VarDepEdgeType         -- ^ dependency graph
 createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
-  G.mkGraph nodes edges'
+  G.mkGraph nodes edges
   where
     nodes =
-      fmap (\v -> (toNode v, getActualIterNo v)) $
-      HS.toList $
-      foldl'
-      (\acc (p,c,_) -> HS.insert p $ HS.insert c acc)
-      HS.empty
-      edges
-
-    edges' = (_1 %~ toNode) . (_2 %~ toNode) <$> edges
+      [ (toNode v, i)
+      | v <- toList vars
+      , let i = getActualIterNo v
+      , i >= 0
+      ]
 
     edges = do
       child <- toList vars
@@ -365,11 +378,10 @@ createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
       let parentIterNo = getActualIterNo parent
           childIterNo = getActualIterNo child
       if 0 <= parentIterNo && parentIterNo <= childIterNo
-        then return (parent, child, edgeType)
+        then return (toNode parent, toNode child, edgeType)
         else []
 
     getActualIterNo v =
-      deepseq actualIterNoMap $
       case actualIterNoMap ^. at v of
         Nothing -> error $ printf "could not find %s in actualIterNoMap" v
         Just i  -> i
@@ -390,14 +402,17 @@ createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
 
     mkSCC = fst . sccGraph
 
-    actualIterNoMap = actualIterNoMapHelper mempty vdg (mkSCC vdg)
+    actualIterNoMap =
+      let m = actualIterNoMapHelper mempty vdg (mkSCC vdg)
+          -- m = DT.trace (unlines ("actualIterNoMap:" : (show <$> HM.toList _m))) _m
+      in deepseq m m
 
     actualIterNoMapHelper :: HM.HashMap Id Int
                           -> G.Gr () VarDepEdgeType
                           -> G.Gr IS.IntSet VarDepEdgeType
                           -> HM.HashMap Id Int
     -- actualIterNoMapHelper ainm _ _
-    --   | DT.trace ("actualIterNoMapHelper " <> show [show $ length $ HM.toList ainm]) False = undefined
+    --   | DT.trace ("actualIterNoMapHelper " <> prntMap ainm) False = undefined
     actualIterNoMapHelper ainm g sccG = foldl' (\acc sccN ->
       let (hvs, nhvs) = partition isHorn (getSCCNodes sccG sccN)
           ws          = if null hvs then nhvs else hvs
@@ -410,7 +425,8 @@ createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
       ) ainm (G.topsort sccG)
 
     actualIterNoLoop (lkp, m@SQ.Empty   ) = (lkp, m)
-    -- actualIterNoLoop (_,   v SQ.:<| _ ) | DT.trace ("actualIterNoLoop " <> T.unpack v) False = undefined
+    -- actualIterNoLoop (lkp, v SQ.:<| _ )
+    --   | DT.trace (unlines ["actualIterNoLoop " <> T.unpack v, prntMap lkp]) False = undefined
     actualIterNoLoop (lkp, v SQ.:<| vs) =
       case actualIterNoLoopHelper lkp v of
         Nothing -> actualIterNoLoop (lkp, vs)

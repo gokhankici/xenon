@@ -1,0 +1,42 @@
+{
+  "modules": {
+    "frv_rngif": {
+      "annotations": {
+        "source": [
+          "flush",
+          "g_resetn",
+          "pipeline_progress",
+          "rng_req_ready",
+          "rng_rsp_data",
+          "rng_rsp_status",
+          "rng_rsp_valid",
+          "rs1",
+          "uop_samp",
+          "uop_seed",
+          "uop_test",
+          "valid"
+        ],
+        "sink": [
+          "ready",
+          "result",
+          "rng_req_data",
+          "rng_req_op",
+          "rng_req_valid",
+          "rng_rsp_ready"
+        ],
+        "initial_eq": [
+          "req_done"
+        ],
+        "always_eq": [
+          "g_resetn"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "frv_rngif"
+}

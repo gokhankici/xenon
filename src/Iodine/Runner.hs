@@ -32,10 +32,12 @@ import qualified Control.Exception as E
 import           Control.Lens (view)
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Data.Char
 import qualified Data.ByteString.Lazy as B
 import           Data.Foldable
 import           Data.Function
 import qualified Data.IntMap.Strict as IM
+import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -150,6 +152,7 @@ checkIR (ia@IodineArgs{..}, af)
           statStr = render . FT.resultDoc
       FM.colorStrLn (FT.colorResult stat) (statStr stat)
       let safe = FT.isSafe result
+      printFailedConstraints finfo stat
       when delta $ do
         let mds = case stat of
                     FT.Unsafe cs -> snd <$> cs
@@ -222,6 +225,24 @@ readIRFile ia fileName =
                      Right ms -> unlines $ show <$> ms
                      Left msg -> error msg
   else readFile fileName
+
+printFailedConstraints :: FInfo -> FT.FixResult (FT.SubcId, HornClauseId) -> IO ()
+printFailedConstraints finfo stat@(FT.Unsafe failedConstraints) =
+  for_ (fst <$> failedConstraints) $ \constraintId -> do
+    let constraint = FT.cm finfo HM.! constraintId
+        rhs = FT.srhs constraint
+        expr = FT.reftPred $ FT.sr_reft rhs
+    case expr of
+      FT.PIff (FT.EVar s) (FT.EVar _) -> do
+        let t = FT.symbolSafeText s
+            t1 = T.drop 3 t -- no prefix TL_
+            t2 = T.dropWhileEnd isDigit t1 -- no tread number at end
+            t3 = T.dropEnd 2 t2 -- drop _T
+        FM.colorStrLn
+          (FT.colorResult stat)
+          ("FAILED " <> T.unpack t3 <> " :: " <> FT.showFix expr)
+      _ -> return ()
+printFailedConstraints _ _ = return ()
 
 -- -----------------------------------------------------------------------------
 -- Common Functions

@@ -1,0 +1,25 @@
+{
+  "modules": {
+    "frv_leak": {
+      "annotations": {
+        "sink": [
+          "leak_prng"
+        ],
+        "source": [
+          "g_resetn",
+          "leak_fence"
+        ],
+		"always_eq": [
+          "g_resetn",
+          "leak_fence"
+		]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "top_module": "frv_leak"
+}

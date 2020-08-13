@@ -5,6 +5,10 @@
 //  ALU for the execute stage.
 //  - add/sub/bitwise/shift
 //
+
+`include "../../external/xcrypto/rtl/p_addsub/p_addsub_unrolled.v"
+`include "../../external/xcrypto/rtl/p_shfrot/p_shfrot.v"
+
 module frv_alu (
 
 input               g_clk           , // global clock
@@ -63,6 +67,8 @@ wire [4:0] pw_d = {
 
 wire [XL:0] adder_result  ;
 
+wire [32:0] i_p_addsub_cout;
+
 // Packed 2's complement adder/subtractor
 p_addsub i_p_addsub (
 .lhs    (alu_lhs        ), // Left hand input
@@ -71,7 +77,7 @@ p_addsub i_p_addsub (
 .sub    (alu_op_sub     ), // Subtract if set, else add.
 .cin    (1'b0           ), // Carry in. Forced to 1 internally if `sub` set.
 .c_en   (1'b1           ), // Global carry enable
-.c_out  (               ), // Carry bits
+.c_out  (i_p_addsub_cout), // Carry bits
 .result (adder_result   )  // Result of the operation
 );
 

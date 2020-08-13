@@ -243,12 +243,12 @@ aesStubs = mkCollection "aes-stub" ts
 --------------------------------------------------------------------------------
 scarv :: TestTree
 --------------------------------------------------------------------------------
-scarv = TestCollection "scarv" [ scarvStubs ]
+scarv = TestCollection "scarv" [ xcryptoStubs, scarvCoreStubs ]
 
 --------------------------------------------------------------------------------
-scarvStubs :: TestTree
+xcryptoStubs :: TestTree
 --------------------------------------------------------------------------------
-scarvStubs = mkCollection "xcrypto" ts
+xcryptoStubs = mkCollection "xcrypto" ts
   where
     d = benchmarkDir </> "scarv-cpu"
     x = d </> "external" </> "xcrypto" </> "rtl"
@@ -269,9 +269,28 @@ scarvStubs = mkCollection "xcrypto" ts
                        , x </> "xc_malu"   </> "test_mul2.v"
                        , x </> "xc_malu"   </> "test_pmul.v"
                        , x </> "xc_malu"   </> "xc_malu_muldivrem.v"
-                      --  , x </> "xc_malu"   </> "xc_malu.v"
+                       , x </> "xc_malu"   </> "xc_malu.v"
                        , x </> "xc_sha256" </> "xc_sha256.v"
                        , x </> "xc_sha3"   </> "xc_sha3.v"
+                       ]
+         ]
+
+--------------------------------------------------------------------------------
+scarvCoreStubs :: TestTree
+--------------------------------------------------------------------------------
+scarvCoreStubs = mkCollection "core" ts
+  where
+    d = benchmarkDir </> "scarv-cpu"
+    x = d </> "rtl" </> "core"
+    ts = [ T (takeBaseName filename) filename
+         | filename <- [ x </> "frv_leak_unrolled.v"
+                       , x </> "frv_interrupts.v"
+                       , x </> "frv_rngif.v"
+                       , x </> "frv_gprs_unrolled.v"
+                       , x </> "frv_core_fetch_buffer.v"
+                       , x </> "frv_bitwise_unrolled.v"
+                       , x </> "frv_lsu.v"
+                       , x </> "frv_alu.v"
                        ]
          ]
 

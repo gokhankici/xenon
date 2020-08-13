@@ -1,0 +1,44 @@
+{
+  "modules": {
+    "frv_lsu": {
+      "annotations": {
+        "source": [
+          "dmem_gnt",
+          "g_resetn",
+          "hold_lsu_req",
+          "lsu_addr",
+          "lsu_byte",
+          "lsu_half",
+          "lsu_load",
+          "lsu_signed",
+          "lsu_store",
+          "lsu_valid",
+          "lsu_wdata",
+          "lsu_word",
+          "pipe_prog"
+        ],
+        "sink": [
+          "dmem_addr",
+          "dmem_req",
+          "dmem_strb",
+          "dmem_wdata",
+          "dmem_wen",
+          "lsu_a_error",
+          "lsu_mmio",
+          "lsu_ready",
+          "mmio_addr",
+          "mmio_en",
+          "mmio_wdata",
+          "mmio_wen"
+        ],
+		"always_eq": [
+          "g_resetn"
+		]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    }
+  },
+  "top_module": "frv_lsu"
+}

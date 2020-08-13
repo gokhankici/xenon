@@ -1,0 +1,44 @@
+{
+  "modules": {
+    "frv_alu": {
+      "annotations": {
+        "source": [
+          "alu_flush",
+          "alu_lhs",
+          "alu_op_add",
+          "alu_op_and",
+          "alu_op_cmp",
+          "alu_op_or",
+          "alu_op_rot",
+          "alu_op_shf",
+          "alu_op_shf_arith",
+          "alu_op_shf_left",
+          "alu_op_sub",
+          "alu_op_unsigned",
+          "alu_op_xor",
+          "alu_pw",
+          "alu_rhs",
+          "alu_valid",
+          "g_clk",
+          "g_resetn"
+        ],
+        "sink": [
+          "alu_add_result",
+          "alu_eq",
+          "alu_lt",
+          "alu_ready",
+          "alu_result"
+        ]
+      }
+    },
+    "p_addsub": {
+      "annotations": {},
+      "inline": false
+    },
+    "p_shfrot": {
+      "annotations": {},
+      "inline": false
+    }
+  },
+  "top_module": "frv_alu"
+}

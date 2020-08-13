@@ -119,20 +119,26 @@ assign dmem_wdata   =
     {32{lsu_half && lsu_addr[  1]==1'b0 }} & {16'b0, lsu_wdata[15:0]       } |
     {32{lsu_word                        }} & {       lsu_wdata             } ;
 
-assign dmem_strb[0] = lsu_byte &&  lsu_addr[1:0] == 2'b00 ||
-                      lsu_half && !lsu_addr[  1]          ||
-                      lsu_word                             ;
+assign dmem_strb_0 = lsu_byte &&  lsu_addr[1:0] == 2'b00 ||
+                     lsu_half && !lsu_addr[  1]          ||
+                     lsu_word                             ;
 
-assign dmem_strb[1] = lsu_byte &&  lsu_addr[1:0] == 2'b01 ||
-                      lsu_half && !lsu_addr[  1]          ||
-                      lsu_word                             ;
+assign dmem_strb_1 = lsu_byte &&  lsu_addr[1:0] == 2'b01 ||
+                     lsu_half && !lsu_addr[  1]          ||
+                     lsu_word                             ;
 
-assign dmem_strb[2] = lsu_byte &&  lsu_addr[1:0] == 2'b10 ||
-                      lsu_half &&  lsu_addr[  1]          ||
-                      lsu_word                             ;
+assign dmem_strb_2 = lsu_byte &&  lsu_addr[1:0] == 2'b10 ||
+                     lsu_half &&  lsu_addr[  1]          ||
+                     lsu_word                             ;
 
-assign dmem_strb[3] = lsu_byte &&  lsu_addr[1:0] == 2'b11 ||
-                      lsu_half &&  lsu_addr[  1]          ||
-                      lsu_word                             ;
+assign dmem_strb_3 = lsu_byte &&  lsu_addr[1:0] == 2'b11 ||
+                     lsu_half &&  lsu_addr[  1]          ||
+                     lsu_word                             ;
+
+assign dmem_strb = { dmem_strb_3
+                   , dmem_strb_2
+                   , dmem_strb_1
+                   , dmem_strb_0
+				   };
 
 endmodule

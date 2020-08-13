@@ -1,0 +1,35 @@
+{
+  "modules": {
+    "frv_interrupt": {
+      "annotations": {
+        "sink": [
+          "int_trap_cause",
+          "int_trap_req",
+          "mip_meip",
+          "mip_msip",
+          "mip_mtip"
+        ],
+        "source": [
+          "ex_cause",
+          "ex_pending",
+          "g_resetn",
+          "int_trap_ack",
+          "mie_meie",
+          "mie_msie",
+          "mie_mtie",
+          "mstatus_mie",
+          "nmi_pending",
+          "sw_pending",
+          "ti_pending"
+        ],
+        "always_eq": [
+          "g_resetn"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    }
+  },
+  "top_module": "frv_interrupt"
+}

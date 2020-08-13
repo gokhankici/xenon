@@ -57,8 +57,9 @@ generateAnnotationFile filename topModule outputfile = do
     goE acc e = acc <> getVariables (eventExpr e)
 
     mkMA m =
-      let (ins, outs) = foldl' goP (mempty, mempty) (ports m)
+      let (ins0, outs) = foldl' goP (mempty, mempty) (ports m)
           clks = foldl' goE mempty (abEvent <$> alwaysBlocks m)
+          ins = ins0 `HS.difference` clks
           addSources = if T.pack topModule == moduleName m
                        then moduleAnnotations .~ (emptyAnnotations & (sources .~ ins) . (sinks .~ outs))
                        else id

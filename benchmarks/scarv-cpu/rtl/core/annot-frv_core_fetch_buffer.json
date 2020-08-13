@@ -1,0 +1,36 @@
+{
+  "modules": {
+    "frv_core_fetch_buffer": {
+      "annotations": {
+        "source": [
+          "buf_ready",
+          "f_2byte",
+          "f_4byte",
+          "f_err",
+          "f_in",
+          "flush",
+          "g_resetn"
+        ],
+        "sink": [
+          "buf_16",
+          "buf_32",
+          "buf_depth",
+          "buf_err",
+          "buf_out",
+          "buf_out_2",
+          "buf_out_4",
+          "buf_valid",
+          "f_ready"
+        ],
+        "always_eq": [
+          "flush",
+          "g_resetn"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    }
+  },
+  "top_module": "frv_core_fetch_buffer"
+}

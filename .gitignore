@@ -28,6 +28,8 @@ fixpoint-trace.json
 graph*.dot
 graph*.png
 graph*.pdf
+vardep.dot
+vardep.pdf
 merge-cycle.*
 iodine.prof.html*
 /output

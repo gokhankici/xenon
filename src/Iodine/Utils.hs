@@ -10,6 +10,7 @@ module Iodine.Utils
   , maybeToMonoid, catMaybes', toSequence
   , toHSet, twoPairs, insEdge, find', hmGet, hmGetEmpty, mkMap, sccGraph
   , assert, trace, output, groupSort, swap, nub', toDotStr, foldlM'
+  , silence
   ) where
 
 import           Iodine.Types
@@ -18,6 +19,7 @@ import           Control.Applicative
 import           Control.Effect.Error
 import qualified Control.Effect.Trace as EF
 import           Control.Effect.Writer
+import           Control.Exception (bracket)
 import           Control.Lens
 import           Control.Monad
 import qualified Data.DList as DL
@@ -34,6 +36,8 @@ import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Text.Read (readMaybe)
+import           GHC.IO.Handle
+import           System.IO
 
 combine :: (Monad f, Monoid m, Traversable t) => (a -> f m) -> t a -> f m
 combine act as = fold <$> traverse act as
@@ -230,3 +234,25 @@ toDotStr nodeConv nodeLabelConv edgeStyle g =
 
     fixG = G.emap GraphEdge .
            G.gmap (\(ps, n, a, ss) -> (ps, n, GraphNode (n, a), ss))
+
+silence :: IO a -> IO a
+silence action = withFile "/dev/null" AppendMode prepareAndRun
+  where
+    handles = [stdout, stderr]
+    prepareAndRun tmpHandle = go handles
+      where
+        go [] = action
+        go hs = goBracket go tmpHandle hs
+
+    goBracket _ _ [] = undefined
+    goBracket go tmpHandle (h:hs) = do
+      buffering <- hGetBuffering h
+      let redirect = do
+            old <- hDuplicate h
+            hDuplicateTo tmpHandle h
+            return old
+          restore old = do
+            hDuplicateTo old h
+            hSetBuffering h buffering
+            hClose old
+      bracket redirect restore (\_ -> go hs)

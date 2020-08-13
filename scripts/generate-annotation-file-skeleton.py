@@ -8,7 +8,7 @@ import sys
 
 ROOT_DIR = Path(__file__).parent.parent.resolve()
 
-def toabs(f):
+def to_abs(f):
     return Path(f).resolve()
 
 def indent_json(filename):
@@ -21,25 +21,28 @@ def indent_json(filename):
 ap = argparse.ArgumentParser(description="Generates a skeleton annotation file")
 ap.add_argument("verilog_file")
 ap.add_argument("--topmodule")
-ap.add_argument("--annot-file")
+ap.add_argument("--annotation-file")
 ap.add_argument("--check", action='store_true', default=False)
 args = ap.parse_args()
 
-vf = toabs(args.verilog_file)
+vf = to_abs(args.verilog_file)
 
 if not args.topmodule:
     args.topmodule = vf.stem
 
-if not args.annot_file:
-    args.annot_file = vf.parent / ('annot-' + vf.stem + '.json')
+if not args.annotation_file:
+    args.annotation_file = vf.parent / ('annot-' + vf.stem + '.json')
 
 r = subprocess.run(
       ["cabal", "v2-run", "iodine-debug", "--", "generate-annotation-file",
-       vf, args.topmodule, toabs(args.annot_file)],
+       vf, args.topmodule, to_abs(args.annotation_file)],
       cwd=ROOT_DIR)
 
 if r.returncode == 0:
-    indent_json(args.annot_file)
+    indent_json(args.annotation_file)
 
 if args.check:
-    subprocess.run(["./iodine", toabs(args.verilog_file), toabs(args.annot_file)], cwd=ROOT_DIR)
+    subprocess.run(
+        ["./iodine", to_abs(args.verilog_file), to_abs(args.annotation_file)],
+        cwd=ROOT_DIR
+        )

@@ -1,0 +1,35 @@
+{
+  "modules": {
+    "frv_bitwise": {
+      "annotations": {
+        "source": [
+          "bop_lut",
+          "flush",
+          "rs1",
+          "rs2",
+          "rs3",
+          "uop_bop",
+          "uop_cmov",
+          "uop_fsl",
+          "uop_fsr",
+          "uop_lut",
+          "uop_mror",
+          "valid"
+        ],
+        "sink": [
+          "ready",
+          "result"
+        ]
+      }
+    },
+    "b_bop": {
+      "annotations": {},
+      "inline": false
+    },
+    "b_lut": {
+      "annotations": {},
+      "inline": false
+    }
+  },
+  "top_module": "frv_bitwise"
+}

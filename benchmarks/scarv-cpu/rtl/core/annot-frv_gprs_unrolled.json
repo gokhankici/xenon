@@ -1,0 +1,33 @@
+{
+  "modules": {
+    "frv_gprs": {
+      "annotations": {
+        "source": [
+          "g_resetn",
+          "rd_addr",
+          "rd_wdata",
+          "rd_wdata_hi",
+          "rd_wen",
+          "rd_wide",
+          "rs1_addr",
+          "rs2_addr",
+          "rs3_addr"
+        ],
+        "sink": [
+          "rs1_data",
+          "rs2_data",
+          "rs3_data"
+        ],
+        "always_eq": [
+          "rd_addr",
+          "rd_wen_even",
+          "rd_wen_odd"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    }
+  },
+  "top_module": "frv_gprs"
+}

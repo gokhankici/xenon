@@ -14,7 +14,7 @@
           "IF_PC_d_out",
           "MEM_MemRead",
           "MEM_MemWrite",
-          "MEM_ALUOut",
+          "MEM_address",
           "WB_RegWrite",
           "WB_RegRd",
           "reset"

@@ -3,6 +3,8 @@
 module Iodine.Analyze.ILP (runILPLoop, runILP) where
 
 import           Iodine.Types
+import           Iodine.Utils (silence)
+
 import           Control.Monad.LPMonad
 import           Data.LinearProgram.Common
 import           Data.LinearProgram as LP
@@ -62,14 +64,14 @@ runILP :: [Int]
        -> IO (Either String ([Int], [Int], [Int]))
 runILP mustBePublic0 cannotMark _ _ | null mustBePublic0 =
   return (Right (cannotMark, mempty, mempty))
-runILP mustBePublic0 cannotMark loops graph = do
+runILP mustBePublic cannotMark loops graph = do
   let lp = execLPM lpm
   when enableTrace $ do
-    print mustBePublic0
+    print mustBePublic
     print cannotMark
     print loops
     printLP lp
-  (rc, msol) <- glpSolveVars mipDefaults lp
+  (rc, msol) <- silence $ glpSolveVars mipDefaults lp
   unless (rc == Success) $ do
     putStrLn "!!!!!!!!!!!!!!!!!!!!!!!!!"
     putStrLn "!!! ILP SOLVER FAILED !!!"
@@ -84,7 +86,6 @@ runILP mustBePublic0 cannotMark loops graph = do
            in Right (cannotMark, publicNodes, markedNodes)
   where
     -- mustBePublic = mustBePublic0 \\ cannotMark
-    mustBePublic = mustBePublic0
     pubNode n  = "pub_" <> show n
     markNode n = "mark_" <> show n
 
