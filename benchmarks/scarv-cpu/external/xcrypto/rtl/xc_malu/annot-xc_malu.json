@@ -36,17 +36,37 @@
         ],
         "initial_eq": [
           "fsm",
-          "count",
-          "arg_0"
+          "n_fsm",
+          "count"
         ],
         "always_eq": [
-          "valid",
           "flush",
           "resetn",
+          "valid",
+          "pw_16",
+          "pw_2",
+          "pw_32",
+          "pw_4",
+          "pw_8",
+          "uop_clmul",
+          "uop_div",
+          "uop_divu",
           "uop_macc",
-          "uop_msub",
+          "uop_madd",
           "uop_mmul",
-          "insn_mdr"
+          "uop_msub",
+          "uop_mul",
+          "uop_mulsu",
+          "uop_mulu",
+          "uop_pclmul",
+          "uop_pmul",
+          "uop_rem",
+          "uop_remu"
+        ],
+        "cannot_mark": [
+          "fsm",
+          "n_fsm",
+          "mdr_ready"
         ]
       },
       "clock": [
@@ -61,9 +81,7 @@
     },
     "xc_malu_divrem": {
       "annotations": {
-        "initial_eq": [
-          "div_run"
-        ]
+        "initial_eq": ["div_run"]
       },
       "inline": true,
       "clock": [

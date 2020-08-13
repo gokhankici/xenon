@@ -75,6 +75,7 @@ handleAnnotations Annotations{..} =
   <*> traverseSet fix _alwaysEquals
   <*> traverseSet fix _assertEquals
   <*> traverseSet fix _tagEquals
+  <*> traverseSet fix _cannotMarks
 
 handleQualifier :: FDM sig m => Qualifier -> m Qualifier
 handleQualifier (QImplies v vs) = QImplies <$> fix v <*> traverse fix vs

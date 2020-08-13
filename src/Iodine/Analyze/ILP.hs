@@ -20,29 +20,32 @@ type ILPM = LPM String Int
 enableTrace :: Bool
 enableTrace = False
 
+-- | Either errorMessage (cannotMark, pubNodes, markedNodes)
 runILPLoop :: [Int]
            -> [Int]
            -> [[Int]]
            -> Gr a b
            -> (Int -> Id)
-           -> IO (Either String ([Int], [Int]))
+           -> IO (Either String ([Int], [Int], [Int]))
 runILPLoop mustBePublic cannotMark loops graph toName = do
   for_ loops $ \l -> when (null l) $ error "loop must not be empty"
   res <- runILP mustBePublic cannotMark loops graph
   case res of
     Left _ -> return res
-    Right (_, ms) | null ms -> return res
-    Right (_, ms) -> do
+    Right (_, _, ms) | null ms -> return res
+    Right (_, _, ms) -> do
       let ms' = (\m -> (toName m, m)) <$> ms
           sep = putStrLn $ replicate 80 '-'
       sep >> putStrLn "try marking these variables:" >> sep
       for_ ms' (putStrLn . T.unpack . fst)
       putStrLn ""
       putStrLn "Enter 'cannotMark' variable (empty to end the interaction):"
-      mcmNode <-  (>>= (`lookup` ms')) <$> getUserInput
-      case mcmNode of
+      mUserInput <- getUserInput
+      case mUserInput of
         Nothing -> return res
-        Just n -> runILPLoop mustBePublic (n:cannotMark) loops graph toName
+        Just userInput -> do
+          let cannotMark' = maybe cannotMark (:cannotMark) (lookup userInput ms')
+          runILPLoop mustBePublic cannotMark' loops graph toName
 
 getUserInput :: IO (Maybe Id)
 getUserInput = do
@@ -50,16 +53,22 @@ getUserInput = do
   if eof
     then return Nothing
     else do i <- T.strip . T.pack <$> hGetLine stdin
-            return $ if T.null i then Nothing else Just i
+            if T.null i then return Nothing else return (Just i)
 
 runILP :: [Int]
        -> [Int]
            -> [[Int]]
        -> Gr a b
-       -> IO (Either String ([Int], [Int]))
+       -> IO (Either String ([Int], [Int], [Int]))
+runILP mustBePublic0 cannotMark _ _ | null mustBePublic0 =
+  return (Right (cannotMark, mempty, mempty))
 runILP mustBePublic0 cannotMark loops graph = do
   let lp = execLPM lpm
-  when enableTrace $ printLP lp
+  when enableTrace $ do
+    print mustBePublic0
+    print cannotMark
+    print loops
+    printLP lp
   (rc, msol) <- glpSolveVars mipDefaults lp
   unless (rc == Success) $ do
     putStrLn "!!!!!!!!!!!!!!!!!!!!!!!!!"
@@ -72,9 +81,10 @@ runILP mustBePublic0 cannotMark loops graph = do
                ns = nodes graph
                publicNodes = [n | n <- ns, let v = sol M.! pubNode n, v > 0.1]
                markedNodes = [n | n <- ns, let v = sol M.! markNode n, v > 0.1]
-           in Right (publicNodes, markedNodes)
+           in Right (cannotMark, publicNodes, markedNodes)
   where
-    mustBePublic = mustBePublic0 \\ cannotMark
+    -- mustBePublic = mustBePublic0 \\ cannotMark
+    mustBePublic = mustBePublic0
     pubNode n  = "pub_" <> show n
     markNode n = "mark_" <> show n
 

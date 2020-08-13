@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Iodine.Transform.Inline (inlineInstances) where
+module Iodine.Transform.Inline (inlineInstances, inlinePrefix) where
 
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR
@@ -159,11 +159,14 @@ fixVariable = \case
   Wire w     -> Wire     <$> fixName w
   Register r -> Register <$> fixName r
 
+inlinePrefix :: Id
+inlinePrefix = "IodInl_M_"
+
 fixName :: Has (Reader InlineSt) sig m => Id -> m Id
 fixName v = do
   miType <- asks getMIType
   miName <- asks getMIName
-  return $ "M_" <> miType <> "_V_" <> v <> "_T" <> T.pack (show miName)
+  return $ inlinePrefix <> miType <> "_V_" <> v <> "_T" <> T.pack (show miName)
 
 fixExpr :: Has (Reader InlineSt) sig m => Expr a -> m (Expr a)
 fixExpr e@Constant{} = return e

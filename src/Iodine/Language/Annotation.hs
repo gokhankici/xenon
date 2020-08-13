@@ -27,11 +27,13 @@ data Annotations =
               , _alwaysEquals  :: HS.HashSet Id
               , _assertEquals  :: HS.HashSet Id
               , _tagEquals     :: HS.HashSet Id
+              , _cannotMarks   :: HS.HashSet Id
               }
   deriving (Show, Read)
 
 emptyAnnotations :: Annotations
-emptyAnnotations = Annotations mempty mempty mempty mempty mempty mempty
+emptyAnnotations =
+  Annotations mempty mempty mempty mempty mempty mempty mempty
 
 data Qualifier =
     QImplies Id (L Id)
@@ -81,21 +83,21 @@ validateAnnotationFile af =
 
 instance FromJSON Annotations where
   parseJSON =
-    withObjectKeys "Annotations" objKeys $ \o -> do
+    withObjectKeys "Annotations" validKeys $ \o -> do
     let allKeys   = HM.keysSet o
-        validKeys = HS.fromList ["source", "sink", "initial_eq", "always_eq", "assert_eq"]
-        keyDiff   = HS.difference allKeys validKeys
+        keyDiff   = HS.difference allKeys (HS.fromList validKeys)
     unless (HS.null keyDiff) $
       parserThrowError [] ("invalid keys " ++ show keyDiff)
     Annotations
-      <$> o .:? "source"     .!= mempty
-      <*> o .:? "sink"       .!= mempty
-      <*> o .:? "initial_eq" .!= mempty
-      <*> o .:? "always_eq"  .!= mempty
-      <*> o .:? "assert_eq"  .!= mempty
-      <*> o .:? "tag_eq"     .!= mempty
+      <$> o .:? "source"       .!= mempty
+      <*> o .:? "sink"         .!= mempty
+      <*> o .:? "initial_eq"   .!= mempty
+      <*> o .:? "always_eq"    .!= mempty
+      <*> o .:? "assert_eq"    .!= mempty
+      <*> o .:? "tag_eq"       .!= mempty
+      <*> o .:? "cannot_mark"  .!= mempty
       where
-        objKeys = ["source", "sink", "initial_eq", "always_eq", "assert_eq", "tag_eq", "ignore"]
+        validKeys = ["source", "sink", "initial_eq", "always_eq", "assert_eq", "tag_eq", "ignore", "cannot_mark"]
 
 instance ToJSON Annotations where
   toJSON a =
@@ -103,12 +105,13 @@ instance ToJSON Annotations where
     filter (not . null . snd) $
     fmap (sort . HS.toList . (a ^.)) <$> fields
     where
-      fields = [ ("source",     sources)
-               , ("sink",       sinks)
-               , ("initial_eq", initialEquals)
-               , ("always_eq",  alwaysEquals)
-               , ("assert_eq",  assertEquals)
-               , ("tag_eq",     tagEquals)
+      fields = [ ("source",        sources)
+               , ("sink",          sinks)
+               , ("initial_eq",    initialEquals)
+               , ("always_eq",     alwaysEquals)
+               , ("assert_eq",     assertEquals)
+               , ("tag_eq",        tagEquals)
+               , ("cannot_mark",   cannotMarks)
                ]
 
 instance FromJSON Qualifier where
@@ -146,15 +149,17 @@ instance FromJSON ModuleAnnotations where
 instance ToJSON ModuleAnnotations where
   toJSON ma =
     Object $ mempty & (at "annotations" ?~ toJSON (ma ^. moduleAnnotations)) .
-                      (at "qualifiers" ?~ toJSON (ma ^. moduleQualifiers)) .
-                      (at "clock" ?~ toJSON (ma ^. clocks)) .
-                      (at "inline" ?~ toJSON (ma ^. canInline))
+                      (at "qualifiers"  ?~ toJSON (ma ^. moduleQualifiers)) .
+                      (at "clock"       ?~ toJSON (ma ^. clocks)) .
+                      (at "inline"      ?~ toJSON (ma ^. canInline))
 
 instance FromJSON AnnotationFile where
-  parseJSON = withObjectKeys "AnnotationFile" ["modules", "top_module", "history", "blocklist", "qualifiers", "qualifiers-history"] $ \o ->
+  parseJSON = withObject "AnnotationFile" $ \o ->
     AnnotationFile
-    <$> o .:  "modules"
-    <*> o .:  "top_module"
+    <$> o .: "modules"
+    <*> o .: "top_module"
+    -- where
+    --   objKeys = ["modules", "top_module", "history", "blocklist", "qualifiers", "qualifiers-history"]
 
 instance ToJSON AnnotationFile where
   toJSON af =
@@ -177,8 +182,6 @@ parseClock o k =
     Just (String v)  -> return $ HS.singleton v
     Just a@(Array _) -> parseJSON a
     Just v           -> fail $ "Unexpected " ++ show v ++ ". Expected String or Array of Strings"
-
-
 
 toModuleAnnotations :: Id -> AnnotationFile -> ModuleAnnotations
 toModuleAnnotations m = (^. afAnnotations . to find)

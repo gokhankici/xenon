@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -35,13 +36,15 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.IntSet as IS
 import           Data.Maybe
+import           Data.Hashable
 import qualified Data.Sequence as SQ
+import GHC.Generics (Generic)
 
 type ModuleMap   = HM.HashMap Id (Module Int)
 type VarDepGraph = Gr () VarDepEdgeType
 data VarDepEdgeType = Implicit
                     | Explicit Bool -- is non blocking ?
-                    deriving (Eq, Ord, Show, Read)
+                    deriving (Eq, Ord, Show, Read, Generic)
 type Ints = IS.IntSet
 type ThreadDepGraph = Gr () ()
 
@@ -73,7 +76,7 @@ dependencyGraph :: ( Has (Reader ModuleMap) sig m
                    -- , Effect sig
                    )
                 =>  Module Int -> m DependencyGraphSt
-dependencyGraph = fmap fst . runState initialState . dependencyGraphHelper
+dependencyGraph = execState initialState . dependencyGraphHelper
   where
     initialState =
       DependencyGraphSt
@@ -230,3 +233,5 @@ addToSet k i = HM.alter upd k
   where
     upd Nothing   = Just $ IS.singleton i
     upd (Just is) = Just $ IS.insert i is
+
+instance Hashable VarDepEdgeType

@@ -1,8 +1,9 @@
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-
 
 module Iodine.Analyze.CounterExample
   ( readFixpointTrace
@@ -18,42 +19,43 @@ module Iodine.Analyze.CounterExample
   )
 where
 
-import           Iodine.ConstantConfig
-import           Iodine.Analyze.ModuleSummary
 import           Iodine.Analyze.DependencyGraph
+import           Iodine.Analyze.ILP
+import           Iodine.Analyze.ModuleSummary
+import           Iodine.ConstantConfig
 import           Iodine.Language.Annotation
-import           Iodine.Language.IR            as IR
+import           Iodine.Language.IR as IR
+import           Iodine.Transform.Fixpoint.Common (FInfo, HornClauseId, hcType)
 import           Iodine.Transform.Horn
+import           Iodine.Transform.Inline (inlinePrefix)
+import           Iodine.Transform.VCGen2 (computeHornVariables)
 import           Iodine.Types
 import           Iodine.Utils
-import           Iodine.Transform.Fixpoint.Common
-                                                ( FInfo
-                                                , HornClauseId
-                                                , hcType
-                                                )
 
-import           Control.Lens
+import qualified Language.Fixpoint.Solver.Monad as FSM
+import qualified Language.Fixpoint.Types       as FT
+
 import           Control.Applicative
+import           Control.DeepSeq (deepseq)
+import           Control.Lens
+import           Control.Monad
 import           Data.Bifunctor
 import           Data.Foldable
-import qualified Data.Graph.Inductive          as G
-import qualified Data.HashMap.Strict           as HM
-import qualified Data.HashSet                  as HS
+import qualified Data.Graph.Inductive as G
 import           Data.Hashable
-import qualified Data.IntMap                   as IM
-import qualified Data.IntSet                   as IS
-import           Data.Maybe
-import qualified Data.Text                     as T
-import qualified Language.Fixpoint.Solver.Monad
-                                               as FSM
-import           Text.Printf
-import           GHC.Generics            hiding ( moduleName )
-import qualified Debug.Trace                   as DT
-import           System.Process
-import qualified Language.Fixpoint.Types       as FT
+import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
+import qualified Data.IntMap as IM
+import qualified Data.IntSet as IS
 import           Data.List
-import           Control.Monad
-import           Iodine.Analyze.ILP
+import qualified Data.Sequence as SQ
+import qualified Data.Text as T
+import qualified Debug.Trace as DT
+import           Data.Maybe
+import           GHC.Generics hiding ( moduleName )
+-- import           System.Exit (exitFailure)
+import           System.Process
+import           Text.Printf
 
 type ConstraintTypes = IM.IntMap HornClauseId
 type ModuleMap = HM.HashMap Id (Module Int)
@@ -130,298 +132,327 @@ btmLookupF kvarIdCheck btm qt varName = do
         i:is -> DT.trace (printf "Multiple iterNos for %s: %s" varName (show $ i:is)) $
                 Just $ foldl' min i is
 
+type GCEInput = (AnnotationFile, ModuleMap, SummaryMap, FInfo, Bool)
+
+writeGCEInput :: GCEInput -> IO ()
+writeGCEInput (af, moduleMap, summaryMap, _, enableAbductionLoop) =
+  writeFile "gce-input" $ show (af, moduleMap, summaryMap, enableAbductionLoop)
+
+readGCEInput :: IO GCEInput
+readGCEInput = do
+  (af, moduleMap, summaryMap, enableAbductionLoop) <- read <$> readFile "gce-input"
+  return (af, moduleMap, summaryMap, mempty, enableAbductionLoop)
+
+_tst :: IO ()
+_tst = do
+  (af, moduleMap, summaryMap, finfo, enableAbductionLoop) <- readGCEInput
+  generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop
+
 --------------------------------------------------------------------------------
 generateCounterExampleGraphs
   :: AnnotationFile -> ModuleMap -> SummaryMap -> FInfo -> Bool -> IO ()
 --------------------------------------------------------------------------------
 generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop = do
+  writeGCEInput (af, moduleMap, summaryMap, finfo, enableAbductionLoop)
   let cm = toConstraintTypes finfo
   fpTrace <- readFixpointTrace
-  let lastTraceElem = snd . snd . fromJust $ IM.lookupMax fpTrace
-  let btm           = firstNonCT $ calculateSolverTraceDiff fpTrace
-  let
-    topmoduleName      = af ^. afTopModule
-    topmoduleAnnots = toModuleAnnotations topmoduleName af ^. moduleAnnotations
-    srcs               = topmoduleAnnots ^. sources
-    snks               = HS.toList $ topmoduleAnnots ^. sinks
-    aeVars             = topmoduleAnnots ^. alwaysEquals
+  let fpTraceDiff          = firstNonCT $ calculateSolverTraceDiff fpTrace
+      topmoduleName        = af ^. afTopModule
+      mAnnots              = toModuleAnnotations topmoduleName af
+      topmoduleAnnots      = mAnnots ^. moduleAnnotations
+      ieVars               = topmoduleAnnots ^. initialEquals
+      aeVars               = topmoduleAnnots ^. alwaysEquals
+      topModule            = fromJust $ moduleMap ^. at topmoduleName
+      topModuleIdCheck     = (`elem` (getData <$> alwaysBlocks topModule))
+      ms@ModuleSummary{..} = fromJust $ summaryMap ^. at topmoduleName
+      toNode               = (variableDependencyNodeMap HM.!)
+      toName               = (invVariableDependencyNodeMap IM.!)
+      getDeps v            = getVariableDependencies v topModule summaryMap
+      clks                 = mAnnots ^. clocks
+      notAClock            = (`notElem` clks)
+      vars                 = SQ.filter (notAClock . variableName) $ variables topModule
+      varNames             = variableName <$> vars
+      varDepMap            = foldl' (\acc v -> HM.insert v (getDeps v) acc) mempty varNames
+      isReg v              = Register v `elem` vars
 
-    topModule          = fromJust $ moduleMap ^. at topmoduleName
-    topModuleIdCheck   = (`elem` (getData <$> alwaysBlocks topModule))
-    ModuleSummary {..} = fromJust $ summaryMap ^. at topmoduleName
+  let iterToConstraintType iterNo = do
+        constraintNo   <- fst <$> fpTrace ^. at iterNo
+        constraintType <- cm ^. at constraintNo
+        return $ hcType constraintType
 
-    toNode             = (variableDependencyNodeMap HM.!)
-    toName             = (invVariableDependencyNodeMap IM.!)
+  let hornVariables = computeHornVariables topModule ms mAnnots
+      isHorn        = (`HS.member` hornVariables)
 
-    trc :: Show a => String -> a -> a
-    trc msg a =
-      let enableTrace = False
-      in  if enableTrace then DT.trace (msg ++ show a) a else a
+  let toCtTreeDotStr =
+        toDotStr (invVariableDependencyNodeMap IM.!) (printf " #%d") edgeStyle
 
-    isCT varName =
-      let v = T.unpack varName
-          helper (FSM.TraceConstantTime tv) = toTVName tv == v
-          helper _                          = False
-      in  any (any helper) lastTraceElem
-    getCTNo v =
-      if   v `elem` srcs || (v `elem` temporaryVariables && allChildrenAreCT v)
-      then Nothing
-      else btmLookupF topModuleIdCheck btm Q_CT v <|> if isCT v then Nothing else Just 0
+  let createDepTreeHelper = createDepTree varNames (varDepMap HM.!) toNode toName isHorn
 
-    allChildrenAreCT v =
-      let go (c, Explicit _) = isNothing $ getCTNo c
-          go (_, Implicit)   = False
-      in all go $ getVariableDependencies v topModule summaryMap
+  -- ---------------------------------------------------------------------------
+  -- 1. data-flow graph part
+  -- ---------------------------------------------------------------------------
 
-    insNode n a g = if G.gelem n g then g else G.insNode (n, a) g
+  let getHornCTNo = btmLookupF topModuleIdCheck fpTraceDiff Q_CT
 
-    getDeps v = getVariableDependencies v topModule summaryMap
+  let nonCtTree = createDepTreeHelper getHornCTNo
 
-    createDepTree :: (Id -> Maybe Int) -> TstG -> Id -> Ids -> (TstG, Ids)
-    createDepTree getIterNo g parentName ws
-      |
-      --  | DT.trace (unlines [ show $ toName <$> G.nodes g
-      --                     , show parentName
-      --                     , show $ toList ws]) False = undefined
-        HS.member parentName ws
-      = (g, ws)
-      | otherwise
-      = case
-          trc (printf "parentCtNo (%s): " parentName) $ getIterNo parentName
-        of
-          Nothing -> (g, ws)
-          Just parentIterNo ->
-            let
-              childrenNodes = trc (printf "childrenNodes of %s: " parentName)
-                $ getDeps parentName
-              nonCTChildren =
-                [ (childName, fromJust childIterNo, depType)
-                | (childName, depType) <- childrenNodes
-                , let
-                  childIterNo = trc (printf "childCtNo (%s) : " childName)
-                    $ getIterNo childName
-                , isJust childIterNo
-                ]
-              go acc@(g2, ws2) (childName, childIterNo, edgeType) =
-                if childIterNo <= parentIterNo || parentIterNo == 0
-                  then
-                    let
-                      childNode  = toNode childName
-                      parentNode = toNode parentName
-                      e          = (parentNode, childNode, edgeType)
-                      g3 =
-                        insEdge e $ insNode parentNode parentIterNo $ insNode
-                          childNode
-                          childIterNo
-                          g2
-                    in
-                      -- DT.trace (
-                      --   printf "Adding edge (%s, %s) since %d >= %d\n"
-                      --          parentName
-                      --          childName
-                      --          parentIterNo
-                      --          childIterNo
-                      -- ) $
-                      createDepTree getIterNo g3 childName ws2
-                  else acc
-              acc' = (g, HS.insert parentName ws)
-            in
-              foldl' go acc' nonCTChildren
+  -- print nonCtTree >> exitFailure
 
-  let createSinkTree = createDepTree getCTNo
-  let isPublic varName =
-        let v = T.unpack varName
-            helper (FSM.TracePublic tv) = toTVName tv == v
-            helper _                    = False
-        in  any (any helper) lastTraceElem
-  let
-    allChildrenArePub v =
-      all (isNothing . getPubNo . fst) $ getVariableDependencies v topModule summaryMap
-    getPubNo v =
-       if  (v `elem` temporaryVariables && allChildrenArePub v) || v `elem` aeVars
-       then Nothing
-       else btmLookupF topModuleIdCheck btm Q_PUB v <|>
-            if isPublic v then Nothing else Just 0
+  let ns = G.labNodes nonCtTree
+      nonPosNodes = filter ((<= 0) . snd) ns
+      in unless (null nonPosNodes) $ do
+           for_ nonPosNodes print
+           error "nonCtTree labels must be positive"
 
-  let getLeaves = getLeafLikeNodes
+  -- these are the root causes of the verification failure
+  let nonCtTreeRoots = fmap (first toName) <$> getRootLikeNodes nonCtTree
 
-  let hasToBePublic leaf =
-        HS.fromList
-          $ [ (childName, fromJust pn)
-            | (childName, depType) <- getDeps leaf
-            , depType == Implicit
-            , let pn = getPubNo childName
-            , isJust pn
-            ]
-  let initTree = foldl' (\g (v, n) -> insNode (toNode v) n g) G.empty
-  let nonCtTreeLoop roots initws =
-        let (finalTree, _finalWS) = foldl'
-              (\(g, ws) (snk, _) -> createSinkTree g snk ws)
-              (initTree roots, initws)
-              roots
-        in finalTree
-  let nonCtTree = nonCtTreeLoop [ (s, n) | s <- snks, n <- toList (getCTNo s) ] mempty
+  putStrLn "### NON CT TREE ROOTS #############################################"
+  for_ nonCtTreeRoots (traverse_ print) >> putStrLn ""
 
-  let nonCtTreeLeaves =
-        fmap (first toName) <$>
-        getLeaves nonCtTree
-
-  putStrLn "### NON CT TREE LEAVES ##########################################################"
-  for_ nonCtTreeLeaves $ \l -> for_ l print >> putStrLn ""
-
-  let minCtTreeLeaves0 =
-        let getMinRegNo l =
-              case find ((> 0) . snd) l of
-                Nothing     -> 0
-                Just (_, i) -> i
-            cmp2 (_,i1) (_,i2) = compare i1 i2
-            clustersWithMinIterNos = (\l -> (l, getMinRegNo l)) . sortBy cmp2 <$> nonCtTreeLeaves
-            minClusterIterNo = getMinRegNo clustersWithMinIterNos
+  let minCtTreeRoots :: [(Id, Int)] =
+        let getMin = minimum . fmap snd
+            clustersWithMinIterNos = (\l -> (l, getMin l)) <$> nonCtTreeRoots
+            minClusterIterNo = getMin clustersWithMinIterNos
         in nub' id
            [ l
            | (c, i) <- clustersWithMinIterNos
            , i == minClusterIterNo
            , l <- c
            ]
-  let minCtTreeLeaves =
-        if includeEveryVariable
-        then let leafIterNos = foldl' (\acc (_v,n) -> IS.insert n acc) mempty minCtTreeLeaves0
-             in [ (toName n, i)
-                | n <- G.nodes nonCtTree
-                , let i = fromJust $ G.lab nonCtTree n
-                , i `IS.member` leafIterNos
-                ]
-        else minCtTreeLeaves0
-  printf "Min leaves: %s\n\n" $ show $ fst <$> minCtTreeLeaves
 
-  let toCtTreeDotStr =
-        toDotStr
-        (invVariableDependencyNodeMap IM.!)
-        (\i -> if i >= 0 then printf " #%d" i else "")
-        edgeStyle
+  printf "Min roots: %s\n\n" $ show $ fst <$> minCtTreeRoots
 
-  writeFile "nonCtTree.dot" $
-    let revG         = G.grev nonCtTree
-        go ntk (v,_) = ntk <> IS.fromList (G.reachable (toNode v) revG)
-        nodesToKeep  = foldl' go IS.empty minCtTreeLeaves
-        subG = G.nfilter (`IS.member` nodesToKeep) revG
-    in toCtTreeDotStr subG
-  callDot "nonCtTree.dot" "nonCtTree.pdf"
+  when generateGraphPDF $ do
+    writeFile "nonCtTree.dot" $ toCtTreeDotStr nonCtTree
+    callDot "nonCtTree.dot" "nonCtTree.pdf"
 
-  let
-    createPubTree   = createDepTree getPubNo
-    nonPubTreeRoots = nub' id $ minCtTreeLeaves >>= HS.toList . hasToBePublic . fst
-    iterToConstraintType iterNo = do
-      constraintNo   <- fst <$> fpTrace ^. at iterNo
-      constraintType <- cm ^. at constraintNo
-      return $ hcType constraintType
-    nonPubTree0 = fst $ foldl' (\(g, ws) (v, _) -> createPubTree g v ws)
-                               (initTree nonPubTreeRoots, mempty)
-                               nonPubTreeRoots
-    nonPubTreeInitLeaves =
-      [ toName l
-      | ls  <- getLeaves nonPubTree0
-      , (l, _lbl) <- ls
-      , hid <- toList $ iterToConstraintType $ G.lab' $ G.context nonPubTree0 l
-      , hid == Init
-      ]
+  -- ---------------------------------------------------------------------------
+  -- 2. control-flow graph
+  -- ---------------------------------------------------------------------------
 
-  putStrLn "### NON PUBLIC TREE ROOTS ######################################################"
-  for_ nonPubTreeRoots (putStrLn . T.unpack . fst)
-  putStrLn ""
+  let lastTraceElementPubs =
+        let (_maxIterNo, (_constraintId, qualMap)) = IM.findMax fpTrace
+            mkKVar n = T.pack $ "inv" <> show n
+            kvNames = (mkKVar $ getThreadId topModule) :
+                      case alwaysBlocks topModule of
+                        SQ.Empty          -> []
+                        a SQ.:<| SQ.Empty -> [mkKVar $ getThreadId a]
+                        _                 -> error "unreachable"
+        in HS.fromList
+           [ v
+           | (kv, qs) <- HM.toList qualMap
+           , kv `elem` kvNames
+           , q <- toList qs
+           , v <- case q of
+                    FSM.TracePublic tv -> [T.pack $ toTVName tv]
+                    _ -> []
+           ]
+  let getHornPubNo v =
+        btmLookupF topModuleIdCheck fpTraceDiff Q_PUB v <|>
+        if v `elem` lastTraceElementPubs then Nothing else Just 0
 
-  let isReg v = Register v `elem` variables topModule
-  let nonPubTreeLoop :: TstG -> [Id] -> Ids -> TstG
-      nonPubTreeLoop g [] _ = g
-      nonPubTreeLoop g (leaf : leaves) ws | leaf `elem` ws || isReg leaf =
-        nonPubTreeLoop g leaves ws
-      nonPubTreeLoop g (wire : leaves) ws =
-        let
-          _newEdges =
-            [ (wire, v, typ)
-            | (v, typ) <- getDeps wire
-            , not (isReg v)
-              || (         v
-                 `notElem` topmoduleAnnots
-                 ^.        initialEquals
-                 &&        v
-                 `notElem` topmoduleAnnots
-                 ^.        alwaysEquals
-                 )
-            ]
-          newEdges = -- DT.trace ("new edges: " ++ show _newEdges)
-            [ (toNode x, toNode y, z) | (x, y, z) <- _newEdges ]
-          g' =
-            foldl' (\acc e@(_, n, _) -> insEdge e $ insNode n 0 acc) g newEdges
-        in
-          nonPubTreeLoop g' leaves (HS.insert wire ws)
-  let nonPubTree = G.grev $ nonPubTreeLoop nonPubTree0 nonPubTreeInitLeaves mempty
-  writeFile "nonPubTree.dot" $ toDotStr (invVariableDependencyNodeMap IM.!)
-    (\i ->
-      if iterToConstraintType i == Just Init
-      then " (Init #" <> show i <> ")"
-      else " (" <> show i <> ")"
-    )
-    edgeStyle
-    nonPubTree
-  callDot "nonPubTree.dot" "nonPubTree.pdf"
+  -- first create the cfg for every variable
+  let nonPubTree0 = createDepTreeHelper getHornPubNo
 
-  let regsInPubTree =
-        (HS.fromList $ filter isReg $ toName <$> G.nodes nonPubTree)
-        `HS.difference`
-        (topmoduleAnnots ^. initialEquals)
-  unless (null regsInPubTree) $ do
-    putStrLn "Try sanitizing these registers"
-    print $ toList regsInPubTree
+  -- then pick the ones that are the implicit dependencies of the causes to be
+  -- the leaves
+  let nonPubTreeNodes0 = IS.fromList $ G.nodes nonPubTree0
+  let hasToBePublic leaf = nub' id
+        [ childName
+        | (childName, _) <- getDeps leaf
+        , toNode childName `IS.member` nonPubTreeNodes0
+        ]
+  let nonPubTreeLeaves = nub' id $ minCtTreeRoots >>= hasToBePublic . fst
+
+  -- keep the implicit variables that are the dependencies of the causes
+  let nonPubTree :: TstG =
+        let revG = G.grev nonPubTree0
+            go ntk l = ntk <> IS.fromList (G.reachable (toNode l) revG)
+            nodesToKeep  = foldl' go IS.empty nonPubTreeLeaves
+        in G.grev $ G.nfilter (`IS.member` nodesToKeep) revG
+
+  putStrLn "### NON PUBLIC TREE LEAVES ########################################"
+  for_ nonPubTreeLeaves (putStrLn . T.unpack) >> putStrLn ""
+
+  when generateGraphPDF $ do
+    writeFile "nonPubTree.dot" $ toDotStr (invVariableDependencyNodeMap IM.!)
+      (\i ->
+        if iterToConstraintType i == Just Init
+        then " (Init #" <> show i <> ")"
+        else " (" <> show i <> ")"
+      )
+      edgeStyle
+      nonPubTree0
+    callDot "nonPubTree.dot" "nonPubTree.pdf"
+
+  -- ---------------------------------------------------------------------------
+  -- 3. MILP
+  -- ---------------------------------------------------------------------------
 
   let ilpGraph       = nonPubTree
-      mustBePublic   = toNode . fst <$> nonPubTreeRoots
-      cannotBeMarked = []
+      mustBePublic   = toNode <$> nonPubTreeLeaves
+      cannotBeMarked =
+        let fltr v = T.isPrefixOf inlinePrefix v &&
+                     not (null $ getDeps v)
+            extraUnmarked =
+              if doNotMarkSubmoduleVariables
+              then SQ.filter fltr varNames
+              else mempty
+        in toList $ fmap toNode $
+           (toSequence $ topmoduleAnnots ^. cannotMarks) <> extraUnmarked
       loops = let (pubSCC, _) = sccGraph ilpGraph
               in [ IS.toList l
-                 | n <- G.nodes pubSCC
-                 , l <- toList (G.lab pubSCC n)
-                 , IS.size l > 0
+                 | sccN <- G.nodes pubSCC -- sccN is a components
+                 , null $ G.pre pubSCC sccN -- and it is a root
+                 , let l = fromJust (G.lab pubSCC sccN)
+                 , IS.size l > 1
                  ]
+  for_ loops $ \l -> printf "loop: %s\n" (show $ toName <$> l)
   ilpResult <- if enableAbductionLoop
                then runILPLoop mustBePublic cannotBeMarked loops ilpGraph toName
                else runILP mustBePublic cannotBeMarked loops ilpGraph
   case ilpResult of
     Left errMsg -> putStrLn errMsg
-    Right (pubNodes, markedNodes) -> do
+    Right (cannotMark', pubNodes, markedNodes) -> do
       let sep = putStrLn $ replicate 80 '-'
+          prints = traverse_ putStrLn . sort . fmap (T.unpack . toName)
       sep
       if null markedNodes
         then do putStrLn "\n\nHuh, there are no nodes to mark ..."
                 putStrLn "Maybe you should mark these non-constant-time leaf variables as public:"
-                print $ fst <$> minCtTreeLeaves
-        else putStrLn "marked nodes:" >> print (toName <$> markedNodes)
+                print $ fst <$> minCtTreeRoots
+        else do putStrLn "marked nodes:" >> putStrLn "---" >> prints markedNodes
       sep
-      putStrLn "initial_eq candidates:"
-      print $ filter (isJust . getPubNo) (toName <$> pubNodes)
+      let initEqCandidates :: [Int] =
+            filter
+            (\n -> let v = toName n
+                   in isReg v && v `notElem` ieVars && v `notElem` aeVars)
+            pubNodes
+      putStrLn "initial_eq candidates:" >> putStrLn "---" >> prints initEqCandidates
       sep
-  writeFile "nonPubTreeSCC.dot" $
-    toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
-  callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
+      putStrLn "cannotMark':" >> putStrLn "---" >> print (toName <$> cannotMark')
+      sep
 
-  -- writeFile "nonCtTree-full.dot" $
-  --   let completeNonCtGraph =
-  --         G.gmap (\(ps, n, _a, cs) ->
-  --           let a = fromMaybe (-1) $ getCTNo (toName n)
-  --           in (ps, n, a, cs)
-  --         ) variableDependencies
-  --   in toCtTreeDotStr completeNonCtGraph
-  -- callDot "nonCtTree-full.dot" "nonCtTree-full.pdf"
+  when generateGraphPDF $ do
+    writeFile "nonPubTreeSCC.dot" $
+      toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
+    callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
 
-  return ()
+-- | label of the parent node is greater than its children
+createDepTree :: L Id                            -- ^ variables
+              -> (Id -> [(Id, VarDepEdgeType)])  -- ^ get dependencies
+              -> (Id -> Int)                     -- ^ variable name to node number
+              -> (Int -> Id)                     -- ^ node number to variable name
+              -> (Id -> Bool)                    -- ^ is horn variable
+              -> (Id -> Maybe Int)               -- ^ get lost iteration no of horn variables
+              -> G.Gr Int VarDepEdgeType         -- ^ dependency graph
+createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
+  G.mkGraph nodes edges'
+  where
+    nodes =
+      fmap (\v -> (toNode v, getActualIterNo v)) $
+      HS.toList $
+      foldl'
+      (\acc (p,c,_) -> HS.insert p $ HS.insert c acc)
+      HS.empty
+      edges
+
+    edges' = (_1 %~ toNode) . (_2 %~ toNode) <$> edges
+
+    edges = do
+      child <- toList vars
+      (parent, edgeType) <- getDeps child
+      let parentIterNo = getActualIterNo parent
+          childIterNo = getActualIterNo child
+      if 0 <= parentIterNo && parentIterNo <= childIterNo
+        then return (parent, child, edgeType)
+        else []
+
+    getActualIterNo v =
+      deepseq actualIterNoMap $
+      case actualIterNoMap ^. at v of
+        Nothing -> error $ printf "could not find %s in actualIterNoMap" v
+        Just i  -> i
+
+    getSCCNodes sccG sccN =
+      fmap toName $
+      IS.toList $ fromJust $
+      G.lab sccG sccN
+
+    vdg = G.mkGraph ns es
+      where
+        vs = toList vars
+        ns = (, ()) . toNode <$> vs
+        es = do
+          c <- vs
+          (p, t) <- getDeps c
+          return (toNode p, toNode c, t)
+
+    mkSCC = fst . sccGraph
+
+    actualIterNoMap = actualIterNoMapHelper mempty vdg (mkSCC vdg)
+
+    actualIterNoMapHelper :: HM.HashMap Id Int
+                          -> G.Gr () VarDepEdgeType
+                          -> G.Gr IS.IntSet VarDepEdgeType
+                          -> HM.HashMap Id Int
+    -- actualIterNoMapHelper ainm _ _
+    --   | DT.trace ("actualIterNoMapHelper " <> show [show $ length $ HM.toList ainm]) False = undefined
+    actualIterNoMapHelper ainm g sccG = foldl' (\acc sccN ->
+      let (hvs, nhvs) = partition isHorn (getSCCNodes sccG sccN)
+          ws          = if null hvs then nhvs else hvs
+          acc'        = fst $ actualIterNoLoop (acc, SQ.fromList ws)
+          missingVars = toNode <$> filter (not . (`HM.member` acc')) nhvs
+          g'          = G.subgraph missingVars g
+          sccG'       = mkSCC g'
+      in if | null missingVars -> acc'
+            | otherwise -> actualIterNoMapHelper acc' g' sccG'
+      ) ainm (G.topsort sccG)
+
+    actualIterNoLoop (lkp, m@SQ.Empty   ) = (lkp, m)
+    -- actualIterNoLoop (_,   v SQ.:<| _ ) | DT.trace ("actualIterNoLoop " <> T.unpack v) False = undefined
+    actualIterNoLoop (lkp, v SQ.:<| vs) =
+      case actualIterNoLoopHelper lkp v of
+        Nothing -> actualIterNoLoop (lkp, vs)
+        Just i  -> let lkp' = HM.insert v i lkp
+                   in deepseq lkp' $ actualIterNoLoop (lkp', vs)
+
+    alwaysAvailable = -1
+
+    -- return a Just if we know the actual iteration count
+    -- Nothing   := we do not know the actual iteration count
+    -- Just (-1) := always available
+    -- Just 0    := always missing
+    -- Just i    := available at (i-1) but lost at i
+    actualIterNoLoopHelper :: HM.HashMap Id Int -> Id -> Maybe Int
+    actualIterNoLoopHelper lkp v =
+      if isHorn v
+      -- if v is a horn variable, and getHornIterNo returns nothing, use -1 as
+      -- the iteration count
+      then case getHornLostIterNo v of
+             Nothing -> Just alwaysAvailable
+             Just i  -> Just i
+      else case actualIterNoLoopHelper lkp . fst <$> getDeps v of
+             -- all variables without dependencies should be a horn variable,
+             -- unless they are constant expressions
+             [] -> Just alwaysAvailable
+             -- if we know the count of every dependency ...
+             is | all isJust is ->
+               case filter (/= alwaysAvailable) $ fromJust <$> is of
+                 -- if there is no non-negative dependency, use -1
+                 [] -> Just alwaysAvailable
+                 is2 -> Just $ minimum is2
+             -- if there is a dependency with missing iter count ...
+             _ -> Nothing
 
 callDot :: String -> String -> IO ()
 callDot i o = do
   system $ printf "dot -Tpdf -Gmargin=0 '%s' -o '%s'" i o
   return ()
 
-getLeafLikeNodes :: Eq b => G.Gr a b -> [[G.LNode a]]
-getLeafLikeNodes = getLLNHelper G.outdeg
+getRootLikeNodes :: Eq b => G.Gr a b -> [[G.LNode a]]
+getRootLikeNodes = getLLNHelper G.indeg
 
 getLLNHelper :: Eq b => (forall c d. G.Gr c d -> Int -> Int) -> G.Gr a b -> [[G.LNode a]]
 getLLNHelper f g = fmap (\n -> (n, fromJust $ G.lab g n)) <$> ls

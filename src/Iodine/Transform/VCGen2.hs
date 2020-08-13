@@ -17,6 +17,7 @@ module Iodine.Transform.VCGen2
   ( vcgen
   , VCGenOutput
   , getAllMIOutputs
+  , computeHornVariables
   ) where
 
 import           Iodine.Transform.VCGen (computeAllInitialEqualVars)
@@ -157,25 +158,9 @@ vcgenMod m@Module {..} = do
     "There should be at most one always block for each event type"
 
   -- set module's horn variables
-  mClks <- getClocks moduleName
-  ModuleSummary{..} <- asks (HM.! moduleName)
-
-  vs <- if includeEveryVariable
-        then return $
-             let allVars = foldl' (flip HS.insert) mempty $ variableName <$> variables
-             in allVars `HS.difference` (mClks <> temporaryVariables)
-        else do
-          annots <- getModuleAnnotations moduleName
-          let annotVars = annotationVariables (annots ^. moduleAnnotations)
-              regs = let go acc (Register r) = HS.insert r acc
-                         go acc (Wire _) = acc
-                     in foldl' go mempty variables
-              ps = HS.fromList (toList $ variableName . portVariable <$> ports) `HS.difference` mClks
-              rbw = case alwaysBlocks of
-                      Empty -> mempty
-                      ab SQ.:<| Empty -> readBeforeWrittenTo ab mempty
-                      _ -> error "unreachable"
-          return $ annotVars <> ps <> regs <> rbw
+  ms <- asks (HM.! moduleName)
+  annots <- getModuleAnnotations moduleName
+  let vs = computeHornVariables m ms annots
 
   (threadSt, ui) <-
     case alwaysBlocks of
@@ -199,6 +184,27 @@ vcgenMod m@Module {..} = do
     singleBlockForEvent = length alwaysBlocks <= 1
     allThreads = (AB <$> alwaysBlocks) <> (MI <$> moduleInstances)
     threadMap = foldl' (\tm t -> IM.insert (getData t) t tm) mempty allThreads
+
+computeHornVariables :: Module Int -> ModuleSummary -> ModuleAnnotations -> Ids
+computeHornVariables Module{..} ModuleSummary{..} annots | includeEveryVariable =
+  allVars `HS.difference` (clks <> temporaryVariables)
+  where
+    allVars = foldl' (flip HS.insert) mempty $ variableName <$> variables
+    clks = annots ^. clocks
+computeHornVariables Module{..} ModuleSummary{..} annots =
+  annotVars <> ps <> regs <> rbw
+  where
+    annotVars = annotationVariables (annots ^. moduleAnnotations)
+    regs = let go acc (Register r) = HS.insert r acc
+               go acc (Wire _) = acc
+           in foldl' go mempty variables
+    ps = HS.fromList (toList $ variableName . portVariable <$> ports) `HS.difference` clks
+    rbw = case alwaysBlocks of
+            Empty -> mempty
+            ab SQ.:<| Empty -> readBeforeWrittenTo ab mempty
+            _ -> error "unreachable"
+    clks = annots ^. clocks
+
 
 moduleClauses :: FDM sig m => m Horns
 moduleClauses = do

@@ -21,6 +21,7 @@ cplex.json
 /debug-*
 /ir
 /out
+gce-input
 
 fixpoint-trace.json
 
