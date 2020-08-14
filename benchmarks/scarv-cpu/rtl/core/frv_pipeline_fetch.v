@@ -4,6 +4,9 @@
 //
 //  Fetch pipeline stage.
 //
+
+`include "frv_core_fetch_buffer.v"
+
 module frv_pipeline_fetch (
 
 input               g_clk           , // global clock

@@ -1,0 +1,66 @@
+{
+  "modules": {
+    "frv_pipeline_fetch": {
+      "annotations": {
+        "source": [
+          "cf_req",
+          "cf_target",
+          "g_resetn",
+          "imem_error",
+          "imem_gnt",
+          "imem_rdata",
+          "imem_recv",
+          "s0_flush",
+          "s1_busy"
+        ],
+        "sink": [
+          "cf_ack",
+          "imem_ack",
+          "imem_addr",
+          "imem_req",
+          "imem_strb",
+          "imem_wdata",
+          "imem_wen",
+          "s1_data",
+          "s1_error",
+          "s1_valid"
+        ],
+        "always_eq": [
+          "g_resetn",
+          "cf_req",
+          "cf_target",
+          "imem_gnt",
+          "imem_recv",
+          "imem_rdata",
+          "s0_flush",
+          "s1_busy"
+        ],
+        "initial_eq": [
+          "ignore_rsps",
+          "fetch_misaligned",
+          "imem_req",
+          "reqs_outstanding"
+        ],
+        "ignore": {
+          "comment": "It seems like all inputs to this module have to be public, otherwise we need to make assumptions about the variables within"
+        }
+      },
+      "clock": [
+        "g_clk"
+      ]
+    },
+    "frv_core_fetch_buffer": {
+      "annotations": {
+        "initial_eq": [
+          "bdepth",
+          "buffer"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "inline": true
+    }
+  },
+  "top_module": "frv_pipeline_fetch"
+}

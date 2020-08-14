@@ -40,6 +40,7 @@ import           Control.Lens
 import           Control.Monad
 import           Data.Bifunctor
 import           Data.Foldable
+import           Data.List (sort)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.IntMap as IM
@@ -269,9 +270,9 @@ initialize ab = do
            ]
 
   trace "initialize" (currentModuleName, getThreadId ab, isTop)
-  trace "initialize - zero" (toList zeroTagVars)
-  trace "initialize - valeq" (toList valEqVars)
-  trace "initialize - tagEqVars0" (toList tagEqVars0)
+  trace "initialize - zero" (sort $ toList zeroTagVars)
+  trace "initialize - valeq" (sort $ toList valEqVars)
+  trace "initialize - tagEqVars0" (sort $ toList tagEqVars0)
 
   -- for non-top module blocks, we do not assume that the sources are constant time
   -- however, we should keep their variables in the kvars

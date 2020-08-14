@@ -23,7 +23,7 @@ ap.add_argument("verilog_file")
 ap.add_argument("--topmodule")
 ap.add_argument("--annotation-file")
 ap.add_argument("--check", action='store_true', default=False)
-ap.add_argument("-I", "--include-dir", action="append", type=str, required=False)
+ap.add_argument("-I", "--include-dir", action="append", type=str, default=[])
 
 args = ap.parse_args()
 
