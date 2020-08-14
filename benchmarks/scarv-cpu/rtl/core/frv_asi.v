@@ -7,6 +7,13 @@
 //  - SHA2
 //  - SHA3
 //
+
+`include "xc_sha3.v"
+`include "xc_sha256.v"
+`include "xc_aessub.v"
+`include "xc_aessub.v"
+`include "xc_aesmix_unrolled.v"
+
 module frv_asi (
 
 input               g_clk           , // global clock

@@ -1,0 +1,35 @@
+{
+  "modules": {
+    "frv_counters": {
+      "annotations": {
+        "source": [
+          "g_resetn",
+          "inhibit_cy",
+          "inhibit_ir",
+          "inhibit_tm",
+          "instr_ret",
+          "mmio_addr",
+          "mmio_en",
+          "mmio_wdata",
+          "mmio_wen"
+        ],
+        "sink": [
+          "ctr_cycle",
+          "ctr_instret",
+          "ctr_time",
+          "mmio_error",
+          "mmio_rdata",
+          "timer_interrupt"
+        ],
+        "always_eq": [
+          "g_resetn",
+          "mmio_en"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    }
+  },
+  "top_module": "frv_counters"
+}

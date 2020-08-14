@@ -13,7 +13,7 @@
 //  - madd, msub, macc, mmul
 //
 
-`include "../p_addsub/p_addsub_unrolled.v"
+`include "p_addsub_unrolled.v"
 `include "xc_malu_muldivrem.v"
 `include "xc_malu_long.v"
 
@@ -67,7 +67,7 @@ wire         insn_divrem     =
 wire         insn_mdr        =
     insn_divrem   ||
     uop_mul    || uop_mulu   || uop_mulsu  || uop_clmul  ||
-    uop_pmul   || uop_pclmul ; 
+    uop_pmul   || uop_pclmul ;
 
 wire         insn_long       =
     uop_madd   || uop_msub   || uop_macc   || uop_mmul    ;
@@ -116,16 +116,16 @@ assign       result  =                    mdr_result |
 
 wire [31:0] padd_lhs =                    mdr_padd_lhs |
                        {32{ld_long  }} & long_padd_lhs ;
-                       
+
 wire [31:0] padd_rhs =                    mdr_padd_rhs |
                        {32{ld_long  }} & long_padd_rhs ;
-                       
+
 wire        padd_sub =                    mdr_padd_sub ||
                            ld_long    && long_padd_sub ;
-                       
+
 wire        padd_cin =                    mdr_padd_cin ||
                            ld_long    && long_padd_cin ;
-                      
+
 wire        padd_cen =                    mdr_padd_cen ||
                            ld_long    &&          1'b1 ;
 
@@ -159,8 +159,8 @@ wire fsm_mmul_2 = fsm[5];
 wire fsm_mmul_3 = fsm[6];
 wire fsm_done   = fsm[7];
 
-always @(*) begin 
-    
+always @(*) begin
+
     n_fsm = FSM_INIT;
 
 case(fsm)
@@ -175,33 +175,33 @@ case(fsm)
             n_fsm = FSM_INIT  ;
         end
     end
-    
+
     FSM_MDR  : begin
         if(mdr_ready) n_fsm = FSM_DONE ;
         else          n_fsm = FSM_MDR  ;
     end
-    
+
     FSM_MSUB_1: begin
         n_fsm = FSM_DONE;
     end
-    
+
     FSM_MACC_1: begin
         n_fsm = FSM_DONE;
     end
-    
+
     FSM_MMUL_1: begin
         if(mdr_ready) n_fsm = FSM_MMUL_2;
         else          n_fsm = FSM_MMUL_1;
     end
-    
+
     FSM_MMUL_2: begin
         n_fsm = FSM_MMUL_3;
     end
-    
+
     FSM_MMUL_3: begin
         n_fsm = FSM_DONE;
     end
-    
+
     FSM_DONE  : begin
         // Stay in this state until flush is assertd.
         n_fsm = FSM_DONE;
@@ -236,11 +236,11 @@ wire        ld_long  = insn_long && !((fsm_init||fsm_mmul_1) && uop_mmul);
 
 wire [63:0] n_acc    = {64{ld_mdr   }} &  mdr_n_acc  |
                        {64{ld_long  }} & long_n_acc  ;
-                     
+
 reg  [31:0] arg_0       ; // Misc intermediate variable
 
 wire [31:0] n_arg_0  = {32{ld_mdr   }} &  mdr_n_arg_0;
-                     
+
 reg  [31:0] arg_1       ; // Misc intermediate variable. Div/Rem Quotient.
 
 wire [31:0] n_arg_1  =                    mdr_n_arg_1;
@@ -377,4 +377,3 @@ xc_malu_long i_xc_malu_long (
 );
 
 endmodule
-

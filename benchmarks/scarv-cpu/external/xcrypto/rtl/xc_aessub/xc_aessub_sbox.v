@@ -1,6 +1,11 @@
 
 //
 // Implement a single 1-byte lookup for the AES SBox or inverse SBox
+
+`ifndef XC_AESSUB_SBOX_DEFINED
+
+`define XC_AESSUB_SBOX_DEFINED
+
 module xc_aessub_sbox(
 input  wire [7:0] in    ,   // Input byte
 input  wire       inv   ,   // Perform inverse (set) or forward lookup
@@ -315,3 +320,5 @@ wire x19 = s5 ^ x16;
 assign s4 = x18 ^ x19;
 
 endmodule
+
+`endif

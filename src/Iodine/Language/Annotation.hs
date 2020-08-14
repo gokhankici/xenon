@@ -54,7 +54,8 @@ emptyModuleAnnotations = ModuleAnnotations emptyAnnotations mempty mempty False
 
 data AnnotationFile =
   AnnotationFile { _afAnnotations :: HM.HashMap Id ModuleAnnotations -- ^ module -> annotations
-                 , _afTopModule   :: Id                              -- ^ name of the top module
+                 , _afTopModule   :: Id     -- ^ name of the top module
+                 , _afIncludeDirs :: [Id]   -- ^ can be relative to the verilog file
                  }
   deriving (Show, Read)
 
@@ -156,15 +157,17 @@ instance ToJSON ModuleAnnotations where
 instance FromJSON AnnotationFile where
   parseJSON = withObject "AnnotationFile" $ \o ->
     AnnotationFile
-    <$> o .: "modules"
-    <*> o .: "top_module"
+    <$> o .:  "modules"
+    <*> o .:  "top_module"
+    <*> o .:? "include_dirs" .!= mempty
     -- where
     --   objKeys = ["modules", "top_module", "history", "blocklist", "qualifiers", "qualifiers-history"]
 
 instance ToJSON AnnotationFile where
   toJSON af =
     Object $ mempty & (at "modules" ?~ toJSON (toJSON <$> af ^. afAnnotations)) .
-                      (at "top_module" ?~ toJSON (af ^. afTopModule))
+                      (at "top_module" ?~ toJSON (af ^. afTopModule)) .
+                      (at "include_dirs" ?~ toJSON (af ^. afIncludeDirs))
 
 withObjectKeys :: String -> [T.Text] -> (Object -> Parser a) -> Value -> Parser a
 withObjectKeys typ keys parser = withObject typ parser'

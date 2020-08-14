@@ -7,6 +7,10 @@
 
 `include "xc_aessub_sbox.v"
 
+`ifndef XC_AESSUB_DEFINED
+
+`define XC_AESSUB_DEFINED
+
 module xc_aessub(
 
 input  wire        clock ,
@@ -153,4 +157,4 @@ xc_aessub_sbox sbox_3(
 
 endmodule
 
-
+`endif

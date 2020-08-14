@@ -54,7 +54,7 @@ import           System.IO
 import           System.Process
 import           Text.PrettyPrint.HughesPJ (render)
 import           Text.Printf
-
+import           Data.List (intersperse, foldl1')
 
 -- -----------------------------------------------------------------------------
 main :: IO ()
@@ -72,9 +72,9 @@ runner :: IodineArgs -> IO Bool
 runner a = generateIR a >>= checkIR
 
 -- -----------------------------------------------------------------------------
-verilogToIR :: FilePath -> FilePath -> String -> IO FilePath
+verilogToIR :: FilePath -> FilePath -> String -> [String] -> IO FilePath
 -- -----------------------------------------------------------------------------
-verilogToIR iverilogDir verilogFile topModule = do
+verilogToIR iverilogDir verilogFile topModule includeDirs = do
   runPreProcessor
   runIVL
   return irFile
@@ -82,7 +82,12 @@ verilogToIR iverilogDir verilogFile topModule = do
     -- run ivlpp preprocessor on the given verilog file
     runPreProcessor = withCurrentDirectory verilogDir $ do
       let preprocessor = iverilogDir </> "ivlpp" </> "ivlpp"
-      (rc, out, err) <- readProcessWithExitCode preprocessor [verilogFile] ""
+      args <-
+        case includeDirs of
+          [] -> return [verilogFile]
+          _  -> createIncludesFile >> return ["-F", includesFile, verilogFile]
+      putStrLn $ foldl1' (++) $ intersperse " " (preprocessor : args)
+      (rc, out, err) <- readProcessWithExitCode preprocessor args ""
       case rc of
         ExitSuccess ->
           writeFile preprocFile out
@@ -91,6 +96,17 @@ verilogToIR iverilogDir verilogFile topModule = do
           hPutStrLn stderr verilogFile
           hPutStrLn stderr err
           exitFailure
+
+    includesFile = verilogFile <.> "includes"
+
+    createIncludesFile =
+      withFile includesFile WriteMode $ \h ->
+        for_ includeDirs $ \i -> do
+          hPutStr   h "I:"
+          if i !! 0 == '/'
+            then hPutStrLn h i
+            else canonicalizePath (replaceFileName verilogFile i)
+                 >>= hPutStrLn h
 
     -- compile the Verilog file into IR
     runIVL = do
@@ -119,8 +135,9 @@ generateIR :: IodineArgs -> IO (IodineArgs, AnnotationFile)
 -- -----------------------------------------------------------------------------
 generateIR IodineArgs{..} = do
   af <- parseAnnotations <$> B.readFile annotFile
-  let topModule =  T.unpack $ view afTopModule af
-  irFile <- verilogToIR iverilogDir fileName topModule
+  let topModule = T.unpack $ view afTopModule af
+      includeDirs = T.unpack <$> (view afIncludeDirs af)
+  irFile <- verilogToIR iverilogDir fileName topModule includeDirs
   let result = IodineArgs { fileName   = irFile
                           , moduleName = topModule
                           , ..

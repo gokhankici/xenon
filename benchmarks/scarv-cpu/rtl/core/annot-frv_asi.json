@@ -1,0 +1,62 @@
+{
+  "modules": {
+    "frv_asi": {
+      "annotations": {
+        "source": [
+          "asi_flush_aesmix",
+          "asi_flush_aessub",
+          "asi_flush_data",
+          "asi_rs1",
+          "asi_rs2",
+          "asi_shamt",
+          "asi_uop",
+          "asi_valid",
+          "g_clk",
+          "g_resetn"
+        ],
+        "sink": [
+          "asi_ready",
+          "asi_result"
+        ]
+      },
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aessub_sbox_fwd": {
+      "annotations": {},
+      "inline": false
+    },
+    "xc_aessub": {
+      "annotations": {},
+      "inline": false
+    },
+    "xc_aessub_sbox_inv": {
+      "annotations": {},
+      "inline": false
+    },
+    "xc_sha256": {
+      "annotations": {},
+      "inline": false
+    },
+    "xc_aesmix": {
+      "annotations": {},
+      "inline": false
+    },
+    "xc_sha3": {
+      "annotations": {},
+      "inline": false
+    },
+    "xc_aessub_sbox": {
+      "annotations": {},
+      "inline": false
+    }
+  },
+  "include_dirs": [
+    "../../external/xcrypto/rtl/xc_sha3",
+    "../../external/xcrypto/rtl/xc_sha256",
+    "../../external/xcrypto/rtl/xc_aessub",
+    "../../external/xcrypto/rtl/xc_aesmix"
+  ],
+  "top_module": "frv_asi"
+}

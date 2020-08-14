@@ -1,0 +1,32 @@
+{
+  "modules": {
+    "frv_pipeline_register": {
+      "annotations": {
+        "source": [
+          "flush",
+          "flush_dat",
+          "g_resetn",
+          "i_busy",
+          "i_data",
+          "i_valid"
+        ],
+        "sink": [
+          "mr_data",
+          "o_busy",
+          "o_data",
+          "o_valid"
+        ],
+        "always_eq": [
+          "flush",
+          "g_resetn",
+          "i_busy",
+          "i_valid"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    }
+  },
+  "top_module": "frv_pipeline_register"
+}

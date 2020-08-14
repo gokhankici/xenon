@@ -243,8 +243,7 @@ xc_malu_pmul i_malu_pmul(
 .n_acc      (pmul_n_acc     ),
 .n_arg_0    (pmul_n_arg_0   ),
 .result     (pmul_result    ),
-.ready      (pmul_ready     ) 
+.ready      (pmul_ready     )
 );
 
 endmodule
-

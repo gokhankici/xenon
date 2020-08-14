@@ -35,17 +35,18 @@ guessIVerilogDir cwd = do
     then return (Just d)
     else guessIVerilogDir $ takeDirectory cwd
 
-generateAnnotationFile :: FilePath -> String -> FilePath -> IO ()
-generateAnnotationFile filename topModule outputfile = do
+generateAnnotationFile :: FilePath -> String -> FilePath -> [String] -> IO ()
+generateAnnotationFile filename topModule outputfile includeDirs = do
   iverilogDir <- fromJust <$> (getCurrentDirectory >>= guessIVerilogDir)
   absFilename <- makeAbsolute filename
-  irFile <- verilogToIR iverilogDir absFilename topModule
+  irFile <- verilogToIR iverilogDir absFilename topModule includeDirs
   mir <- readFile irFile >>= (runError . IRP.parse . (filename, ))
   let modules = either (\(e :: IodineException) -> throw e)
                        (topsortModules $ T.pack topModule)
                        mir
   let af = AnnotationFile { _afAnnotations = HM.fromList $ (\m -> (moduleName m, mkMA m)) <$> toList modules
                           , _afTopModule   = T.pack topModule
+                          , _afIncludeDirs = T.pack <$> includeDirs
                           }
   B.writeFile outputfile $ encode af
 

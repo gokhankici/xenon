@@ -291,6 +291,9 @@ scarvCoreStubs = mkCollection "core" ts
                        , x </> "frv_bitwise_unrolled.v"
                        , x </> "frv_lsu.v"
                        , x </> "frv_alu.v"
+                       , x </> "frv_pipeline_register_unrolled.v"
+                       , x </> "frv_counters.v"
+                       , x </> "frv_asi.v"
                        ]
          ]
 

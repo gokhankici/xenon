@@ -36,3 +36,5 @@ iodine.prof.html*
 /non*Tree*.*
 
 /report.html
+
+*.v.includes

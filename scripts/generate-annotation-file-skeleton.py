@@ -23,6 +23,8 @@ ap.add_argument("verilog_file")
 ap.add_argument("--topmodule")
 ap.add_argument("--annotation-file")
 ap.add_argument("--check", action='store_true', default=False)
+ap.add_argument("-I", "--include-dir", action="append", type=str, required=False)
+
 args = ap.parse_args()
 
 vf = to_abs(args.verilog_file)
@@ -35,7 +37,7 @@ if not args.annotation_file:
 
 r = subprocess.run(
       ["cabal", "v2-run", "iodine-debug", "--", "generate-annotation-file",
-       vf, args.topmodule, to_abs(args.annotation_file)],
+       vf, args.topmodule, to_abs(args.annotation_file)] + args.include_dir,
       cwd=ROOT_DIR)
 
 if r.returncode == 0:

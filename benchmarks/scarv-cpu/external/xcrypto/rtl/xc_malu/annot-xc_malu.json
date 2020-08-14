@@ -101,5 +101,8 @@
       "inline": false
     }
   },
+  "include_dirs": [
+    "../p_addsub"
+  ],
   "top_module": "xc_malu"
 }

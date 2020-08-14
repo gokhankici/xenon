@@ -314,8 +314,8 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-    ["generate-annotation-file", filename, topModuleName, outputfile] ->
-      generateAnnotationFile filename topModuleName outputfile
+    "generate-annotation-file" : filename : topModuleName : outputfile : includeDirs ->
+      generateAnnotationFile filename topModuleName outputfile includeDirs
     _ -> do (isSafe, out) <- runner
             writeFile "debug-output" $ show out
             -- analyze
