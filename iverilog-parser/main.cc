@@ -890,7 +890,7 @@ int main(int argc, char*argv[])
 	    flag_errors += 1;
 	    break;
       }
-      
+
       if (flag_errors)
 	    return flag_errors;
 
@@ -1090,7 +1090,7 @@ int main(int argc, char*argv[])
 			  // FIXME
 			  // IRExporter pe(o, mod);
 			  // mod->accept(&pe);
-			  IRExporter irExporter(mod);
+			  IRExporter irExporter(NULL, mod);
 			  irExporter.extractModule();
 			  o << irExporter << endl;
 			  flush(o);

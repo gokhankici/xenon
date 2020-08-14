@@ -1,0 +1,78 @@
+{
+  "modules": {
+    "frv_pipeline_memory": {
+      "annotations": {
+        "source": [
+          "dmem_gnt",
+          "flush",
+          "g_resetn",
+          "hold_lsu_req",
+          "leak_lkgcfg",
+          "leak_prng",
+          "s3_fu",
+          "s3_instr",
+          "s3_opr_a",
+          "s3_opr_b",
+          "s3_rd",
+          "s3_size",
+          "s3_trap",
+          "s3_uop",
+          "s3_valid",
+          "s4_busy"
+        ],
+        "sink": [
+          "dmem_addr",
+          "dmem_req",
+          "dmem_strb",
+          "dmem_wdata",
+          "dmem_wen",
+          "fwd_s3_csr",
+          "fwd_s3_load",
+          "fwd_s3_rd",
+          "fwd_s3_wdata",
+          "fwd_s3_wdata_hi",
+          "fwd_s3_wide",
+          "leak_fence_unc0",
+          "leak_fence_unc1",
+          "leak_fence_unc2",
+          "mmio_addr",
+          "mmio_en",
+          "mmio_wdata",
+          "mmio_wen",
+          "s3_busy",
+          "s4_fu",
+          "s4_instr",
+          "s4_opr_a",
+          "s4_opr_b",
+          "s4_rd",
+          "s4_size",
+          "s4_trap",
+          "s4_uop",
+          "s4_valid"
+        ],
+        "always_eq": [
+          "g_resetn"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    },
+    "frv_lsu": {
+      "annotations": {},
+      "clock": [
+        "g_clk"
+      ],
+      "inline": false
+    },
+    "frv_pipeline_register": {
+      "annotations": {},
+      "clock": [
+        "g_clk"
+      ],
+      "inline": false
+    }
+  },
+  "include_dirs": [],
+  "top_module": "frv_pipeline_memory"
+}

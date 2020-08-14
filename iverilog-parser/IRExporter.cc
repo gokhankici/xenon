@@ -484,7 +484,13 @@ const IRExpr *IRExporter::nameComponentToIRExpr(const perm_string &name,
 
                 if (strcmp(n.name.str(), name.str()) == 0)
                 {
-                    return toIRExpr(n.parm);
+                    PExpr* p = n.parm;
+                    if (PEIdent* ai = dynamic_cast<PEIdent*>(p)) {
+                        assert(! history.empty());
+                        return history.back()->toIRExpr(ai);
+                    } else {
+                        return toIRExpr(n.parm);
+                    }
                 }
             }
         }

@@ -42,6 +42,7 @@ import           Control.Monad
 import           Data.Bifunctor
 import           Data.Foldable
 import qualified Data.Graph.Inductive as G
+import qualified Data.Graph.Inductive.Query.SP as GSP
 import           Data.Hashable
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
@@ -148,6 +149,8 @@ _tst = do
   (af, moduleMap, summaryMap, finfo, enableAbductionLoop) <- readGCEInput
   generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop
 
+
+
 --------------------------------------------------------------------------------
 generateCounterExampleGraphs
   :: AnnotationFile -> ModuleMap -> SummaryMap -> FInfo -> Bool -> IO ()
@@ -160,6 +163,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
       topmoduleName        = af ^. afTopModule
       mAnnots              = toModuleAnnotations topmoduleName af
       topmoduleAnnots      = mAnnots ^. moduleAnnotations
+      srcs                 = topmoduleAnnots ^. sources
       snks                 = topmoduleAnnots ^. sinks
       ieVars               = topmoduleAnnots ^. initialEquals
       aeVars               = topmoduleAnnots ^. alwaysEquals
@@ -304,6 +308,14 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
   -- 3. MILP
   -- ---------------------------------------------------------------------------
 
+  let ilpCosts =
+        computeILPCosts
+        topModule moduleMap
+        variableDependencies varDepMap toNode
+        ((+ 1) $ fst $ IM.findMax invVariableDependencyNodeMap)
+        srcs
+  print ilpCosts
+
   putStrLn "### ILP PHASE #####################################################"
 
   let ilpGraph       = nonPubTree
@@ -325,13 +337,18 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
                  ]
   for_ loops $ \l -> printf "loop: %s\n" (show $ toName <$> l)
   ilpResult <- if enableAbductionLoop
-               then runILPLoop mustBePublic cannotBeMarked loops ilpGraph toName
-               else runILP mustBePublic cannotBeMarked loops ilpGraph
+               then runILPLoop mustBePublic cannotBeMarked loops ilpGraph ilpCosts toName
+               else runILP     mustBePublic cannotBeMarked loops ilpGraph ilpCosts
   case ilpResult of
-    Left errMsg -> putStrLn errMsg
+    Left errMsg -> do
+      putStrLn ""
+      putStrLn $ "ilp solver did not succeed: " <> errMsg
+      putStrLn "try making some of these public: "
+      for_ minCtTreeRoots $ \ (v, _) ->
+        printf "- %s\n" v
     Right (cannotMark', pubNodes, markedNodes) -> do
       let sep = putStrLn $ replicate 80 '-'
-          prints = traverse_ putStrLn . sort . fmap (T.unpack . toName)
+          prints = traverse_ (printf "- %s\n") . sort . fmap (T.unpack . toName)
       sep
       if null markedNodes
         then do putStrLn "\n\nHuh, there are no nodes to mark ..."
@@ -353,6 +370,47 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
     writeFile "nonPubTreeSCC.dot" $
       toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
     callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
+
+
+computeILPCosts :: G.DynGraph gr
+                => Module Int
+                -> ModuleMap
+                -> gr () VarDepEdgeType
+                -> HM.HashMap Id [(Id, VarDepEdgeType)]
+                -> (Id -> Int)
+                -> Int
+                -> Ids
+                -> IM.IntMap Int
+computeILPCosts topModule moduleMap varDepGraph varDepMap toNode rootNode srcs =
+  foldl' addCost mempty paths
+  where
+    costMultiplier = 5
+
+    addCost _ (G.LP []) = error "unreachable"
+    addCost m (G.LP ((n, c):_)) =
+      if n /= rootNode
+      then IM.insert n (c * costMultiplier) m
+      else m
+
+    paths = GSP.spTree rootNode fixedG2
+
+    fixedG2 = foldl' (flip G.insEdge) fixedG1 extraNodes
+    extraNodes = (\s -> (rootNode, toNode s, 1)) <$> toList srcs
+    fixedG1 = G.insNode (rootNode, ()) fixedG0
+
+    fixedG0 =
+      G.emap (const 1) $
+      foldl' (\g1 ModuleInstance{..} ->
+        let oPorts = moduleOutputs (moduleMap HM.! moduleInstanceType) mempty in
+        foldl' (\g2 oPort ->
+          let child = varName (moduleInstancePorts HM.! oPort) in
+          let es = varDepMap HM.! child in
+          foldl' (\g3 (parent, edgeType) ->
+            G.insEdge (toNode parent, toNode child, edgeType) g3
+          ) g2 es
+        ) g1 oPorts
+      ) varDepGraph (moduleInstances topModule)
+
 
 -- | label of the parent node is greater than its children
 createDepTree :: L Id                            -- ^ variables

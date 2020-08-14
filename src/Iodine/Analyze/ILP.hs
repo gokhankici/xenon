@@ -9,6 +9,7 @@ import           Control.Monad.LPMonad
 import           Data.LinearProgram.Common
 import           Data.LinearProgram as LP
 import qualified Data.Map as M
+import qualified Data.IntMap as IM
 import           Data.Graph.Inductive (Gr, nodes, pre)
 import           Data.Foldable
 import           Control.Monad
@@ -16,6 +17,7 @@ import           Data.Maybe
 import           Data.List
 import qualified Data.Text as T
 import           System.IO
+import           Text.Printf
 
 type ILPM = LPM String Int
 
@@ -27,11 +29,12 @@ runILPLoop :: [Int]
            -> [Int]
            -> [[Int]]
            -> Gr a b
+           -> IM.IntMap Int
            -> (Int -> Id)
            -> IO (Either String ([Int], [Int], [Int]))
-runILPLoop mustBePublic cannotMark loops graph toName = do
+runILPLoop mustBePublic cannotMark loops graph ilpCosts toName = do
   for_ loops $ \l -> when (null l) $ error "loop must not be empty"
-  res <- runILP mustBePublic cannotMark loops graph
+  res <- runILP mustBePublic cannotMark loops graph ilpCosts
   case res of
     Left _ -> return res
     Right (_, _, ms) | null ms -> return res
@@ -39,7 +42,7 @@ runILPLoop mustBePublic cannotMark loops graph toName = do
       let ms' = (\m -> (toName m, m)) <$> ms
           sep = putStrLn $ replicate 80 '-'
       sep >> putStrLn "try marking these variables:" >> sep
-      for_ ms' (putStrLn . T.unpack . fst)
+      for_ ms' (printf "- %s\n" . fst)
       putStrLn ""
       putStrLn "Enter 'cannotMark' variable (empty to end the interaction):"
       mUserInput <- getUserInput
@@ -47,7 +50,7 @@ runILPLoop mustBePublic cannotMark loops graph toName = do
         Nothing -> return res
         Just userInput -> do
           let cannotMark' = maybe cannotMark (:cannotMark) (lookup userInput ms')
-          runILPLoop mustBePublic cannotMark' loops graph toName
+          runILPLoop mustBePublic cannotMark' loops graph ilpCosts toName
 
 getUserInput :: IO (Maybe Id)
 getUserInput = do
@@ -61,10 +64,11 @@ runILP :: [Int]
        -> [Int]
            -> [[Int]]
        -> Gr a b
+       -> IM.IntMap Int
        -> IO (Either String ([Int], [Int], [Int]))
-runILP mustBePublic0 cannotMark _ _ | null mustBePublic0 =
+runILP mustBePublic0 cannotMark _ _ _ | null mustBePublic0 =
   return (Right (cannotMark, mempty, mempty))
-runILP mustBePublic cannotMark loops graph = do
+runILP mustBePublic cannotMark loops graph ilpCosts = do
   let lp = execLPM lpm
   when enableTrace $ do
     print mustBePublic
@@ -72,10 +76,10 @@ runILP mustBePublic cannotMark loops graph = do
     print loops
     printLP lp
   (rc, msol) <- silence $ glpSolveVars mipDefaults lp
-  unless (rc == Success) $ do
-    putStrLn "!!!!!!!!!!!!!!!!!!!!!!!!!"
-    putStrLn "!!! ILP SOLVER FAILED !!!"
-    putStrLn "!!!!!!!!!!!!!!!!!!!!!!!!!"
+  -- unless (rc == Success) $ do
+  --   putStrLn "!!!!!!!!!!!!!!!!!!!!!!!!!"
+  --   putStrLn "!!! ILP SOLVER FAILED !!!"
+  --   putStrLn "!!!!!!!!!!!!!!!!!!!!!!!!!"
   return $
     if rc /= Success
       then Left $ "Solver returned " <> show rc
@@ -101,7 +105,8 @@ runILP mustBePublic cannotMark loops graph = do
       varKindConstraints
 
     objFun :: LinFunc String Int
-    objFun = add $ (1 *&) . markNode <$> nodes graph
+    objFun =
+      add $ (\n -> (ilpCosts IM.! n) *& (markNode n)) <$> nodes graph
 
     flowConstraints =
       for_ (nodes graph) $ \n -> do

@@ -4,6 +4,10 @@
 //
 //  Memory stage of the pipeline, responsible making memory requests.
 //
+
+`include "frv_lsu.v"
+`include "frv_pipeline_register_unrolled.v"
+
 module frv_pipeline_memory(
 
 input              g_clk           , // global clock
@@ -152,7 +156,7 @@ wire        lsu_half   = s3_uop[2:1] == LSU_HALF;
 wire        lsu_word   = s3_uop[2:1] == LSU_WORD;
 wire        lsu_signed = s3_uop[LSU_SIGNED]  ;
 
-wire [5:0]  lsu_cause = 
+wire [5:0]  lsu_cause =
            (   lsu_load&&lsu_a_error)? TRAP_LDALIGN  :
            (lsu_store  &&lsu_a_error)? TRAP_STALIGN  :
                                         0            ;
@@ -185,12 +189,12 @@ wire        bitw_gpr_wide   = fu_bit && (s3_uop == BIT_RORW);
 
 wire opra_ld_en = p_valid && (
     fu_alu || fu_mul || fu_lsu || fu_cfu || fu_csr || fu_asi || fu_bit ||
-    fu_rng ); 
+    fu_rng );
 
 wire oprb_ld_en = p_valid && (
     (fu_lsu                 )  ||
      fu_csr                    ||
-    (fwd_s3_wide            )  ); 
+    (fwd_s3_wide            )  );
 
 wire [XL:0] n_s4_opr_a  = lsu_valid ? n_s4_opr_a_lsu : s3_opr_a; // Operand A
 wire [XL:0] n_s4_opr_b  = lsu_valid ? n_s4_opr_b_lsu : s3_opr_b; // Operand B
@@ -275,14 +279,30 @@ wire [RL-1:0] pipe_reg_in = {
     n_s4_instr          // The instruction word
 };
 
-assign {
-    s4_rd             , // Destination register address
-    s4_uop            , // Micro-op code
-    s4_fu             , // Functional Unit
-    s4_trap           , // Raise a trap?
-    s4_size           , // Size of the instruction.
-    s4_instr            // The instruction word
-} = pipe_reg_out;
+// rewrite
+// assign {
+//     s4_rd             , // Destination register address
+//     s4_uop            , // Micro-op code
+//     s4_fu             , // Functional Unit
+//     s4_trap           , // Raise a trap?
+//     s4_size           , // Size of the instruction.
+//     s4_instr            // The instruction word
+// } = pipe_reg_out;
+assign s4_rd    = pipe_reg_out[41+FU+OP:37+FU+OP];
+assign s4_uop   = pipe_reg_out[36+FU+OP:36+FU];
+assign s4_fu    = pipe_reg_out[35+FU:35];
+assign s4_trap  = pipe_reg_out[34];
+assign s4_size  = pipe_reg_out[33:32];
+assign s4_instr = pipe_reg_out[31:0];
+
+// rewrite
+wire [RL-1:0]   i_mem_pipereg_mr_data;
+wire [XLEN-1:0] i_mem_pipereg_opr_a_mr_data;
+wire [XLEN-1:0] i_mem_pipereg_opr_b_mr_data;
+wire            i_mem_pipereg_opr_a_o_busy  ,
+                i_mem_pipereg_opr_a_o_valid ,
+                i_mem_pipereg_opr_b_o_busy  ,
+                i_mem_pipereg_opr_b_o_valid ;
 
 frv_pipeline_register #(
 .RLEN(RL),
@@ -293,7 +313,7 @@ frv_pipeline_register #(
 .i_data   (pipe_reg_in      ), // Input data from stage N
 .i_valid  (p_valid          ), // Input data valid?
 .o_busy   (p_busy           ), // Stage N+1 ready to continue?
-.mr_data  (                 ), // Most recent data into the stage.
+.mr_data  (i_mem_pipereg_mr_data), // Most recent data into the stage.
 .flush    (flush            ), // Flush the contents of the pipeline
 .flush_dat({RL{1'b0}}       ), // Data flushed into the pipeline.
 .o_data   (pipe_reg_out     ), // Output data for stage N+1
@@ -309,12 +329,12 @@ frv_pipeline_register #(
 .g_resetn (g_resetn         ), // synchronous reset
 .i_data   (n_s4_opr_a       ), // Input data from stage N
 .i_valid  (opra_ld_en       ), // Input data valid?
-.o_busy   (                 ), // Stage N+1 ready to continue?
-.mr_data  (                 ), // Most recent data into the stage.
+.o_busy   (i_mem_pipereg_opr_a_o_busy), // Stage N+1 ready to continue?
+.mr_data  (i_mem_pipereg_opr_a_mr_data), // Most recent data into the stage.
 .flush    (opra_flush       ), // Flush the contents of the pipeline
 .flush_dat(leak_prng        ), // Data flushed into the pipeline.
 .o_data   (s4_opr_a         ), // Output data for stage N+1
-.o_valid  (                 ), // Input data from stage N valid?
+.o_valid  (i_mem_pipereg_opr_a_o_valid), // Input data from stage N valid?
 .i_busy   (s4_busy          )  // Stage N+1 ready to continue?
 );
 
@@ -326,12 +346,12 @@ frv_pipeline_register #(
 .g_resetn (g_resetn         ), // synchronous reset
 .i_data   (n_s4_opr_b       ), // Input data from stage N
 .i_valid  (oprb_ld_en       ), // Input data valid?
-.o_busy   (                 ), // Stage N+1 ready to continue?
-.mr_data  (                 ), // Most recent data into the stage.
+.o_busy   (i_mem_pipereg_opr_b_o_busy), // Stage N+1 ready to continue?
+.mr_data  (i_mem_pipereg_opr_b_mr_data), // Most recent data into the stage.
 .flush    (oprb_flush       ), // Flush the contents of the pipeline
 .flush_dat(leak_prng        ), // Data flushed into the pipeline.
 .o_data   (s4_opr_b         ), // Output data for stage N+1
-.o_valid  (                 ), // Input data from stage N valid?
+.o_valid  (i_mem_pipereg_opr_b_o_valid), // Input data from stage N valid?
 .i_busy   (s4_busy          )  // Stage N+1 ready to continue?
 );
 
@@ -351,7 +371,7 @@ always @(posedge g_clk) begin
         rvfi_s4_rs3_addr  <= 0; // Source register address 3
         rvfi_s4_aux       <= 0; // Auxiliary data
         rvfi_s4_rng_data  <= 0; // RNG read data
-        rvfi_s4_rng_stat  <= 0; // RNG status 
+        rvfi_s4_rng_stat  <= 0; // RNG status
     end else if(pipe_progress) begin
         rvfi_s4_rs1_rdata <= rvfi_s3_rs1_rdata;
         rvfi_s4_rs2_rdata <= rvfi_s3_rs2_rdata;
@@ -361,7 +381,7 @@ always @(posedge g_clk) begin
         rvfi_s4_rs3_addr  <= rvfi_s3_rs3_addr ;
         rvfi_s4_aux       <= rvfi_s3_aux      ;
         rvfi_s4_rng_data  <= rvfi_s3_rng_data ; // RNG read data
-        rvfi_s4_rng_stat  <= rvfi_s3_rng_stat ; // RNG status 
+        rvfi_s4_rng_stat  <= rvfi_s3_rng_stat ; // RNG status
     end
 end
 

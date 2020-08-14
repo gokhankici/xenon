@@ -1,0 +1,72 @@
+{
+  "modules": {
+    "frv_pipeline_writeback": {
+      "annotations": {
+        "sink": [
+          "cf_req",
+          "cf_target",
+          "csr_addr",
+          "csr_en",
+          "csr_wdata",
+          "csr_wr",
+          "csr_wr_clr",
+          "csr_wr_set",
+          "dmem_ack",
+          "exec_mret",
+          "fwd_s4_csr",
+          "fwd_s4_load",
+          "fwd_s4_rd",
+          "fwd_s4_wdata",
+          "gpr_rd",
+          "gpr_wdata",
+          "gpr_wdata_hi",
+          "gpr_wen",
+          "gpr_wide",
+          "hold_lsu_req",
+          "int_trap_ack",
+          "s4_busy",
+          "trap_cause",
+          "trap_cpu",
+          "trap_int",
+          "trap_mtval",
+          "trap_pc",
+          "trs_instr",
+          "trs_pc",
+          "trs_valid"
+        ],
+        "source": [
+          "cf_ack",
+          "csr_error",
+          "csr_mepc",
+          "csr_mtvec",
+          "csr_rdata",
+          "dmem_error",
+          "dmem_rdata",
+          "dmem_recv",
+          "g_resetn",
+          "int_trap_cause",
+          "int_trap_req",
+          "mmio_error",
+          "mmio_rdata",
+          "s4_fu",
+          "s4_instr",
+          "s4_opr_a",
+          "s4_opr_b",
+          "s4_rd",
+          "s4_size",
+          "s4_trap",
+          "s4_uop",
+          "s4_valid",
+          "vector_intrs"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "include_dirs": [],
+  "top_module": "frv_pipeline_writeback"
+}

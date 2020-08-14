@@ -20,6 +20,7 @@
  */
 
 # include  <string>
+#include "Visitor.h"
 
 using namespace std;
 
@@ -46,6 +47,7 @@ class perm_string {
     private:
       friend class StringHeap;
       friend class StringHeapLex;
+      VISITOR_FRIENDS;
       perm_string(const char*t) : text_(t) { };
 
     private:

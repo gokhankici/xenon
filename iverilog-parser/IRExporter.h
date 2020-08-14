@@ -18,8 +18,18 @@
 class IRExporter
 {
 public:
-    IRExporter(Module *m) : module(m), moduleInstantiation(NULL) {}
-    IRExporter(Module *m, PGModule *mi) : module(m), moduleInstantiation(mi) {}
+    IRExporter(const IRExporter* top, Module *m) : IRExporter(top, m, NULL) { }
+
+    IRExporter(const IRExporter* top, Module *m, PGModule *mi)
+        : module(m), moduleInstantiation(mi)
+    {
+        if (top) {
+            for (auto ire : top->history) {
+                history.push_back(ire);
+            }
+            history.push_back(top);
+        }
+    }
 
     // -------------------------------------------------------------------------
     // IR Exporting Functions
@@ -60,6 +70,8 @@ private:
     const PGModule *const moduleInstantiation;
 
     static std::unordered_map<std::string, const IRModule *> irModules;
+
+    std::vector<const IRExporter*> history;
 
     friend std::ostream &operator<<(std::ostream &, const IRExporter &);
 };

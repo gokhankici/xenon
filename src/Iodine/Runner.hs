@@ -86,12 +86,12 @@ verilogToIR iverilogDir verilogFile topModule includeDirs = do
         case includeDirs of
           [] -> return [verilogFile]
           _  -> createIncludesFile >> return ["-F", includesFile, verilogFile]
-      putStrLn $ foldl1' (++) $ intersperse " " (preprocessor : args)
       (rc, out, err) <- readProcessWithExitCode preprocessor args ""
       case rc of
         ExitSuccess ->
           writeFile preprocFile out
         ExitFailure _ -> do
+          putStrLn $ cmdStr (preprocessor : args)
           hPutStrLn stderr "Preprocessing of the following file failed:"
           hPutStrLn stderr verilogFile
           hPutStrLn stderr err
@@ -108,6 +108,8 @@ verilogToIR iverilogDir verilogFile topModule includeDirs = do
             else canonicalizePath (replaceFileName verilogFile i)
                  >>= hPutStrLn h
 
+    cmdStr = foldl1' (++) . intersperse " "
+
     -- compile the Verilog file into IR
     runIVL = do
       let ivl     = iverilogDir </> "ivl"
@@ -119,6 +121,7 @@ verilogToIR iverilogDir verilogFile topModule includeDirs = do
       case rc of
         ExitSuccess -> return ()
         ExitFailure _ -> do
+          putStrLn $ cmdStr $ ivl : ivlArgs
           printMsg "Generating IR from the following Verilog file failed:" err
           exitFailure
 

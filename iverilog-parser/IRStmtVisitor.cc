@@ -115,7 +115,7 @@ void IRStmtVisitor::visit(PGModule *gm)
 
     if (!IRExporter::moduleExists(module_name))
     {
-        IRExporter submoduleExporter(mod, gm);
+        IRExporter submoduleExporter(this->irExporter, mod, gm);
         submoduleExporter.extractModule();
     }
 
