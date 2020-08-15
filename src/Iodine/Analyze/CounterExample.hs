@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
 
 module Iodine.Analyze.CounterExample
   ( readFixpointTrace
@@ -164,9 +165,6 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
       mAnnots              = toModuleAnnotations topmoduleName af
       topmoduleAnnots      = mAnnots ^. moduleAnnotations
       srcs                 = topmoduleAnnots ^. sources
-      snks                 = topmoduleAnnots ^. sinks
-      ieVars               = topmoduleAnnots ^. initialEquals
-      aeVars               = topmoduleAnnots ^. alwaysEquals
       topModule            = fromJust $ moduleMap ^. at topmoduleName
       topModuleIdCheck     = (`elem` (getData <$> alwaysBlocks topModule))
       ms@ModuleSummary{..} = fromJust $ summaryMap ^. at topmoduleName
@@ -205,6 +203,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
 
   let nonCtTree =
         let g = createDepTreeHelper getHornCTNo
+            snks = topmoduleAnnots ^. sinks
             revG = G.grev g
             nodesToKeep =
               IS.toList $
@@ -215,38 +214,18 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
               ) IS.empty snks
         in G.subgraph nodesToKeep g
 
-  let ns = G.labNodes nonCtTree
-      nonPosNodes = filter ((<= 0) . snd) ns
-      in unless (null nonPosNodes) $ do
-           for_ nonPosNodes print
-           error "nonCtTree labels must be positive"
+  -- sanity check
+  do let ns = G.labNodes nonCtTree
+         nonPosNodes = filter ((<= 0) . snd) ns
+     unless (null nonPosNodes) $ do
+       for_ nonPosNodes print
+       error "nonCtTree labels must be positive"
 
-  -- these are the root causes of the verification failure
-  let nonCtTreeRoots = fmap (first toName) <$> getRootLikeNodes nonCtTree
-
-  putStrLn "### NON CT TREE ROOTS #############################################"
-  for_ nonCtTreeRoots (traverse_ print) >> putStrLn ""
-
-  let minCtTreeRoots :: [(Id, Int)] =
-        let getMin = minimum . fmap snd
-            clustersWithMinIterNos = (\l -> (l, getMin l)) <$> nonCtTreeRoots
-            minClusterIterNo = getMin clustersWithMinIterNos
-        in nub' id
-           [ l
-           | (c, i) <- clustersWithMinIterNos
-           , i == minClusterIterNo
-           , l <- c
-           ]
-
-  printf "Min roots: %s\n\n" $ show $ fst <$> minCtTreeRoots
+  minCtTreeRoots <- computeMinCTRoots nonCtTree toName
 
   when generateGraphPDF $ do
     writeFile "nonCtTree.dot" $ toCtTreeDotStr nonCtTree
     callDot "nonCtTree.dot" "nonCtTree.pdf"
-
-  -- ---------------------------------------------------------------------------
-  -- 2. control-flow graph
-  -- ---------------------------------------------------------------------------
 
   let lastTraceElementPubs =
         let (_maxIterNo, (_constraintId, qualMap)) = IM.findMax fpTrace
@@ -269,6 +248,128 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
         btmLookupF topModuleIdCheck fpTraceDiff Q_PUB v <|>
         if v `elem` lastTraceElementPubs then Nothing else Just 0
 
+  let (ilpCostMap, varDepGraph0) =
+        computeILPCosts
+        topModule moduleMap
+        variableDependencies getDeps toNode
+        ((+ 1) $ fst $ IM.findMax invVariableDependencyNodeMap)
+        srcs
+      varDepGraph =
+        G.nfilter (\n -> IM.member n ilpCostMap) varDepGraph0
+  let ilpCosts = (ilpCostMap IM.!)
+
+  secondAndThirdPhase PhaseData{ nonPublicNodes = mempty
+                               , ..
+                               }
+
+type IndexLookup = Id -> Maybe Int
+
+data PhaseData = PhaseData
+     { nonCtTree            :: TstG
+     , minCtTreeRoots       :: [(Id, Int)] -- ^ variable name & iteration number
+     , createDepTreeHelper  :: IndexLookup -> TstG
+     , enableAbductionLoop  :: Bool
+     , getDeps              :: Id -> [(Id, VarDepEdgeType)]
+     , getHornPubNo         :: IndexLookup
+     , ilpCosts             :: Int -> Integer
+     , isReg                :: Id -> Bool
+     , iterToConstraintType :: Int -> Maybe HornType
+     , moduleMap            :: ModuleMap
+     , ms                   :: ModuleSummary
+     , toName               :: Int -> Id
+     , toNode               :: Id -> Int
+     , topModule            :: Module Int
+     , topmoduleAnnots      :: Annotations
+     , varNames             :: L Id
+     , varDepGraph          :: VarDepGraph
+     , nonPublicNodes       :: IS.IntSet
+     , isHorn               :: Id -> Bool
+     }
+
+-- -----------------------------------------------------------------------------
+secondAndThirdPhase :: PhaseData -> IO ()
+-- -----------------------------------------------------------------------------
+secondAndThirdPhase PhaseData{..} | not enableAbductionLoop = return ()
+
+secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
+  putStrLn "-------------------------------------------------------------------"
+  putStrLn "public nodes"
+  putStrLn "-------------------------------------------------------------------"
+  let invVarDepGraph = G.grev varDepGraph
+      srcs = topmoduleAnnots ^. sources
+      registerDependencies v =
+        let ds = G.reachable (toNode v) invVarDepGraph
+        in filter isReg $ toName <$> ds
+      sourceDeps v =
+        let ds = G.reachable (toNode v) invVarDepGraph
+        in filter (`elem` srcs) $ toName <$> ds
+  for_ varNames $ \v ->
+    unless (toNode v `IS.member` nonPublicNodes) $ do
+      printf " - %s (%s%s)\n" v
+        (if isReg v  then " R " else " W " :: String)
+        (if isHorn v then " H " else " . " :: String)
+      printf "   - register dependencies: %s\n" (show $ registerDependencies v)
+      printf "   - source dependencies:   %s\n" (show $ sourceDeps v)
+  putStrLn "-------------------------------------------------------------------"
+
+  let snks = topmoduleAnnots ^. sinks
+      ilpGraph = G.nfilter (`IS.member` nonPublicNodes) varDepGraph
+      cannotMarkFilter v = T.isPrefixOf inlinePrefix v && not (null $ getDeps v)
+      cannotBeMarked =
+        let extraUnmarked1 =
+              if doNotMarkSubmoduleVariables
+              then SQ.filter cannotMarkFilter varNames
+              else mempty
+            extraUnmarked2 = toSequence snks
+        in toList $ fmap toNode $
+           (toSequence $ topmoduleAnnots ^. cannotMarks)
+           <> extraUnmarked1
+           <> extraUnmarked2
+      loops = let (pubSCC, _) = sccGraph ilpGraph
+              in [ IS.toList l
+                 | sccN <- G.nodes pubSCC -- sccN is a components
+                 , null $ G.pre pubSCC sccN -- and it is a root
+                 , let l = fromJust (G.lab pubSCC sccN)
+                 , IS.size l > 1
+                 ]
+
+  writeFile "nonPubTree2.dot" $
+    toDotStr
+    (\n -> toName n <> " " <>
+           if n `elem` cannotBeMarked then "***" else ""
+    )
+    (const "")
+    edgeStyle
+    ilpGraph
+  callDot "nonPubTree2.dot" "nonPubTree2.pdf"
+
+  putStrLn "-------------------------------------------------------------------"
+  putStrLn "\n\n\n"
+  putStrLn "minCtTreeRoots is empty ..."
+  putStrLn "enter a variable name to examine it by itself:"
+
+  mui <- getUserInput
+
+  let validInput = maybe False (`elem` varNames) mui
+      mustBePublic = toNode <$> toList mui
+
+  if validInput then do
+    result <- runILPLoop mustBePublic cannotBeMarked loops ilpGraph ilpCosts toName
+    print result
+    secondAndThirdPhase PhaseData{..}
+  else do
+    putStrLn "invalid/empty user input"
+
+secondAndThirdPhase PhaseData{..} = do
+  let ModuleSummary{..} = ms
+      snks   = topmoduleAnnots ^. sinks
+      ieVars = topmoduleAnnots ^. initialEquals
+      aeVars = topmoduleAnnots ^. alwaysEquals
+
+  -- ---------------------------------------------------------------------------
+  -- 2. control-flow graph
+  -- ---------------------------------------------------------------------------
+
   -- first create the cfg for every variable
   let nonPubTree0 = createDepTreeHelper getHornPubNo
 
@@ -290,6 +391,16 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
             nodesToKeep  = foldl' go IS.empty nonPubTreeLeaves
         in G.grev $ G.nfilter (`IS.member` nodesToKeep) revG
 
+  putStrLn "### NON PUBLIC TREE REGISTERS #####################################"
+  for_ (G.nodes nonPubTree) $ \n -> do
+    let v = toName n
+        isIE = v `elem` topmoduleAnnots ^. initialEquals
+        isAE = v `elem` topmoduleAnnots ^. alwaysEquals
+        mkFlag b s = if b then " " <> s else "" :: String
+    when (isReg v && not isAE) $
+      printf " - %s%s\n" v (mkFlag isIE "(I)")
+  putStrLn "\n"
+
   putStrLn "### NON PUBLIC TREE LEAVES ########################################"
   for_ nonPubTreeLeaves (putStrLn . T.unpack) >> putStrLn ""
 
@@ -308,26 +419,21 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
   -- 3. MILP
   -- ---------------------------------------------------------------------------
 
-  let ilpCosts =
-        computeILPCosts
-        topModule moduleMap
-        variableDependencies varDepMap toNode
-        ((+ 1) $ fst $ IM.findMax invVariableDependencyNodeMap)
-        srcs
-  print ilpCosts
-
   putStrLn "### ILP PHASE #####################################################"
 
   let ilpGraph       = nonPubTree
       mustBePublic   = toNode <$> nonPubTreeLeaves
       cannotMarkFilter v = T.isPrefixOf inlinePrefix v && not (null $ getDeps v)
       cannotBeMarked =
-        let extraUnmarked =
+        let extraUnmarked1 =
               if doNotMarkSubmoduleVariables
               then SQ.filter cannotMarkFilter varNames
               else mempty
+            extraUnmarked2 = toSequence snks
         in toList $ fmap toNode $
-           (toSequence $ topmoduleAnnots ^. cannotMarks) <> extraUnmarked
+           (toSequence $ topmoduleAnnots ^. cannotMarks)
+           <> extraUnmarked1
+           <> extraUnmarked2
       loops = let (pubSCC, _) = sccGraph ilpGraph
               in [ IS.toList l
                  | sccN <- G.nodes pubSCC -- sccN is a components
@@ -335,18 +441,38 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
                  , let l = fromJust (G.lab pubSCC sccN)
                  , IS.size l > 1
                  ]
-  for_ loops $ \l -> printf "loop: %s\n" (show $ toName <$> l)
+
   ilpResult <- if enableAbductionLoop
                then runILPLoop mustBePublic cannotBeMarked loops ilpGraph ilpCosts toName
                else runILP     mustBePublic cannotBeMarked loops ilpGraph ilpCosts
+
   case ilpResult of
+
     Left errMsg -> do
+
       putStrLn ""
       putStrLn $ "ilp solver did not succeed: " <> errMsg
-      putStrLn "try making some of these public: "
-      for_ minCtTreeRoots $ \ (v, _) ->
-        printf "- %s\n" v
+      putStrLn ""
+
+      printf "must be public:   %s\n\n" $ show $ toName <$> mustBePublic
+      printf "cannot be marked: %s\n\n" $ show $ toName <$> cannotBeMarked
+
+      let nodesToRemove = toNode . fst <$> minCtTreeRoots
+      let nonCtTree' = G.nfilter (`notElem` nodesToRemove) nonCtTree
+      minCtTreeRoots' <- computeMinCTRoots nonCtTree' toName
+
+      secondAndThirdPhase PhaseData { nonCtTree      = nonCtTree'
+                                    , minCtTreeRoots = minCtTreeRoots'
+                                    , nonPublicNodes    =
+                                        if IS.null nonPublicNodes
+                                        then nonPublicNodes
+                                             <> (IS.fromList $ G.nodes nonPubTree0)
+                                        else nonPublicNodes
+                                    , ..
+                                    }
+
     Right (cannotMark', pubNodes, markedNodes) -> do
+
       let sep = putStrLn $ replicate 80 '-'
           prints = traverse_ (printf "- %s\n") . sort . fmap (T.unpack . toName)
       sep
@@ -366,52 +492,80 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
       putStrLn "cannotMark':" >> putStrLn "---" >> print (filter cannotMarkFilter $ toName <$> cannotMark')
       sep
 
-  when generateGraphPDF $ do
-    writeFile "nonPubTreeSCC.dot" $
-      toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
-    callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
+      when generateGraphPDF $ do
+        writeFile "nonPubTreeSCC.dot" $
+          toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
+        callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
 
 
+-- -----------------------------------------------------------------------------
+computeMinCTRoots :: TstG -> (Int -> Id) -> IO [(Id, Int)]
+-- -----------------------------------------------------------------------------
+computeMinCTRoots nonCtTree toName = do
+  -- these are the root causes of the verification failure
+  let nonCtTreeSCCRoots = fmap (first toName) <$> getRootLikeNodes nonCtTree
+
+  putStrLn "### NON CT TREE ROOTS #############################################"
+  for_ nonCtTreeSCCRoots (traverse_ print) >> putStrLn ""
+
+  let minCtTreeRoots :: [(Id, Int)] =
+        let getMin = minimum . fmap snd
+            clustersWithMinIterNos = (\l -> (l, getMin l)) <$> nonCtTreeSCCRoots
+            minClusterIterNo = getMin clustersWithMinIterNos
+        in nub' id
+           [ l
+           | (c, i) <- clustersWithMinIterNos
+           , i == minClusterIterNo
+           , l <- c
+           ]
+
+  printf "Min roots: %s\n\n" $ show $ fst <$> minCtTreeRoots
+
+  return minCtTreeRoots
+
+
+-- -----------------------------------------------------------------------------
 computeILPCosts :: G.DynGraph gr
                 => Module Int
                 -> ModuleMap
                 -> gr () VarDepEdgeType
-                -> HM.HashMap Id [(Id, VarDepEdgeType)]
+                -> (Id -> [(Id, VarDepEdgeType)])
                 -> (Id -> Int)
                 -> Int
                 -> Ids
-                -> IM.IntMap Int
-computeILPCosts topModule moduleMap varDepGraph varDepMap toNode rootNode srcs =
-  foldl' addCost mempty paths
+                -> (IM.IntMap Integer, gr () VarDepEdgeType)
+-- -----------------------------------------------------------------------------
+computeILPCosts topModule moduleMap varDepGraph getDeps toNode rootNode srcs =
+  (foldl' addCost mempty paths, fixedG)
   where
-    costMultiplier = 5
+    distToCost d = 10 * (2 ^ d)
 
     addCost _ (G.LP []) = error "unreachable"
-    addCost m (G.LP ((n, c):_)) =
+    addCost m (G.LP ((n, d):_)) =
       if n /= rootNode
-      then IM.insert n (c * costMultiplier) m
+      then IM.insert n (distToCost d) m
       else m
 
-    paths = GSP.spTree rootNode fixedG2
+    paths = GSP.spTree rootNode fixedG_edgeCosts
 
-    fixedG2 = foldl' (flip G.insEdge) fixedG1 extraNodes
-    extraNodes = (\s -> (rootNode, toNode s, 1)) <$> toList srcs
-    fixedG1 = G.insNode (rootNode, ()) fixedG0
+    fixedG_edgeCosts = G.emap (const 1) fixedG_withEdges
+    fixedG_withEdges = foldl' (flip G.insEdge) fixedG_withRoot extraNodes
+    extraNodes       = (\s -> (rootNode, toNode s, Explicit False)) <$> toList srcs
+    fixedG_withRoot  = G.insNode (rootNode, ()) fixedG
 
-    fixedG0 =
-      G.emap (const 1) $
+    fixedG =
       foldl' (\g1 ModuleInstance{..} ->
         let oPorts = moduleOutputs (moduleMap HM.! moduleInstanceType) mempty in
         foldl' (\g2 oPort ->
           let child = varName (moduleInstancePorts HM.! oPort) in
-          let es = varDepMap HM.! child in
+          let es = getDeps child in
           foldl' (\g3 (parent, edgeType) ->
             G.insEdge (toNode parent, toNode child, edgeType) g3
           ) g2 es
         ) g1 oPorts
       ) varDepGraph (moduleInstances topModule)
 
-
+-- -----------------------------------------------------------------------------
 -- | label of the parent node is greater than its children
 createDepTree :: L Id                            -- ^ variables
               -> (Id -> [(Id, VarDepEdgeType)])  -- ^ get dependencies
@@ -420,6 +574,7 @@ createDepTree :: L Id                            -- ^ variables
               -> (Id -> Bool)                    -- ^ is horn variable
               -> (Id -> Maybe Int)               -- ^ get lost iteration no of horn variables
               -> G.Gr Int VarDepEdgeType         -- ^ dependency graph
+-- -----------------------------------------------------------------------------
 createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
   G.mkGraph nodes edges
   where
@@ -518,6 +673,7 @@ createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
                  is2 -> Just $ minimum is2
              -- if there is a dependency with missing iter count ...
              _ -> Nothing
+
 
 callDot :: String -> String -> IO ()
 callDot i o = do

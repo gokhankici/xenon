@@ -2,6 +2,31 @@
   "modules": {
     "frv_pipeline_writeback": {
       "annotations": {
+        "source": [
+          "cf_ack",
+          "csr_error",
+          "csr_mepc",
+          "csr_mtvec",
+          "csr_rdata",
+          "dmem_error",
+          "dmem_rdata",
+          "dmem_recv",
+          "g_resetn",
+          "int_trap_cause",
+          "int_trap_req",
+          "mmio_error",
+          "mmio_rdata",
+          "s4_fu",
+          "s4_instr",
+          "s4_opr_a",
+          "s4_opr_b",
+          "s4_rd",
+          "s4_size",
+          "s4_trap",
+          "s4_uop",
+          "s4_valid",
+          "vector_intrs"
+        ],
         "sink": [
           "cf_req",
           "cf_target",
@@ -34,37 +59,34 @@
           "trs_pc",
           "trs_valid"
         ],
-        "source": [
-          "cf_ack",
-          "csr_error",
-          "csr_mepc",
-          "csr_mtvec",
-          "csr_rdata",
-          "dmem_error",
-          "dmem_rdata",
-          "dmem_recv",
-          "g_resetn",
-          "int_trap_cause",
-          "int_trap_req",
-          "mmio_error",
-          "mmio_rdata",
+        "initial_eq": [
+          "cfu_done",
+          "dmem_error_seen",
+          "lsu_rsp_seen",
+          "trap_int_pending"
+        ],
+        "always_eq": [
           "s4_fu",
-          "s4_instr",
-          "s4_opr_a",
-          "s4_opr_b",
-          "s4_rd",
-          "s4_size",
-          "s4_trap",
           "s4_uop",
+          "csr_error",
+          "mmio_error",
+          "dmem_error",
+          "g_resetn",
+          "cf_ack",
+          "int_trap_req",
+          "dmem_recv",
+          "s4_trap",
           "s4_valid",
-          "vector_intrs"
+          "lsu_mmio"
+        ],
+        "cannot_mark": [],
+        "assert_eq": [
+          "cf_req"
         ]
       },
       "clock": [
         "g_clk"
-      ],
-      "qualifiers": [],
-      "inline": false
+      ]
     }
   },
   "include_dirs": [],

@@ -51,26 +51,41 @@
           "s4_valid"
         ],
         "always_eq": [
-          "g_resetn"
-        ]
+          "g_resetn",
+          "flush",
+          "s3_fu",
+          "s3_uop",
+          "s3_valid",
+          "leak_lkgcfg",
+          "hold_lsu_req",
+          "dmem_gnt",
+          "s4_busy",
+          "s3_opr_a"
+        ],
+        "cannot_mark": []
       },
       "clock": [
         "g_clk"
       ]
     },
     "frv_lsu": {
-      "annotations": {},
+      "annotations": {
+        "initial_eq": [
+          "lsu_finished",
+          "mmio_done"
+        ]
+      },
       "clock": [
         "g_clk"
       ],
-      "inline": false
+      "inline": true
     },
     "frv_pipeline_register": {
       "annotations": {},
       "clock": [
         "g_clk"
       ],
-      "inline": false
+      "inline": true
     }
   },
   "include_dirs": [],

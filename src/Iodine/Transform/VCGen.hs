@@ -1007,22 +1007,21 @@ computeAllInitialEqualVars modules = execState mempty $ for_ modules $ \m@Module
       Nothing -> modify @Ids (HS.insert v)
       Just FDEQReason{..} ->
         if | notNull dependsOnInputs ->
-               trace' "computeAllInitialEqualVars - dependsOnInputs" (moduleName, v, toList dependsOnInputs)
+               trace "computeAllInitialEqualVars - dependsOnInputs" (moduleName, v, toList dependsOnInputs)
            | notNull dependsOnReg ->
-               trace' "computeAllInitialEqualVars - dependsOnReg" (moduleName, v, toList dependsOnReg)
+               trace "computeAllInitialEqualVars - dependsOnReg" (moduleName, v, toList dependsOnReg)
            | notNull writtenByMI -> do
                leftovers <-
                  flip filterM (toList writtenByMI) $ \(miType, miVar) ->
                  gets @IdsMap (notElem miVar . (HM.! miType))
                if null leftovers
                  then modify (HS.insert v)
-                 else trace' "computeAllInitialEqualVars - writtenByMI" (moduleName, v, toList leftovers)
+                 else trace "computeAllInitialEqualVars - writtenByMI" (moduleName, v, toList leftovers)
            | otherwise ->
              trace "computeAllInitialEqualVars - weird" (moduleName, v)
   modify @IdsMap (at moduleName ?~ ies)
   where
     notNull = not . HS.null
-    trace' _ _ = return ()
 
 autoInitialEqualVars :: G sig m => Module Int -> m FDEQSt
 autoInitialEqualVars m@Module{..} = do
@@ -1067,11 +1066,12 @@ autoInitialEqualVarsRunOriginalNode n = do
       FDEQReadSt{..} <- ask
       let ies      = (as ^. initialEquals) <> (as ^. alwaysEquals)
           isIE     = nName `elem` ies
+          notAE    = nName `notElem` (as ^. alwaysEquals)
           isWire   = not . (`elem` mRegs)
           isIn     = nName `elem` mInputs
           nNameSet = HS.singleton nName
       st <-
-        if | isIn -> return $ Just mempty {dependsOnInputs = nNameSet} -- variable is an input
+        if | isIn && notAE -> return $ Just mempty {dependsOnInputs = nNameSet} -- variable is an input
            | isIE -> return Nothing -- variable is initial_eq
            | isWire nName ->
                case G.pre variableDependencies n of

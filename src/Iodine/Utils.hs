@@ -10,7 +10,7 @@ module Iodine.Utils
   , maybeToMonoid, catMaybes', toSequence
   , toHSet, twoPairs, insEdge, find', hmGet, hmGetEmpty, mkMap, sccGraph
   , assert, trace, output, groupSort, swap, nub', toDotStr, foldlM'
-  , silence
+  , silence, getUserInput
   ) where
 
 import           Iodine.Types
@@ -256,3 +256,11 @@ silence action = withFile "/dev/null" AppendMode prepareAndRun
             hSetBuffering h buffering
             hClose old
       bracket redirect restore (\_ -> go hs)
+
+getUserInput :: IO (Maybe Id)
+getUserInput = do
+  eof <- hIsEOF stdin
+  if eof
+    then return Nothing
+    else do i <- T.strip . T.pack <$> hGetLine stdin
+            if T.null i then return Nothing else return (Just i)

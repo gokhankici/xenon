@@ -3,23 +3,20 @@
 module Iodine.Analyze.ILP (runILPLoop, runILP) where
 
 import           Iodine.Types
-import           Iodine.Utils (silence)
+import           Iodine.Utils (silence, getUserInput)
 
 import           Control.Monad.LPMonad
 import           Data.LinearProgram.Common
 import           Data.LinearProgram as LP
 import qualified Data.Map as M
-import qualified Data.IntMap as IM
 import           Data.Graph.Inductive (Gr, nodes, pre)
 import           Data.Foldable
 import           Control.Monad
 import           Data.Maybe
 import           Data.List
-import qualified Data.Text as T
-import           System.IO
 import           Text.Printf
 
-type ILPM = LPM String Int
+type ILPM = LPM String Integer
 
 enableTrace :: Bool
 enableTrace = False
@@ -29,7 +26,7 @@ runILPLoop :: [Int]
            -> [Int]
            -> [[Int]]
            -> Gr a b
-           -> IM.IntMap Int
+           -> (Int -> Integer)
            -> (Int -> Id)
            -> IO (Either String ([Int], [Int], [Int]))
 runILPLoop mustBePublic cannotMark loops graph ilpCosts toName = do
@@ -37,7 +34,7 @@ runILPLoop mustBePublic cannotMark loops graph ilpCosts toName = do
   res <- runILP mustBePublic cannotMark loops graph ilpCosts
   case res of
     Left _ -> return res
-    Right (_, _, ms) | null ms -> return res
+    Right (_, _, ms) | null ms -> return (Left "nothing to mark")
     Right (_, _, ms) -> do
       let ms' = (\m -> (toName m, m)) <$> ms
           sep = putStrLn $ replicate 80 '-'
@@ -49,25 +46,20 @@ runILPLoop mustBePublic cannotMark loops graph ilpCosts toName = do
       case mUserInput of
         Nothing -> return res
         Just userInput -> do
-          let cannotMark' = maybe cannotMark (:cannotMark) (lookup userInput ms')
+          let mv = lookup userInput ms'
+          let cannotMark'= maybe cannotMark (:cannotMark) mv
           runILPLoop mustBePublic cannotMark' loops graph ilpCosts toName
-
-getUserInput :: IO (Maybe Id)
-getUserInput = do
-  eof <- hIsEOF stdin
-  if eof
-    then return Nothing
-    else do i <- T.strip . T.pack <$> hGetLine stdin
-            if T.null i then return Nothing else return (Just i)
 
 runILP :: [Int]
        -> [Int]
-           -> [[Int]]
+       -> [[Int]]
        -> Gr a b
-       -> IM.IntMap Int
+       -> (Int -> Integer)
        -> IO (Either String ([Int], [Int], [Int]))
-runILP mustBePublic0 cannotMark _ _ _ | null mustBePublic0 =
-  return (Right (cannotMark, mempty, mempty))
+runILP mustBePublic _ _ _ _ | null mustBePublic =
+  return (Left "must be public is empty")
+runILP _ _ _ graph _ | null (nodes graph) =
+  return (Left "graph is empty")
 runILP mustBePublic cannotMark loops graph ilpCosts = do
   let lp = execLPM lpm
   when enableTrace $ do
@@ -75,7 +67,8 @@ runILP mustBePublic cannotMark loops graph ilpCosts = do
     print cannotMark
     print loops
     printLP lp
-  (rc, msol) <- silence $ glpSolveVars mipDefaults lp
+  let slnc = if enableTrace then id else silence
+  (rc, msol) <- slnc $ glpSolveVars mipDefaults lp
   -- unless (rc == Success) $ do
   --   putStrLn "!!!!!!!!!!!!!!!!!!!!!!!!!"
   --   putStrLn "!!! ILP SOLVER FAILED !!!"
@@ -90,6 +83,7 @@ runILP mustBePublic cannotMark loops graph ilpCosts = do
            in Right (cannotMark, publicNodes, markedNodes)
   where
     -- mustBePublic = mustBePublic0 \\ cannotMark
+
     pubNode n  = "pub_" <> show n
     markNode n = "mark_" <> show n
 
@@ -104,16 +98,16 @@ runILP mustBePublic cannotMark loops graph ilpCosts = do
       boundaryConstraints
       varKindConstraints
 
-    objFun :: LinFunc String Int
+    objFun :: LinFunc String Integer
     objFun =
-      add $ (\n -> (ilpCosts IM.! n) *& (markNode n)) <$> nodes graph
+      add $ (\n -> ilpCosts n *& (markNode n)) <$> nodes graph
 
     flowConstraints =
       for_ (nodes graph) $ \n -> do
         let pn = pubNode n
             mn = markNode n
         let ps = pre graph n \\ [n]
-        let m = if null ps then 1 else length ps
+        let m = if null ps then 1 else fromIntegral $ length ps
         let lhs = linCombination [(- m, pn), (m, mn)]
         let lhs' = if null ps
                    then lhs
@@ -133,7 +127,7 @@ runILP mustBePublic cannotMark loops graph ilpCosts = do
 
     loopConstraints =
       for_ loops $ \l -> do
-        let s = length l
+        let s = fromIntegral $ length l
             lhs = add [(s *& markNode n) LP.- (1 *& pubNode n) | n <- l]
         geqTo lhs 0
 

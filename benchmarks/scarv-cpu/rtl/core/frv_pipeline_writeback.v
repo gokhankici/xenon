@@ -267,6 +267,9 @@ wire cfu_tgt_trap   = cfu_trap || s4_trap || lsu_trap || trap_int || csr_trap;
 // We need to write the next natural PC to a register.
 wire cfu_link       = fu_cfu && (s4_uop == CFU_JALI || s4_uop == CFU_JALR);
 
+reg foo;
+always @(*) foo = cf_req_noint;
+
 // Control flow change occuring due to anything except an interrupt.
 // Separate out interrupts for easier RVFI tracking of events.
 wire   cf_req_noint = cfu_cf_taken || cfu_trap || cfu_mret || s4_trap ||
