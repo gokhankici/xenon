@@ -1,0 +1,71 @@
+{
+  "modules": {
+    "frv_csrs": {
+      "annotations": {
+        "source": [
+          "csr_addr",
+          "csr_en",
+          "csr_wdata",
+          "csr_wr",
+          "csr_wr_clr",
+          "csr_wr_set",
+          "ctr_cycle",
+          "ctr_instret",
+          "ctr_time",
+          "exec_mret",
+          "g_resetn",
+          "mip_meip",
+          "mip_msip",
+          "mip_mtip",
+          "trap_cause",
+          "trap_cpu",
+          "trap_int",
+          "trap_mtval",
+          "trap_pc"
+        ],
+        "sink": [
+          "csr_error",
+          "csr_mepc",
+          "csr_mtvec",
+          "csr_rdata",
+          "inhibit_cy",
+          "inhibit_ir",
+          "inhibit_tm",
+          "leak_lkgcfg",
+          "mie_meie",
+          "mie_msie",
+          "mie_mtie",
+          "mstatus_mie",
+          "uxcrypto_b0",
+          "uxcrypto_b1",
+          "uxcrypto_ct",
+          "vector_intrs"
+        ],
+        "always_eq": [
+          "g_resetn",
+          "trap_int",
+          "trap_cpu",
+          "csr_wr",
+          "csr_wr_set",
+          "csr_wr_clr",
+		  "csr_addr",
+		  "mtvec_bad_write",
+		  "wen_valid_mcause",
+		  "exec_mret"
+        ],
+        "initial_eq": [
+          "p_trap_int",
+          "reg_mtvec_base"
+        ],
+        "cannot_mark": [
+          "csr_wdata"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    }
+  },
+  "include_dirs": [],
+  "top_module": "frv_csrs"
+}

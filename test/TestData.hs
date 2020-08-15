@@ -297,6 +297,7 @@ scarvCoreStubs = mkCollection "core" ts
                        , x </> "frv_pipeline_fetch.v"
                        , x </> "frv_pipeline_memory.v"
                        , x </> "frv_pipeline_writeback.v"
+                       , x </> "frv_csrs.v"
                        ]
          ]
 
