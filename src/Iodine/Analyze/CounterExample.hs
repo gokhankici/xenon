@@ -292,9 +292,6 @@ secondAndThirdPhase :: PhaseData -> IO ()
 secondAndThirdPhase PhaseData{..} | not enableAbductionLoop = return ()
 
 secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
-  putStrLn "-------------------------------------------------------------------"
-  putStrLn "public nodes"
-  putStrLn "-------------------------------------------------------------------"
   let invVarDepGraph = G.grev varDepGraph
       srcs = topmoduleAnnots ^. sources
       registerDependencies v =
@@ -303,14 +300,21 @@ secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
       sourceDeps v =
         let ds = G.reachable (toNode v) invVarDepGraph
         in filter (`elem` srcs) $ toName <$> ds
-  for_ varNames $ \v ->
-    unless (toNode v `IS.member` nonPublicNodes) $ do
-      printf " - %s (%s%s)\n" v
-        (if isReg v  then " R " else " W " :: String)
-        (if isHorn v then " H " else " . " :: String)
-      printf "   - register dependencies: %s\n" (show $ registerDependencies v)
-      printf "   - source dependencies:   %s\n" (show $ sourceDeps v)
+      printInfo v = do
+        let n = toNode v
+            skip = not (n `IS.member` nonPublicNodes) || inlinePrefix `T.isPrefixOf` v
+        unless skip $ do
+          printf " - %s (%s%s)\n" v
+            (if isReg v  then " R " else " W " :: String)
+            (if isHorn v then " H " else " . " :: String)
+          printf "   - register dependencies: %s\n" (show $ registerDependencies v)
+          printf "   - source dependencies:   %s\n" (show $ sourceDeps v)
+          putStrLn ""
+
   putStrLn "-------------------------------------------------------------------"
+  putStrLn "public nodes"
+  putStrLn "-------------------------------------------------------------------"
+  for_ varNames printInfo
 
   let snks = topmoduleAnnots ^. sinks
       ilpGraph = G.nfilter (`IS.member` nonPublicNodes) varDepGraph
@@ -354,6 +358,7 @@ secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
       mustBePublic = toNode <$> toList mui
 
   if validInput then do
+    printInfo (fromJust mui)
     result <- runILPLoop mustBePublic cannotBeMarked loops ilpGraph ilpCosts toName
     print result
     secondAndThirdPhase PhaseData{..}
@@ -454,8 +459,8 @@ secondAndThirdPhase PhaseData{..} = do
       putStrLn $ "ilp solver did not succeed: " <> errMsg
       putStrLn ""
 
-      printf "must be public:   %s\n\n" $ show $ toName <$> mustBePublic
-      printf "cannot be marked: %s\n\n" $ show $ toName <$> cannotBeMarked
+      -- printf "must be public:   %s\n\n" $ show $ toName <$> mustBePublic
+      -- printf "cannot be marked: %s\n\n" $ show $ toName <$> cannotBeMarked
 
       let nodesToRemove = toNode . fst <$> minCtTreeRoots
       let nonCtTree' = G.nfilter (`notElem` nodesToRemove) nonCtTree
@@ -480,7 +485,7 @@ secondAndThirdPhase PhaseData{..} = do
         then do putStrLn "\n\nHuh, there are no nodes to mark ..."
                 putStrLn "Maybe you should mark these non-constant-time leaf variables as public:"
                 print $ fst <$> minCtTreeRoots
-        else do putStrLn "marked nodes:" >> putStrLn "---" >> prints markedNodes
+        else return () -- do putStrLn "marked nodes:" >> putStrLn "---" >> prints markedNodes
       sep
       let initEqCandidates :: [Int] =
             filter
@@ -489,7 +494,7 @@ secondAndThirdPhase PhaseData{..} = do
             (nub' id $ pubNodes <> markedNodes)
       putStrLn "initial_eq candidates:" >> putStrLn "---" >> prints initEqCandidates
       sep
-      putStrLn "cannotMark':" >> putStrLn "---" >> print (filter cannotMarkFilter $ toName <$> cannotMark')
+      putStrLn "cannotMark':" >> putStrLn "---" >> print (filter (not . cannotMarkFilter) $ toName <$> cannotMark')
       sep
 
       when generateGraphPDF $ do

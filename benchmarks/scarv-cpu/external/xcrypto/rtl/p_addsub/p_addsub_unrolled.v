@@ -4,6 +4,11 @@
 //
 //  Implemented packed addition/subtraction for 32-bit 2s complement values.
 //
+
+`ifndef P_ADDSUB_DEFINED
+
+`define P_ADDSUB_DEFINED
+
 module p_addsub (
 
 input  wire [31:0]  lhs             , // Left hand input
@@ -320,3 +325,5 @@ assign carry_mask = { carry_mask_0
 	end
 
 endmodule
+
+`endif

@@ -25,10 +25,10 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import           Data.Maybe
 
--- import qualified Debug.Trace as DT
--- import qualified Data.Text as T
--- import Data.Graph.Inductive.Dot
--- import Text.Printf
+import qualified Debug.Trace as DT
+import qualified Data.Text as T
+import Data.Graph.Inductive.Dot
+import Text.Printf
 
 type DepGraph = Gr () Int
 
@@ -41,6 +41,8 @@ data St =
 
 makeLenses ''St
 
+printModuleDependencyGraph :: Bool
+printModuleDependencyGraph = False
 
 {- |
 Sort the given modules such that if a module m1 depends on m2, m2 appears
@@ -62,21 +64,22 @@ topsortModules topModuleName modules =
       topModuleNode `elem` G.reachable n g
     moduleNameMap =
       foldl' (\acc m@Module{..} -> HM.insert moduleName m acc) mempty modules
-    (g, moduleNodes) = usedByGraph modules
-    -- (_g, moduleNodes) = usedByGraph modules
-    -- g = DT.trace msg _g
-    -- msg = unlines [ printGraph _g (T.unpack . (moduleNodes IM.!))
-    --               , "total # instances " <> show totalModuleInstanceCount
-    --               ]
-    -- printGraph gr f =
-    --   showDot $ fglToDotString $
-    --   G.emap show $
-    --   G.gmap (\(ps,n,_,cs) -> (ps,n,f n,cs)) $ G.grev gr
-    -- totalModuleInstanceCount =
-    --   let ns = G.topsort _g
-    --       im = foldl' (\m n -> IM.insert n (1 + (sum $ (\(n2, c) -> (m IM.! n2) * c) <$> G.lpre _g n)) m) IM.empty ns
-    --       res = im IM.! last ns
-    --   in DT.trace (unlines $ (\(i :: Int, n) -> printf "%d: %s %d" i (moduleNodes IM.! n) (im IM.! n)) <$> (zip [1..] ns)) res
+    (_g, moduleNodes) = usedByGraph modules
+    g = if printModuleDependencyGraph
+        then DT.trace msg _g
+        else _g
+    msg = unlines [ printGraph _g (T.unpack . (moduleNodes IM.!))
+                  , "total # instances " <> show totalModuleInstanceCount
+                  ]
+    printGraph gr f =
+      showDot $ fglToDotString $
+      G.emap show $
+      G.gmap (\(ps,n,_,cs) -> (ps,n,f n,cs)) $ G.grev gr
+    totalModuleInstanceCount =
+      let ns = G.topsort _g
+          im = foldl' (\m n -> IM.insert n (1 + (sum $ (\(n2, c) -> (m IM.! n2) * c) <$> G.lpre _g n)) m) IM.empty ns
+          res = im IM.! last ns
+      in DT.trace (unlines $ (\(i :: Int, n) -> printf "%d: %s %d" i (moduleNodes IM.! n) (im IM.! n)) <$> (zip [1..] ns)) res
 
 
 {- |

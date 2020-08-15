@@ -4,6 +4,13 @@
 //
 //  Execute stage of the pipeline, responsible for ALU / LSU / Branch compare.
 //
+`include "frv_asi.v"
+`include "frv_alu.v"
+`include "xc_malu.v"
+`include "frv_bitwise_unrolled.v"
+`include "frv_rngif.v"
+`include "frv_pipeline_register_unrolled.v"
+
 module frv_pipeline_execute (
 
 input              g_clk           , // global clock
@@ -172,14 +179,14 @@ wire        imul_mulhu      = s2_uop == MUL_MULHU       ;
 wire        imul_rem        = s2_uop == MUL_REM         ;
 wire        imul_remu       = s2_uop == MUL_REMU        ;
 
-wire        imul_pmul       = 
+wire        imul_pmul       =
     (s2_uop == MUL_PMUL_L   || s2_uop == MUL_PMUL_H)   && XC_CLASS_PACKED;
 
 wire        imul_pclmul     =
     (s2_uop == MUL_PCLMUL_L || s2_uop == MUL_PCLMUL_H) && XC_CLASS_PACKED;
 
 wire        imul_clmul_r    = s2_uop == MUL_CLMUL_R     ;
-wire        imul_clmul      = s2_uop == MUL_CLMUL_L     || 
+wire        imul_clmul      = s2_uop == MUL_CLMUL_L     ||
                               s2_uop == MUL_CLMUL_H     ||
                               imul_clmul_r              ;
 wire        imul_madd       = XC_CLASS_MULTIARITH && s2_uop == MUL_MADD;
@@ -273,7 +280,7 @@ wire [4:0]  n_s3_uop_cfu   =
     cfu_always_take ? s2_uop                                        :
                       s2_uop                                        ;
 
-wire [XL:0] n_s3_opr_a_cfu = 
+wire [XL:0] n_s3_opr_a_cfu =
     cfu_jalr    ? {alu_add_result[XL:1],1'b0} :
                   {s2_opr_c      [XL:1],1'b0} ;
 
@@ -410,16 +417,16 @@ frv_alu i_alu (
 .alu_flush       (alu_flush       ), // flush the stage
 .alu_ready       (alu_ready       ), // stage ready to progress
 .alu_pw          (alu_pw          ), // Pack width specifier.
-.alu_op_add      (alu_op_add      ), // 
-.alu_op_sub      (alu_op_sub      ), // 
-.alu_op_xor      (alu_op_xor      ), // 
-.alu_op_or       (alu_op_or       ), // 
-.alu_op_and      (alu_op_and      ), // 
-.alu_op_shf      (alu_op_shf      ), // 
-.alu_op_rot      (alu_op_rot      ), // 
-.alu_op_shf_left (alu_op_shf_left ), // 
-.alu_op_shf_arith(alu_op_shf_arith), // 
-.alu_op_cmp      (alu_op_cmp      ), // 
+.alu_op_add      (alu_op_add      ), //
+.alu_op_sub      (alu_op_sub      ), //
+.alu_op_xor      (alu_op_xor      ), //
+.alu_op_or       (alu_op_or       ), //
+.alu_op_and      (alu_op_and      ), //
+.alu_op_shf      (alu_op_shf      ), //
+.alu_op_rot      (alu_op_rot      ), //
+.alu_op_shf_left (alu_op_shf_left ), //
+.alu_op_shf_arith(alu_op_shf_arith), //
+.alu_op_cmp      (alu_op_cmp      ), //
 .alu_op_unsigned (alu_op_unsigned ), //
 .alu_lt          (alu_lt          ), // Is LHS < RHS?
 .alu_eq          (alu_eq          ), // Is LHS = RHS?
@@ -544,7 +551,7 @@ wire [31:0] n_s3_instr = s2_instr; // The instruction word
 
 wire [ 4:0] n_s3_uop   = cfu_valid ? n_s3_uop_cfu : s2_uop  ; // Micro-op code
 
-wire        n_s3_trap  = s2_trap || 
+wire        n_s3_trap  = s2_trap ||
                          fu_lsu && (lsu_a_error);
 
 wire [5:0]  n_trap_cause =
@@ -553,7 +560,7 @@ wire [5:0]  n_trap_cause =
     fu_lsu && lsu_a_error && lsu_store  ? TRAP_STALIGN  :
                                           6'b0          ;
 
-wire [XL:0] n_s3_opr_a = 
+wire [XL:0] n_s3_opr_a =
     {XLEN{fu_asi}} & n_s3_opr_a_asi |
     {XLEN{fu_rng}} & n_s3_opr_a_rng |
     {XLEN{fu_alu}} & n_s3_opr_a_alu |
@@ -570,18 +577,18 @@ wire [XL:0] n_s3_opr_b =
         {XLEN{fu_mul}} & n_s3_opr_b_mul |
         {XLEN{fu_lsu}} & n_s3_opr_b_lsu |
         {XLEN{fu_cfu}} & n_s3_opr_b_cfu |
-        {XLEN{fu_csr}} & n_s3_opr_b_csr 
+        {XLEN{fu_csr}} & n_s3_opr_b_csr
     );
 
 wire opra_ld_en = p_valid && (
     fu_alu || fu_mul || fu_lsu || fu_cfu || fu_csr || fu_asi || fu_bit ||
-    fu_rng ); 
+    fu_rng );
 
 wire oprb_ld_en = p_valid && (
-    (fu_mul && imul_gpr_wide)  || 
+    (fu_mul && imul_gpr_wide)  ||
     (fu_lsu && lsu_store    )  ||
      fu_csr                    ||
-    (fu_bit && bitw_gpr_wide)  ); 
+    (fu_bit && bitw_gpr_wide)  );
 
 // Forwaring / bubbling signals.
 assign fwd_s2_rd    = s2_rd             ; // Writeback stage destination reg.
@@ -609,15 +616,32 @@ wire [RL-1:0] pipe_reg_in = {
     n_s3_instr          // The instruction word
 };
 
+// rewrite
+// assign {
+//     s3_rd             , // Destination register address
+//     s3_uop            , // Micro-op code
+//     s3_fu             , // Functional Unit
+//     s3_trap           , // Raise a trap?
+//     s3_size           , // Size of the instruction.
+//     s3_instr            // The instruction word
+// } = pipe_reg_out;
+assign s3_rd    = pipe_reg_out[41+FU+OP:37+FU+OP];
+assign s3_uop   = pipe_reg_out[36+FU+OP:36+FU];
+assign s3_fu    = pipe_reg_out[35+FU:35];
+assign s3_trap  = pipe_reg_out[34];
+assign s3_size  = pipe_reg_out[33:32];
+assign s3_instr = pipe_reg_out[31: 0];
 
-assign {
-    s3_rd             , // Destination register address
-    s3_uop            , // Micro-op code
-    s3_fu             , // Functional Unit
-    s3_trap           , // Raise a trap?
-    s3_size           , // Size of the instruction.
-    s3_instr            // The instruction word
-} = pipe_reg_out;
+// rewrite: extra wires to store the unused outputs
+wire [RL-1:0] i_execute_pipe_reg_mr_data       ,
+              i_execute_pipe_reg_opr_a_mr_data ,
+              i_execute_pipe_reg_opr_b_mr_data ;
+
+wire i_execute_pipe_reg_opr_a_o_busy  ,
+     i_execute_pipe_reg_opr_b_o_busy  ,
+     i_execute_pipe_reg_opr_a_o_valid ,
+     i_execute_pipe_reg_opr_b_o_valid ;
+
 
 frv_pipeline_register #(
 .RLEN(RL),
@@ -628,7 +652,7 @@ frv_pipeline_register #(
 .i_data   (pipe_reg_in      ), // Input data from stage N
 .i_valid  (p_valid          ), // Input data valid?
 .o_busy   (p_busy           ), // Stage N+1 ready to continue?
-.mr_data  (                 ), // Most recent data into the stage.
+.mr_data  (i_execute_pipe_reg_mr_data), // Most recent data into the stage.
 .flush    (flush            ), // Flush the contents of the pipeline
 .flush_dat({RL{1'b0}}       ), // Data flushed into the pipeline.
 .o_data   (pipe_reg_out     ), // Output data for stage N+1
@@ -644,12 +668,12 @@ frv_pipeline_register #(
 .g_resetn (g_resetn         ), // synchronous reset
 .i_data   (n_s3_opr_a       ), // Input data from stage N
 .i_valid  (opra_ld_en       ), // Input data valid?
-.o_busy   (                 ), // Stage N+1 ready to continue?
-.mr_data  (                 ), // Most recent data into the stage.
+.o_busy   (i_execute_pipe_reg_opr_a_o_busy), // Stage N+1 ready to continue?
+.mr_data  (i_execute_pipe_reg_opr_a_mr_data), // Most recent data into the stage.
 .flush    (opra_flush       ), // Flush the contents of the pipeline
 .flush_dat(leak_prng        ), // Data flushed into the pipeline.
 .o_data   (s3_opr_a         ), // Output data for stage N+1
-.o_valid  (                 ), // Input data from stage N valid?
+.o_valid  (i_execute_pipe_reg_opr_a_o_valid), // Input data from stage N valid?
 .i_busy   (s3_busy          )  // Stage N+1 ready to continue?
 );
 
@@ -661,12 +685,12 @@ frv_pipeline_register #(
 .g_resetn (g_resetn         ), // synchronous reset
 .i_data   (n_s3_opr_b       ), // Input data from stage N
 .i_valid  (oprb_ld_en       ), // Input data valid?
-.o_busy   (                 ), // Stage N+1 ready to continue?
-.mr_data  (                 ), // Most recent data into the stage.
+.o_busy   (i_execute_pipe_reg_opr_b_o_busy), // Stage N+1 ready to continue?
+.mr_data  (i_execute_pipe_reg_opr_b_mr_data), // Most recent data into the stage.
 .flush    (oprb_flush       ), // Flush the contents of the pipeline
 .flush_dat(leak_prng        ), // Data flushed into the pipeline.
 .o_data   (s3_opr_b         ), // Output data for stage N+1
-.o_valid  (                 ), // Input data from stage N valid?
+.o_valid  (i_execute_pipe_reg_opr_b_o_valid), // Input data from stage N valid?
 .i_busy   (s3_busy          )  // Stage N+1 ready to continue?
 );
 
@@ -731,4 +755,3 @@ end
 `endif
 
 endmodule
-

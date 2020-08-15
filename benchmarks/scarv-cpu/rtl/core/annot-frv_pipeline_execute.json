@@ -1,0 +1,242 @@
+{
+  "modules": {
+    "frv_pipeline_execute": {
+      "annotations": {
+        "source": [
+          "flush",
+          "g_resetn",
+          "leak_lkgcfg",
+          "leak_prng",
+          "rng_req_ready",
+          "rng_rsp_data",
+          "rng_rsp_status",
+          "rng_rsp_valid",
+          "s2_fu",
+          "s2_instr",
+          "s2_opr_a",
+          "s2_opr_b",
+          "s2_opr_c",
+          "s2_pw",
+          "s2_rd",
+          "s2_size",
+          "s2_trap",
+          "s2_uop",
+          "s2_valid",
+          "s3_busy",
+          "uxcrypto_b0",
+          "uxcrypto_b1",
+          "uxcrypto_ct"
+        ],
+        "sink": [
+          "fwd_s2_csr",
+          "fwd_s2_load",
+          "fwd_s2_rd",
+          "fwd_s2_wdata",
+          "fwd_s2_wdata_hi",
+          "fwd_s2_wide",
+          "rng_req_data",
+          "rng_req_op",
+          "rng_req_valid",
+          "rng_rsp_ready",
+          "s2_busy",
+          "s3_fu",
+          "s3_instr",
+          "s3_opr_a",
+          "s3_opr_b",
+          "s3_rd",
+          "s3_size",
+          "s3_trap",
+          "s3_uop",
+          "s3_valid"
+        ],
+        "initial_eq": [
+          "asi_done"
+        ],
+        "always_eq": [
+          "flush",
+          "g_resetn",
+          "leak_lkgcfg",
+          "rng_req_ready",
+          "rng_rsp_valid",
+          "s2_fu",
+          "s2_pw",
+          "s2_uop",
+          "s2_valid",
+          "s3_busy"
+        ],
+        "cannot_mark": [
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu": {
+      "annotations": {
+        "initial_eq": [
+          "count",
+          "fsm",
+          "n_fsm"
+        ]
+      },
+      "clock": [
+        "clock"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_malu_divrem": {
+      "annotations": {
+        "initial_eq": [
+          "div_run"
+        ]
+      },
+      "clock": [
+        "clock"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_malu_muldivrem": {
+      "annotations": {},
+      "clock": [
+        "clock"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_rngif": {
+      "annotations": {
+        "initial_eq": [
+          "req_done"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_pipeline_register": {
+      "annotations": {},
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_aessub_sbox_fwd": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu_long": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aessub": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_bitwise": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "p_addsub": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu_mul": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu_pmul": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_alu": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "b_bop": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aessub_sbox_inv": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "b_lut": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "p_shfrot": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_sha256": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aesmix": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_sha3": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aessub_sbox": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_asi": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    }
+  },
+  "include_dirs": [
+    "../../external/xcrypto/rtl/xc_sha3",
+    "../../external/xcrypto/rtl/xc_sha256/",
+    "../../external/xcrypto/rtl/xc_aessub",
+    "../../external/xcrypto/rtl/xc_aesmix",
+    "../../external/xcrypto/rtl/xc_malu",
+    "../../external/xcrypto/rtl/p_addsub"
+  ],
+  "top_module": "frv_pipeline_execute"
+}
