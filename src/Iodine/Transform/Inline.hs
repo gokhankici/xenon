@@ -100,7 +100,7 @@ type NewData = ( L Variable
 
 data InlineSt = InlineSt { getCurrentModuleName :: Id
                          , getMIType            :: Id
-                         , getMIName            :: Int
+                         , getMIId              :: Int
                          , getClockMapping      :: Id -> Maybe Id
                          }
 
@@ -111,6 +111,7 @@ inlineInstance :: ( Has (State AnnotationFile) sig m
                   )
                => MI -> m NewData
 inlineInstance mi@ModuleInstance{..} = do
+  inlineSt <- ask
   m@Module{..} :: M <- gets (HM.! moduleInstanceType)
   vs  <- traverse fixVariable variables
   cis <- traverse (\(v,e) -> (,) <$> fixName v <*> return e) constantInits
@@ -120,7 +121,10 @@ inlineInstance mi@ModuleInstance{..} = do
   clks <- getMIClocks mi
   let miInputs = moduleInputs m clks
       miOutputs = moduleOutputs m mempty
-      mkPortVar p = Variable <$> fixName p <*> asks getCurrentModuleName <*> return pureA
+      mkPortVar p = Variable
+                    <$> fixName p
+                    <*> return (getCurrentModuleName inlineSt)
+                    <*> return pureA
   extraGS <- for (toSequence miInputs) $ \i -> do
     let e = moduleInstancePorts HM.! i
     lhs <- mkPortVar i
@@ -135,8 +139,16 @@ inlineInstance mi@ModuleInstance{..} = do
   miMA <- gets (^. afAnnotations
                  . to (HM.lookupDefault emptyModuleAnnotations moduleInstanceType))
   let computeNewAnnots l = HS.fromList <$> traverse fixName (miMA ^. moduleAnnotations . l . to toList)
-  extraIEs <- computeNewAnnots initialEquals
+  extraIEs1 <- computeNewAnnots initialEquals
   extraAEs <- computeNewAnnots alwaysEquals
+  let instanceIEs = miMA ^. moduleAnnotations . instanceInitialEquals
+      instanceIEUpdate iie =
+        if iie ^. instanceIEParentModule == getCurrentModuleName inlineSt &&
+           iie ^. instanceIEInstanceName == moduleInstanceName
+        then HS.fromList <$> traverse fixName (toList $ iie ^. instanceIEVariables)
+        else return mempty
+  extraIEs2 <- mfoldM instanceIEUpdate instanceIEs
+  let extraIEs = extraIEs1 <> extraIEs2
   newQualifiers <- traverse fixQualifier (miMA ^. moduleQualifiers)
   let updateA = over initialEquals (<> extraIEs) . over alwaysEquals (<> extraAEs)
       updateMA = Just .
@@ -165,7 +177,7 @@ inlinePrefix = "IodInl_M_"
 fixName :: Has (Reader InlineSt) sig m => Id -> m Id
 fixName v = do
   miType <- asks getMIType
-  miName <- asks getMIName
+  miName <- asks getMIId
   return $ inlinePrefix <> miType <> "_V_" <> v <> "_T" <> T.pack (show miName)
 
 fixExpr :: Has (Reader InlineSt) sig m => Expr a -> m (Expr a)

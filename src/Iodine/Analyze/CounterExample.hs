@@ -38,7 +38,7 @@ import qualified Language.Fixpoint.Types       as FT
 
 import           Control.Applicative
 import           Control.DeepSeq (deepseq)
-import           Control.Lens
+import           Control.Lens hiding ((<.>))
 import           Control.Monad
 import           Data.Bifunctor
 import           Data.Foldable
@@ -58,6 +58,7 @@ import           GHC.Generics hiding ( moduleName )
 -- import           System.Exit (exitFailure)
 import           System.Process
 import           Text.Printf
+import           System.FilePath
 
 type ConstraintTypes = IM.IntMap HornClauseId
 type ModuleMap = HM.HashMap Id (Module Int)
@@ -223,9 +224,8 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
 
   minCtTreeRoots <- computeMinCTRoots nonCtTree toName
 
-  when generateGraphPDF $ do
-    writeFile "nonCtTree.dot" $ toCtTreeDotStr nonCtTree
-    callDot "nonCtTree.dot" "nonCtTree.pdf"
+  unless (nodeSize nonCtTree > maxFeasibleNodeCount) $ do
+    printGraph "nonCtTree" $ toCtTreeDotStr nonCtTree
 
   let lastTraceElementPubs =
         let (_maxIterNo, (_constraintId, qualMap)) = IM.findMax fpTrace
@@ -337,15 +337,16 @@ secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
                  , IS.size l > 1
                  ]
 
-  writeFile "nonPubTree2.dot" $
-    toDotStr
-    (\n -> toName n <> " " <>
-           if n `elem` cannotBeMarked then "***" else ""
-    )
-    (const "")
-    edgeStyle
-    ilpGraph
-  callDot "nonPubTree2.dot" "nonPubTree2.pdf"
+  unless (nodeSize ilpGraph > maxFeasibleNodeCount) $
+    let dotStr =
+          toDotStr
+          (\n -> toName n <> " " <>
+                 if n `elem` cannotBeMarked then "***" else ""
+          )
+          (const "")
+          edgeStyle
+          ilpGraph
+    in printGraph "nonPubTree2" dotStr
 
   putStrLn "-------------------------------------------------------------------"
   putStrLn "\n\n\n"
@@ -409,16 +410,16 @@ secondAndThirdPhase PhaseData{..} = do
   putStrLn "### NON PUBLIC TREE LEAVES ########################################"
   for_ nonPubTreeLeaves (putStrLn . T.unpack) >> putStrLn ""
 
-  when generateGraphPDF $ do
-    writeFile "nonPubTree.dot" $ toDotStr (invVariableDependencyNodeMap IM.!)
-      (\i ->
-        if iterToConstraintType i == Just Init
-        then " (Init #" <> show i <> ")"
-        else " (" <> show i <> ")"
-      )
-      edgeStyle
-      nonPubTree0
-    callDot "nonPubTree.dot" "nonPubTree.pdf"
+  unless (nodeSize nonPubTree > maxFeasibleNodeCount) $
+    let dotStr = toDotStr (invVariableDependencyNodeMap IM.!)
+                 (\i ->
+                   if iterToConstraintType i == Just Init
+                   then " (Init #" <> show i <> ")"
+                   else " (" <> show i <> ")"
+                 )
+                 edgeStyle
+                 nonPubTree
+    in printGraph "nonPubTree" dotStr
 
   -- ---------------------------------------------------------------------------
   -- 3. MILP
@@ -497,10 +498,10 @@ secondAndThirdPhase PhaseData{..} = do
       putStrLn "cannotMark':" >> putStrLn "---" >> print (filter (not . cannotMarkFilter) $ toName <$> cannotMark')
       sep
 
-      when generateGraphPDF $ do
-        writeFile "nonPubTreeSCC.dot" $
-          toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
-        callDot "nonPubTreeSCC.dot" "nonPubTreeSCC.pdf"
+      unless (nodeSize ilpGraph > maxFeasibleNodeCount) $
+        let dotStr =
+              toDotStr (\n -> toName n <> " : " <> T.pack (show n)) (const "") edgeStyle ilpGraph
+        in printGraph "nonPubTreeSCC" dotStr
 
 
 -- -----------------------------------------------------------------------------
@@ -680,10 +681,19 @@ createDepTree vars getDeps toNode toName isHorn getHornLostIterNo =
              _ -> Nothing
 
 
-callDot :: String -> String -> IO ()
-callDot i o = do
-  system $ printf "dot -Tpdf -Gmargin=0 '%s' -o '%s'" i o
-  return ()
+printGraph :: String -> String -> IO ()
+printGraph _ _ | not generateGraphPDF = return ()
+printGraph name dotStr = do
+  writeFile dotFile dotStr
+  callDot dotFile pdfFile
+  where
+    dotFile = name <.> "dot"
+    pdfFile = name <.> "pdf"
+
+    callDot :: String -> String -> IO ()
+    callDot i o = do
+      system $ printf "dot -Tpdf -Gmargin=0 '%s' -o '%s'" i o
+      return ()
 
 getRootLikeNodes :: Eq b => G.Gr a b -> [[G.LNode a]]
 getRootLikeNodes = getLLNHelper G.indeg
@@ -698,3 +708,6 @@ getLLNHelper f g = fmap (\n -> (n, fromJust $ G.lab g n)) <$> ls
 edgeStyle :: VarDepEdgeType -> String
 edgeStyle Implicit     = "dashed"
 edgeStyle (Explicit _) = "solid"
+
+nodeSize :: G.Graph gr => gr a b -> Int
+nodeSize = length . G.nodes

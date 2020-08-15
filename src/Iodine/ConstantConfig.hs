@@ -12,5 +12,9 @@ enableQualifierGuess = True
 generateGraphPDF :: Bool
 generateGraphPDF = True
 
+-- | if the number of nodes is greater than this, do not generate the graph
+maxFeasibleNodeCount :: Int
+maxFeasibleNodeCount = 50
+
 doNotMarkSubmoduleVariables :: Bool
 doNotMarkSubmoduleVariables = True

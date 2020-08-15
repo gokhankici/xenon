@@ -14,6 +14,7 @@ import           Control.Lens
 import           Control.Monad
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import           Data.Hashable
 
 
 
@@ -76,6 +77,14 @@ handleAnnotations Annotations{..} =
   <*> traverseSet fix _assertEquals
   <*> traverseSet fix _tagEquals
   <*> traverseSet fix _cannotMarks
+  <*> traverseSet fixIIE _instanceInitialEquals
+
+fixIIE :: FDM sig m => InstanceInitialEquals -> m InstanceInitialEquals
+fixIIE InstanceInitialEquals{..} =
+  InstanceInitialEquals
+  <$> fix _instanceIEParentModule
+  <*> fix _instanceIEInstanceName
+  <*> traverseSet fix _instanceIEVariables
 
 handleQualifier :: FDM sig m => Qualifier -> m Qualifier
 handleQualifier (QImplies v vs) = QImplies <$> fix v <*> traverse fix vs
@@ -184,5 +193,6 @@ fixMI _currentModuleName ModuleInstance{..} = do
 fix :: Monad m => Id -> m Id
 fix v = return $ varPrefix <> v
 
-traverseSet :: Monad m => (Id -> m Id) -> Ids -> m Ids
+traverseSet :: (Eq a, Hashable a, Monad m)
+            => (a -> m a) -> HS.HashSet a-> m (HS.HashSet a)
 traverseSet mi = foldM (\s' i -> (`HS.insert` s') <$> mi i) mempty

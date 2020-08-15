@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -19,6 +20,8 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Data.List (sort)
 import qualified Data.Text as T
+import           Data.Hashable
+import GHC.Generics (Generic)
 
 data Annotations =
   Annotations { _sources       :: HS.HashSet Id
@@ -28,12 +31,22 @@ data Annotations =
               , _assertEquals  :: HS.HashSet Id
               , _tagEquals     :: HS.HashSet Id
               , _cannotMarks   :: HS.HashSet Id
+              , _instanceInitialEquals :: HS.HashSet InstanceInitialEquals
               }
   deriving (Show, Read)
 
 emptyAnnotations :: Annotations
 emptyAnnotations =
-  Annotations mempty mempty mempty mempty mempty mempty mempty
+  Annotations mempty mempty mempty mempty mempty mempty mempty mempty
+
+data InstanceInitialEquals =
+  InstanceInitialEquals { _instanceIEParentModule :: Id
+                        , _instanceIEInstanceName :: Id
+                        , _instanceIEVariables    :: HS.HashSet Id
+                        }
+  deriving (Show, Read, Eq, Generic)
+
+instance Hashable InstanceInitialEquals
 
 data Qualifier =
     QImplies Id (L Id)
@@ -59,6 +72,7 @@ data AnnotationFile =
                  }
   deriving (Show, Read)
 
+makeLenses ''InstanceInitialEquals
 makeLenses ''Annotations
 makeLenses ''ModuleAnnotations
 makeLenses ''AnnotationFile
@@ -81,6 +95,15 @@ validateAnnotationFile af =
             | HS.null (annots ^. sinks)   -> Left $ "Top module has no sink! " ++ show annots
             | otherwise -> Right af
 
+instance FromJSON InstanceInitialEquals where
+  parseJSON =
+    withObjectKeys "InstanceInitialEquals" validKeys $ \o ->
+      InstanceInitialEquals
+      <$> o .: "parent_module"
+      <*> o .: "instance_name"
+      <*> o .: "variables"
+    where
+      validKeys = ["parent_module", "instance_name", "variables"]
 
 instance FromJSON Annotations where
   parseJSON =
@@ -97,15 +120,29 @@ instance FromJSON Annotations where
       <*> o .:? "assert_eq"    .!= mempty
       <*> o .:? "tag_eq"       .!= mempty
       <*> o .:? "cannot_mark"  .!= mempty
+      <*> o .:? "instance_initial_eq" .!= mempty
       where
-        validKeys = ["source", "sink", "initial_eq", "always_eq", "assert_eq", "tag_eq", "ignore", "cannot_mark"]
+        validKeys = [ "source"
+                    , "sink"
+                    , "initial_eq"
+                    , "always_eq"
+                    , "assert_eq"
+                    , "tag_eq"
+                    , "ignore"
+                    , "cannot_mark"
+                    , "instance_initial_eq"
+                    ]
 
 instance ToJSON Annotations where
-  toJSON a =
-    Object $ HM.fromList $ fmap (fmap toJSON) $
-    filter (not . null . snd) $
-    fmap (sort . HS.toList . (a ^.)) <$> fields
+  toJSON a = Object o'
     where
+      iie = (a ^. instanceInitialEquals)
+      o' = if HS.null iie
+           then o
+           else HM.insert "instance_initial_eq" (toJSON iie) o
+      o = HM.fromList $ fmap (fmap toJSON) $
+          filter (not . null . snd) $
+          fmap (sort . HS.toList . (a ^.)) <$> fields
       fields = [ ("source",        sources)
                , ("sink",          sinks)
                , ("initial_eq",    initialEquals)
@@ -114,6 +151,13 @@ instance ToJSON Annotations where
                , ("tag_eq",        tagEquals)
                , ("cannot_mark",   cannotMarks)
                ]
+
+instance ToJSON InstanceInitialEquals where
+  toJSON iie = Object $ HM.fromList
+    [ ("parent_module", toJSON $ iie ^. instanceIEParentModule)
+    , ("instance_name", toJSON $ iie ^. instanceIEInstanceName)
+    , ("variables", toJSON $ iie ^. instanceIEVariables)
+    ]
 
 instance FromJSON Qualifier where
   parseJSON = withObject "Qualifier" $ \o -> do

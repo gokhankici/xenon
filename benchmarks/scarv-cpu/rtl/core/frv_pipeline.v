@@ -4,6 +4,14 @@
 //
 //  The top level of the CPU data pipeline
 //
+`include "frv_pipeline_fetch.v"
+`include "frv_pipeline_decode_unrolled.v"
+`include "frv_pipeline_execute.v"
+`include "frv_pipeline_memory.v"
+`include "frv_pipeline_writeback.v"
+`include "frv_csrs.v"
+`include "frv_gprs_unrolled.v"
+
 module frv_pipeline (
 
 input               g_clk           , // global clock

@@ -4,6 +4,10 @@
 //
 //  Represents a single pipeline stage register in the CPU core.
 //
+
+`ifndef  FRV_PIPELINE_REGISTER_DEFINED
+`define  FRV_PIPELINE_REGISTER_DEFINED
+
 module frv_pipeline_register (
 
 input  wire             g_clk    , // global clock
@@ -45,3 +49,5 @@ always @(posedge g_clk) begin
 end
 
 endmodule
+
+`endif

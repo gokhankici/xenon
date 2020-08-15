@@ -1,0 +1,470 @@
+{
+  "modules": {
+    "frv_pipeline": {
+      "annotations": {
+        "sink": [
+          "dmem_ack",
+          "dmem_addr",
+          "dmem_req",
+          "dmem_strb",
+          "dmem_wdata",
+          "dmem_wen",
+          "imem_ack",
+          "imem_addr",
+          "imem_req",
+          "imem_strb",
+          "imem_wdata",
+          "imem_wen",
+          "inhibit_cy",
+          "inhibit_ir",
+          "inhibit_tm",
+          "instr_ret",
+          "int_trap_ack",
+          "leak_fence_unc0",
+          "leak_fence_unc1",
+          "leak_fence_unc2",
+          "leak_prng",
+          "mie_meie",
+          "mie_msie",
+          "mie_mtie",
+          "mmio_addr",
+          "mmio_en",
+          "mmio_wdata",
+          "mmio_wen",
+          "mstatus_mie",
+          "rng_req_data",
+          "rng_req_op",
+          "rng_req_valid",
+          "rng_rsp_ready",
+          "trs_instr",
+          "trs_pc",
+          "trs_valid"
+        ],
+        "source": [
+          "ctr_cycle",
+          "ctr_instret",
+          "ctr_time",
+          "dmem_error",
+          "dmem_gnt",
+          "dmem_rdata",
+          "dmem_recv",
+          "g_resetn",
+          "imem_error",
+          "imem_gnt",
+          "imem_rdata",
+          "imem_recv",
+          "int_trap_cause",
+          "int_trap_req",
+          "mip_meip",
+          "mip_msip",
+          "mip_mtip",
+          "mmio_error",
+          "mmio_rdata",
+          "rng_req_ready",
+          "rng_rsp_data",
+          "rng_rsp_status",
+          "rng_rsp_valid"
+        ],
+        "initial_eq": [],
+        "always_eq": [
+          "g_resetn",
+          "dmem_error",
+          "dmem_gnt",
+          "dmem_recv",
+          "imem_error",
+          "imem_gnt",
+          "imem_recv",
+          "int_trap_req",
+          "int_trap_cause",
+          "mip_meip",
+          "mip_mtip",
+          "mip_msip",
+          "mmio_error",
+          "rng_req_ready",
+          "rng_req_ready",
+          "rng_rsp_valid"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    },
+    "frv_pipeline_fetch": {
+      "annotations": {
+        "initial_eq": [
+          "ignore_rsps",
+          "fetch_misaligned",
+          "imem_req",
+          "reqs_outstanding"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_pipeline_decode": {
+      "annotations": {
+        "initial_eq": [
+          "lf_count"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_pipeline_execute": {
+      "annotations": {
+        "initial_eq": [
+          "asi_done"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_pipeline_writeback": {
+      "annotations": {
+        "initial_eq": [
+          "cfu_done",
+          "dmem_error_seen",
+          "lsu_rsp_seen",
+          "trap_int_pending"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_pipeline_memory": {
+      "annotations": {},
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_lsu": {
+      "annotations": {
+        "initial_eq": [
+          "lsu_finished",
+          "mmio_done"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_core_fetch_buffer": {
+      "annotations": {
+        "initial_eq": [
+          "bdepth",
+          "buffer",
+          "buffer_err"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_aessub_sbox_fwd": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu_long": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aessub": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_bitwise": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "p_addsub": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu_mul": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu_pmul": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_alu": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "b_bop": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aessub_sbox_inv": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "b_lut": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "p_shfrot": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_malu": {
+      "annotations": {
+        "initial_eq": [
+          "acc",
+          "arg_0",
+          "arg_1",
+          "carry",
+          "count",
+          "fsm",
+          "n_fsm"
+        ]
+      },
+      "clock": [
+        "clock"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_csrs": {
+      "annotations": {
+        "initial_eq": [
+          "mcountin_cy",
+          "mcountin_ir",
+          "mcountin_tm",
+          "mie_meie",
+          "mie_msie",
+          "mie_mtie",
+          "p_trap_int",
+          "reg_lkgcfg",
+          "reg_mcause_cause",
+          "reg_mcause_interrupt",
+          "reg_mepc_mepc",
+          "reg_mscratch",
+          "reg_mstatus_mie",
+          "reg_mstatus_mpie",
+          "reg_mstatus_wpri1",
+          "reg_mstatus_wpri2",
+          "reg_mstatus_wpri3",
+          "reg_mstatus_wpri4",
+          "reg_mtval",
+          "reg_mtvec_base",
+          "reg_mtvec_mode",
+          "uxcrypto_b0",
+          "uxcrypto_b1",
+          "uxcrypto_ct"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_malu_divrem": {
+      "annotations": {
+        "initial_eq": [
+          "div_run"
+        ]
+      },
+      "clock": [
+        "clock"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_sha256": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_aesmix": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "xc_sha3": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_gprs": {
+      "annotations": {
+        "initial_eq": []
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_malu_muldivrem": {
+      "annotations": {},
+      "clock": [
+        "clock"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "xc_aessub_sbox": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_leak": {
+      "annotations": {},
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_asi": {
+      "annotations": {},
+      "clock": [],
+      "qualifiers": [],
+      "inline": false
+    },
+    "frv_pipeline_register": {
+      "annotations": {
+        "instance_initial_eq": [
+          {
+            "parent_module": "frv_pipeline_decode",
+            "instance_name": "i_decode_pipereg",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_decode",
+            "instance_name": "i_decode_pipereg_opr_a",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_decode",
+            "instance_name": "i_decode_pipereg_opr_b",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_execute",
+            "instance_name": "i_execute_pipereg",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_execute",
+            "instance_name": "i_execute_pipereg_opr_a",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_execute",
+            "instance_name": "i_execute_pipereg_opr_b",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_memory",
+            "instance_name": "i_mem_pipereg",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_memory",
+            "instance_name": "i_mem_pipereg_opr_a",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_memory",
+            "instance_name": "i_mem_pipereg_opr_b",
+            "variables": [
+              "o_data"
+            ]
+          }
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    },
+    "frv_rngif": {
+      "annotations": {
+        "initial_eq": [
+          "req_done"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ],
+      "qualifiers": [],
+      "inline": true
+    }
+  },
+  "include_dirs": [
+    "../../external/xcrypto/rtl/xc_sha3",
+    "../../external/xcrypto/rtl/xc_sha256",
+    "../../external/xcrypto/rtl/xc_aessub",
+    "../../external/xcrypto/rtl/xc_aesmix",
+    "../../external/xcrypto/rtl/xc_malu",
+    "../../external/xcrypto/rtl/p_addsub"
+  ],
+  "top_module": "frv_pipeline"
+}
