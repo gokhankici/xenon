@@ -1097,7 +1097,7 @@ int main(int argc, char*argv[])
 		  }
 		  else
 		  {
-			  o << "ERROR: file '" << module_name << "' does not exist";
+			  cerr << "ERROR: file '" << module_name << "' does not exist";
 			  return 1;
 		  }
 	  }

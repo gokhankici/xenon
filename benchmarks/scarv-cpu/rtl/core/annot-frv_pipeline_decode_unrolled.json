@@ -1,0 +1,73 @@
+{
+  "modules": {
+    "frv_pipeline_decode": {
+      "annotations": {
+        "sink": [
+          "leak_prng",
+          "s1_busy",
+          "s1_leak_fence",
+          "s1_rs1_addr",
+          "s1_rs2_addr",
+          "s1_rs3_addr",
+          "s2_fu",
+          "s2_instr",
+          "s2_opr_a",
+          "s2_opr_b",
+          "s2_opr_c",
+          "s2_pw",
+          "s2_rd",
+          "s2_size",
+          "s2_trap",
+          "s2_uop",
+          "s2_valid"
+        ],
+        "source": [
+          "cf_ack",
+          "cf_req",
+          "cf_target",
+          "g_resetn",
+          "leak_lkgcfg",
+          "s1_bubble",
+          "s1_data",
+          "s1_error",
+          "s1_flush",
+          "s1_rs1_rdata",
+          "s1_rs2_rdata",
+          "s1_rs3_rdata",
+          "s1_valid",
+          "s2_busy"
+        ],
+        "initial_eq": [
+          "lf_count"
+        ],
+        "always_eq": [
+          "cf_ack",
+          "cf_req",
+          "g_resetn",
+          "leak_lkgcfg",
+          "s1_bubble",
+          "s1_valid",
+          "s2_busy",
+          "s1_flush",
+          "s1_data"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    },
+    "frv_leak": {
+      "clock": [
+        "g_clk"
+      ],
+      "inline": true
+    },
+    "frv_pipeline_register": {
+      "clock": [
+        "g_clk"
+      ],
+      "inline": true
+    }
+  },
+  "top_module": "frv_pipeline_decode"
+}
