@@ -140,15 +140,19 @@ inlineInstance mi@ModuleInstance{..} = do
                  . to (HM.lookupDefault emptyModuleAnnotations moduleInstanceType))
   let computeNewAnnots l = HS.fromList <$> traverse fixName (miMA ^. moduleAnnotations . l . to toList)
   extraIEs1 <- computeNewAnnots initialEquals
-  extraAEs <- computeNewAnnots alwaysEquals
-  let instanceIEs = miMA ^. moduleAnnotations . instanceInitialEquals
-      instanceIEUpdate iie =
-        if iie ^. instanceIEParentModule == getCurrentModuleName inlineSt &&
-           iie ^. instanceIEInstanceName == moduleInstanceName
-        then HS.fromList <$> traverse fixName (toList $ iie ^. instanceIEVariables)
-        else return mempty
-  extraIEs2 <- mfoldM instanceIEUpdate instanceIEs
+  extraAEs1 <- computeNewAnnots alwaysEquals
+  let ma = miMA ^. moduleAnnotations
+      instanceEqualsUpdate l =
+        let ies = ma ^. l in
+        (flip mfoldM) ies $ \ie ->
+          if ie ^. instanceEqualsParentModule == getCurrentModuleName inlineSt &&
+             ie ^. instanceEqualsInstanceName == moduleInstanceName
+          then HS.fromList <$> traverse fixName (toList $ ie ^. instanceEqualsVariables)
+          else return mempty
+  extraIEs2 <- instanceEqualsUpdate instanceInitialEquals
+  extraAEs2 <- instanceEqualsUpdate instanceAlwaysEquals
   let extraIEs = extraIEs1 <> extraIEs2
+      extraAEs = extraAEs1 <> extraAEs2
   newQualifiers <- traverse fixQualifier (miMA ^. moduleQualifiers)
   let updateA = over initialEquals (<> extraIEs) . over alwaysEquals (<> extraAEs)
       updateMA = Just .

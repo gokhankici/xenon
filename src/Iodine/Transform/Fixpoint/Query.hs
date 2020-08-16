@@ -20,13 +20,14 @@ import           Iodine.Transform.Fixpoint.SummaryQualifiers
 import           Iodine.Transform.Horn
 import           Iodine.Transform.VCGen2
 import           Iodine.Types
-import           Iodine.Utils
 
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
+import qualified Control.Effect.Trace as CET
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
+import           Text.Printf
 import           Data.Maybe
 import qualified Data.Sequence as SQ
 import qualified Data.HashMap.Strict as HM
@@ -51,7 +52,8 @@ constructQuery modules (hvs, horns) = runReader hvs $ evalState initialState $ d
     (getQualifiers moduleName >>= traverse_ generateQualifiers) & runReader m
     unless (moduleName == topModuleName) $ do
       simpleCheck <- isModuleSimple m
-      trace ("simplecheck of " <> T.unpack moduleName) simpleCheck
+      CET.trace $
+        printf "simplecheck of %s : %s" (T.unpack moduleName) (show simpleCheck)
       if simpleCheck
         then addSimpleModuleQualifiers True m
         else addSummaryQualifiers m

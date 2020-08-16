@@ -261,7 +261,7 @@ printFailedConstraints finfo stat@(FT.Unsafe failedConstraints) =
         FM.colorStrLn
           (FT.colorResult stat)
           ("FAILED " <> T.unpack t3 <> " :: " <> FT.showFix expr)
-      _ -> return ()
+      _ -> FM.colorStrLn (FT.colorResult stat) ("FAILED " <> FT.showFix expr)
 printFailedConstraints _ _ = return ()
 
 -- -----------------------------------------------------------------------------

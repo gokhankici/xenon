@@ -29,7 +29,8 @@ import           Iodine.Runner                  ( generateIR
                                                 , readIRFile
                                                 )
 import           Iodine.Transform.Fixpoint.Query
-import           Iodine.Transform.VCGen
+import           Iodine.Transform.VCGen2
+import           Iodine.Transform.InitialEquals
 import           Iodine.Types
 import           Iodine.Utils
 import           Iodine.Transform.Fixpoint.Common (HornClauseId)

@@ -20,7 +20,7 @@ module Iodine.Transform.VCGen2
   , computeHornVariables
   ) where
 
-import           Iodine.Transform.VCGen (computeAllInitialEqualVars)
+import           Iodine.Transform.InitialEquals (computeAllInitialEqualVars)
 import           Iodine.Analyze.ModuleSummary
 import           Iodine.Language.Annotation
 import           Iodine.Language.IR hiding (isStar)
@@ -40,7 +40,7 @@ import           Control.Lens
 import           Control.Monad
 import           Data.Bifunctor
 import           Data.Foldable
-import           Data.List (sort)
+-- import           Data.List (sort)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.IntMap as IM
@@ -211,7 +211,6 @@ moduleClauses :: FDM sig m => m Horns
 moduleClauses = do
   m@Module{..} <- ask
   simpleCheck <- isModuleSimple m
-  CET.trace $ "moduleClauses simplecheck: " <> show simpleCheck
   if simpleCheck
     then return <$> combinatorialModuleInit
     else combine alwaysBlockClauses alwaysBlocks <||> summaryConstraint
@@ -269,10 +268,10 @@ initialize ab = do
              ++ show (currentModuleName, toList unsanitizedStateVars)
            ]
 
-  trace "initialize" (currentModuleName, getThreadId ab, isTop)
-  trace "initialize - zero" (sort $ toList zeroTagVars)
-  trace "initialize - valeq" (sort $ toList valEqVars)
-  trace "initialize - tagEqVars0" (sort $ toList tagEqVars0)
+  -- trace "initialize" (currentModuleName, getThreadId ab, isTop)
+  -- trace "initialize - zero" (sort $ toList zeroTagVars)
+  -- trace "initialize - valeq" (sort $ toList valEqVars)
+  -- trace "initialize - tagEqVars0" (sort $ toList tagEqVars0)
 
   -- for non-top module blocks, we do not assume that the sources are constant time
   -- however, we should keep their variables in the kvars

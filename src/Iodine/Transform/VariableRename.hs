@@ -78,13 +78,14 @@ handleAnnotations Annotations{..} =
   <*> traverseSet fix _tagEquals
   <*> traverseSet fix _cannotMarks
   <*> traverseSet fixIIE _instanceInitialEquals
+  <*> traverseSet fixIIE _instanceAlwaysEquals
 
-fixIIE :: FDM sig m => InstanceInitialEquals -> m InstanceInitialEquals
-fixIIE InstanceInitialEquals{..} =
-  InstanceInitialEquals
-  <$> fix _instanceIEParentModule
-  <*> fix _instanceIEInstanceName
-  <*> traverseSet fix _instanceIEVariables
+fixIIE :: FDM sig m => InstanceEquals -> m InstanceEquals
+fixIIE InstanceEquals{..} =
+  InstanceEquals
+  <$> fix _instanceEqualsParentModule
+  <*> fix _instanceEqualsInstanceName
+  <*> traverseSet fix _instanceEqualsVariables
 
 handleQualifier :: FDM sig m => Qualifier -> m Qualifier
 handleQualifier (QImplies v vs) = QImplies <$> fix v <*> traverse fix vs

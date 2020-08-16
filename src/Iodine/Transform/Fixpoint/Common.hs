@@ -98,15 +98,20 @@ setConstants = forM_ constants $ uncurry addConstBinding
 -- | return the id of the variable. if the variable does not exist, add it to
 -- the environment first.
 getVariableId :: FD sig m => Bool -> HornExpr -> m (FT.BindId, FT.Expr)
-getVariableId isParam e = do
+getVariableId isParam0 e0@HVar{..} = do
   mid <- gets (^. invVarBindMap . at (isParam, e))
   case mid of
     Just res  -> return res
     Nothing -> addBinding isParam e sr
   where
-    sr = case hVarType e of
+    isParam = isParam0 || hVarIndex == 0
+    e = if isParam then HVar { hVarIndex = 0, .. } else e0
+    sr = case hVarType of
            Value -> mkInt FT.PTrue
            Tag   -> mkBool FT.PTrue
+
+getVariableId _ _ =
+  error "unreachable"
 
 
 addConstBinding :: FD sig m => HornExpr -> FT.SortedReft -> m ()
@@ -177,17 +182,19 @@ toFInfo =
 -- | get the bind name used for the variable in the query
 -- varno <> type prefix <> varname <> modulename <> threadno
 getFixpointName :: Bool -> HornExpr -> Id
-getFixpointName isParam v =
+getFixpointName isParam HVar{..} =
   varno <> prefix
     <> varname <> "_" -- <>  modulename <> "_"
     <> threadno
   where
-    varno = if isParam || hVarIndex v == 0
+    varno = if isParam || hVarIndex == 0
             then ""
-            else "N" <> T.pack (show $ hVarIndex v) <> "_"
-    prefix = getVarPrefix (hVarType v) (hVarRun v)
-    varname = hVarName v
-    threadno = "T" <> T.pack (show $ hThreadId v)
+            else "N" <> T.pack (show hVarIndex) <> "_"
+    prefix = getVarPrefix hVarType hVarRun
+    varname = hVarName
+    threadno = "T" <> T.pack (show hThreadId)
+getFixpointName _ _ =
+  error "unreachable"
 
 
 getVarPrefix :: HornVarType -> HornVarRun -> Id

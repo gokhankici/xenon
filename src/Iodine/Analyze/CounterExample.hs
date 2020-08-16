@@ -250,8 +250,8 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
 
   let (ilpCostMap, varDepGraph0) =
         computeILPCosts
-        topModule moduleMap
-        variableDependencies getDeps toNode
+        topModule moduleMap summaryMap
+        toNode
         ((+ 1) $ fst $ IM.findMax invVariableDependencyNodeMap)
         srcs
       varDepGraph =
@@ -353,18 +353,25 @@ secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
   putStrLn "minCtTreeRoots is empty ..."
   putStrLn "enter a variable name to examine it by itself:"
 
-  mui <- getUserInput
+  mui <- fmap T.words <$> getUserInput
 
-  let validInput = maybe False (`elem` varNames) mui
-      mustBePublic = toNode <$> toList mui
+  -- let validInput = maybe False (`elem` varNames) mui
+  --     mustBePublic = toNode <$> toList mui
 
-  if validInput then do
-    printInfo (fromJust mui)
-    result <- runILPLoop mustBePublic cannotBeMarked loops ilpGraph ilpCosts toName
-    print result
-    secondAndThirdPhase PhaseData{..}
-  else do
-    putStrLn "invalid/empty user input"
+  case mui of
+    Nothing -> putStrLn "invalid/empty user input"
+    Just [v] | v `elem` varNames -> do
+      printInfo v
+      result <- runILPLoop [toNode v] cannotBeMarked loops ilpGraph ilpCosts toName
+      print result
+      secondAndThirdPhase PhaseData{..}
+    Just ["pub", v] | v `elem` varNames -> do
+      printInfo v
+      putStrLn $ toDotStr toName (const "") edgeStyle ilpGraph
+      result <- runILPLoop [toNode v] cannotBeMarked loops ilpGraph ilpCosts toName
+      print result
+      secondAndThirdPhase PhaseData{..}
+    Just _ -> putStrLn "invalid/empty user input"
 
 secondAndThirdPhase PhaseData{..} = do
   let ModuleSummary{..} = ms
@@ -531,17 +538,15 @@ computeMinCTRoots nonCtTree toName = do
 
 
 -- -----------------------------------------------------------------------------
-computeILPCosts :: G.DynGraph gr
-                => Module Int
+computeILPCosts :: Module Int
                 -> ModuleMap
-                -> gr () VarDepEdgeType
-                -> (Id -> [(Id, VarDepEdgeType)])
+                -> SummaryMap
                 -> (Id -> Int)
                 -> Int
                 -> Ids
-                -> (IM.IntMap Integer, gr () VarDepEdgeType)
+                -> (IM.IntMap Integer, G.Gr () VarDepEdgeType)
 -- -----------------------------------------------------------------------------
-computeILPCosts topModule moduleMap varDepGraph getDeps toNode rootNode srcs =
+computeILPCosts topModule moduleMap summaryMap toNode rootNode srcs =
   (foldl' addCost mempty paths, fixedG)
   where
     distToCost d = 10 * (2 ^ d)
@@ -559,17 +564,7 @@ computeILPCosts topModule moduleMap varDepGraph getDeps toNode rootNode srcs =
     extraNodes       = (\s -> (rootNode, toNode s, Explicit False)) <$> toList srcs
     fixedG_withRoot  = G.insNode (rootNode, ()) fixedG
 
-    fixedG =
-      foldl' (\g1 ModuleInstance{..} ->
-        let oPorts = moduleOutputs (moduleMap HM.! moduleInstanceType) mempty in
-        foldl' (\g2 oPort ->
-          let child = varName (moduleInstancePorts HM.! oPort) in
-          let es = getDeps child in
-          foldl' (\g3 (parent, edgeType) ->
-            G.insEdge (toNode parent, toNode child, edgeType) g3
-          ) g2 es
-        ) g1 oPorts
-      ) varDepGraph (moduleInstances topModule)
+    fixedG = varDepGraphWithInstanceEdges topModule moduleMap summaryMap
 
 -- -----------------------------------------------------------------------------
 -- | label of the parent node is greater than its children

@@ -67,22 +67,107 @@
         ],
         "initial_eq": [],
         "always_eq": [
-          "g_resetn",
+          "cf_ack",
+          "cf_req",
+          "cf_target",
+          "csr_addr",
+          "csr_error",
+          "csr_wr",
+          "csr_wr_clr",
+          "csr_wr_set",
           "dmem_error",
           "dmem_gnt",
           "dmem_recv",
-          "imem_error",
+          "exec_mret",
+          "g_resetn",
+          "gpr_rd",
+          "hold_lsu_req",
           "imem_gnt",
+          "imem_rdata",
           "imem_recv",
           "int_trap_req",
-          "int_trap_cause",
-          "mip_meip",
-          "mip_mtip",
-          "mip_msip",
+          "leak_lkgcfg",
           "mmio_error",
           "rng_req_ready",
-          "rng_req_ready",
-          "rng_rsp_valid"
+          "rng_rsp_valid",
+          "s0_flush",
+          "s1_bubble",
+          "s1_busy",
+          "s1_data",
+          "s1_flush",
+          "s1_valid",
+          "s2_busy",
+          "s2_flush",
+          "s2_fu",
+          "s2_pw",
+          "s2_uop",
+          "s2_valid",
+          "s3_busy",
+          "s3_flush",
+          "s3_fu",
+          "s3_opr_a",
+          "s3_uop",
+          "s3_valid",
+          "s4_busy",
+          "s4_fu",
+          "s4_trap",
+          "s4_uop",
+          "s4_valid",
+          "trap_cpu",
+          "trap_int",
+          "imem_error"
+        ],
+        "ignore": {
+          "always_eq": [
+            "cf_req",
+            "cf_target",
+            "csr_addr",
+            "csr_en",
+            "dmem_error",
+            "dmem_gnt",
+            "dmem_recv",
+            "exec_mret",
+            "g_resetn",
+            "hold_lsu_req",
+            "imem_error",
+            "imem_gnt",
+            "imem_rdata",
+            "imem_recv",
+            "int_trap_cause",
+            "int_trap_req",
+            "mip_meip",
+            "mip_msip",
+            "mip_mtip",
+            "mmio_error",
+            "rng_req_ready",
+            "rng_req_ready",
+            "rng_rsp_status",
+            "rng_rsp_valid",
+            "s1_busy",
+            "s2_busy",
+            "s3_busy",
+            "s3_fu",
+            "s3_rd",
+            "s3_uop",
+            "s4_busy",
+            "s4_fu",
+            "s4_rd",
+            "s4_uop",
+            "trap_cpu",
+            "trap_int"
+          ]
+        },
+        "cannot_mark": [
+          "dmem_rdata",
+          "gpr_wdata",
+          "s2_opr_a",
+          "s2_opr_b",
+          "s2_opr_c",
+          "s3_opr_a",
+          "s3_opr_b",
+          "s4_opr_a",
+          "s4_opr_b",
+          "rng_rsp_data"
         ]
       },
       "clock": [
@@ -107,6 +192,7 @@
     "frv_pipeline_decode": {
       "annotations": {
         "initial_eq": [
+          "program_counter",
           "lf_count"
         ]
       },
@@ -131,10 +217,21 @@
     "frv_pipeline_writeback": {
       "annotations": {
         "initial_eq": [
+          "s4_pc",
+          "csr_done",
           "cfu_done",
           "dmem_error_seen",
           "lsu_rsp_seen",
           "trap_int_pending"
+        ],
+        "instance_always_eq": [
+          {
+            "parent_module": "frv_pipeline",
+            "instance_name": "i_pipeline_s4_writeback",
+            "variables": [
+              "lsu_mmio"
+            ]
+          }
         ]
       },
       "clock": [
@@ -295,6 +392,16 @@
           "uxcrypto_b0",
           "uxcrypto_b1",
           "uxcrypto_ct"
+        ],
+        "instance_always_eq": [
+          {
+            "parent_module": "frv_pipeline",
+            "instance_name": "i_csrs",
+            "variables": [
+              "mtvec_bad_write",
+              "wen_valid_mcause"
+            ]
+          }
         ]
       },
       "clock": [
@@ -335,7 +442,16 @@
     },
     "frv_gprs": {
       "annotations": {
-        "initial_eq": []
+        "instance_always_eq": [
+          {
+            "parent_module": "frv_pipeline",
+            "instance_name": "i_gprs",
+            "variables": [
+              "rd_wen_even",
+              "rd_wen_odd"
+            ]
+          }
+        ]
       },
       "clock": [
         "g_clk"
@@ -358,7 +474,11 @@
       "inline": false
     },
     "frv_leak": {
-      "annotations": {},
+      "annotations": {
+        "initial_eq": [
+          "leak_prng"
+        ]
+      },
       "clock": [
         "g_clk"
       ],
@@ -396,22 +516,29 @@
             ]
           },
           {
-            "parent_module": "frv_pipeline_execute",
-            "instance_name": "i_execute_pipereg",
+            "parent_module": "frv_pipeline_decode",
+            "instance_name": "i_decode_pipereg_opr_c",
             "variables": [
               "o_data"
             ]
           },
           {
             "parent_module": "frv_pipeline_execute",
-            "instance_name": "i_execute_pipereg_opr_a",
+            "instance_name": "i_execute_pipe_reg",
             "variables": [
               "o_data"
             ]
           },
           {
             "parent_module": "frv_pipeline_execute",
-            "instance_name": "i_execute_pipereg_opr_b",
+            "instance_name": "i_execute_pipe_reg_opr_a",
+            "variables": [
+              "o_data"
+            ]
+          },
+          {
+            "parent_module": "frv_pipeline_execute",
+            "instance_name": "i_execute_pipe_reg_opr_b",
             "variables": [
               "o_data"
             ]

@@ -81,7 +81,8 @@
         ],
         "cannot_mark": [],
         "assert_eq": [
-          "cf_req"
+          "cf_req",
+          "s4_busy"
         ]
       },
       "clock": [

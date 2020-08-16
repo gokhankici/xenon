@@ -18,6 +18,7 @@ module Iodine.Analyze.ModuleSummary
   , getVariableDependencies
   , writtenByAB
   , isModuleSimple
+  , varDepGraphWithInstanceEdges
   ) where
 
 import           Iodine.Analyze.DependencyGraph hiding (getNode)
@@ -505,3 +506,22 @@ isModuleSimple :: ( Has (Reader AnnotationFile) sig m
 isModuleSimple m = do
   topModuleName <- asks @AnnotationFile (^. afTopModule)
   (moduleName m /= topModuleName &&) <$> asks (isCombinatorial . hmGet 8 (moduleName m))
+
+
+varDepGraphWithInstanceEdges :: Module Int -> HM.HashMap Id (Module Int) -> SummaryMap -> VarDepGraph
+varDepGraphWithInstanceEdges m moduleMap summaryMap =
+  foldl' (\g1 ModuleInstance{..} ->
+    let oPorts = moduleOutputs (moduleMap HM.! moduleInstanceType) mempty in
+    foldl' (\g2 oPort ->
+      let child = varName (moduleInstancePorts HM.! oPort) in
+      let es = getDeps child in
+      foldl' (\g3 (parent, edgeType) ->
+        G.insEdge (toNode parent, toNode child, edgeType) g3
+      ) g2 es
+    ) g1 oPorts
+  ) variableDependencies (moduleInstances m)
+  where
+    mn = moduleName m
+    ModuleSummary{..} = summaryMap HM.! mn
+    toNode = (variableDependencyNodeMap HM.!)
+    getDeps v = getVariableDependencies v m summaryMap

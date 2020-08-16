@@ -64,7 +64,10 @@
           "s2_valid",
           "s3_busy"
         ],
-        "cannot_mark": []
+        "cannot_mark": [],
+        "assert_eq": [
+          "s2_busy"
+        ]
       },
       "clock": [
         "g_clk"

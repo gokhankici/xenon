@@ -47,6 +47,7 @@ library
       Iodine.Transform.Fixpoint.Query
       Iodine.Transform.Fixpoint.SummaryQualifiers
       Iodine.Transform.Horn
+      Iodine.Transform.InitialEquals
       Iodine.Transform.InitVars
       Iodine.Transform.Inline
       Iodine.Transform.Merge
