@@ -18,6 +18,7 @@ import           Control.Effect.Writer
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
+import           Data.List
 import qualified Data.Graph.Inductive as G
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
@@ -112,16 +113,22 @@ handleModuleConfiguration (currentModule, currentIEs, isGeneric) = do
         Nothing -> modify @Ids (HS.insert v)
         Just Reason{..} ->
           if | notNull dependsOnInputs ->
-               CET.trace $ "not initial_eq : Depends on inputs "
-               <> show (mn, v, toList dependsOnInputs)
+               CET.trace $
+                 printf "not initial_eq : Inputs        ::: %s -> %s -> [%s]"
+                 mn v
+                 (toStr dependsOnInputs)
 
              | notNull dependsOnReg ->
-               CET.trace $ "not initial_eq : Depends on non-sanitized register "
-               <> show (mn, v, toList dependsOnReg)
+               CET.trace $
+                 printf "not initial_eq : Non Sanitized ::: %s -> %s -> [%s]"
+                 mn v
+                 (toStr dependsOnReg)
 
              | notNull uninitialized ->
-               CET.trace $ "not initial_eq : Depends on uninitialized variables "
-               <> show (mn, v, toList uninitialized)
+               CET.trace $
+                 printf "not initial_eq : Uninitialized ::: %s -> %s -> [%s]"
+                 mn v
+                 (toStr uninitialized)
 
              | otherwise -> error "unreachable"
     modify @GenericModuleReasonMap (at mn ?~ genericIEs)
@@ -129,6 +136,12 @@ handleModuleConfiguration (currentModule, currentIEs, isGeneric) = do
   where
     notNull = not . HS.null
     mn = moduleName currentModule
+    toStr :: Vars -> String
+    toStr =
+      foldl' (++) "" .
+      intersperse ", " .
+      fmap show .
+      HS.toList
 
 -- | list of modules, the all possible initial equals, and whether it's the "generic" module
 getAllPossibleConfigurations :: G sig m => L (Module Int) -> m (L (Module Int, Ids, Bool))

@@ -73,13 +73,14 @@ inlineInstancesM Module{..} = do
                       . canInline)
       if check
         then do let miType = moduleInstanceType mi
+                    miName = moduleInstanceName mi
                 miClocks <- getMIClocks mi
                 let clkMap v = if v `elem` miClocks
                                then case HM.lookup v (moduleInstancePorts mi) of
                                       Just Variable{..} -> Just varName
                                       _ -> Nothing
                                else Nothing
-                    rst = InlineSt moduleName miType (getData mi) clkMap
+                    rst = InlineSt moduleName miType miName (getData mi) clkMap
                 nd <- inlineInstance mi & runReader rst
                 return (mis, nds |> nd)
         else return (mis |> mi, nds)
@@ -100,6 +101,7 @@ type NewData = ( L Variable
 
 data InlineSt = InlineSt { getCurrentModuleName :: Id
                          , getMIType            :: Id
+                         , getMIName            :: Id
                          , getMIId              :: Int
                          , getClockMapping      :: Id -> Maybe Id
                          }
@@ -181,8 +183,13 @@ inlinePrefix = "IodInl_M_"
 fixName :: Has (Reader InlineSt) sig m => Id -> m Id
 fixName v = do
   miType <- asks getMIType
-  miName <- asks getMIId
-  return $ inlinePrefix <> miType <> "_V_" <> v <> "_T" <> T.pack (show miName)
+  miName <- asks getMIName
+  miId <- asks getMIId
+  return $
+    inlinePrefix <> miType
+    <> "_I_" <> miName
+    <> "_V_" <> v
+    <> "_T" <> T.pack (show miId)
 
 fixExpr :: Has (Reader InlineSt) sig m => Expr a -> m (Expr a)
 fixExpr e@Constant{} = return e

@@ -32,6 +32,7 @@
           "imem_gnt",
           "imem_recv",
           "imem_rdata",
+          "imem_error",
           "s0_flush",
           "s1_busy"
         ],
@@ -40,6 +41,14 @@
           "fetch_misaligned",
           "imem_req",
           "reqs_outstanding"
+        ],
+        "assert_eq": [
+          "cf_ack",
+          "s1_error",
+          "s1_valid",
+          "imem_ack",
+          "imem_req",
+          "imem_wen"
         ],
         "ignore": {
           "comment": "It seems like all inputs to this module have to be public, otherwise we need to make assumptions about the variables within"
@@ -53,7 +62,8 @@
       "annotations": {
         "initial_eq": [
           "bdepth",
-          "buffer"
+          "buffer",
+          "buffer_err"
         ]
       },
       "clock": [

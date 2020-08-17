@@ -49,7 +49,15 @@
           "s1_valid",
           "s2_busy",
           "s1_flush",
-          "s1_data"
+          "s1_data",
+          "s1_error"
+        ],
+        "assert_eq": [
+          "s1_busy",
+          "s2_trap",
+          "s2_valid",
+          "s2_fu",
+          "s2_instr"
         ]
       },
       "clock": [
@@ -63,6 +71,17 @@
       "inline": true
     },
     "frv_pipeline_register": {
+      "annotations": {
+        "instance_initial_eq": [
+          {
+            "parent_module": "frv_pipeline_decode",
+            "instance_name": "i_decode_pipereg",
+            "variables": [
+              "o_data"
+            ]
+          }
+        ]
+      },
       "clock": [
         "g_clk"
       ],

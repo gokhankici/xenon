@@ -146,10 +146,10 @@ readGCEInput = do
   (af, moduleMap, summaryMap, enableAbductionLoop) <- read <$> readFile "gce-input"
   return (af, moduleMap, summaryMap, mempty, enableAbductionLoop)
 
-_tst :: IO ()
-_tst = do
+_tst :: Bool -> IO ()
+_tst wpl = do
   (af, moduleMap, summaryMap, finfo, enableAbductionLoop) <- readGCEInput
-  generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop
+  generateCounterExampleGraphsH af moduleMap summaryMap finfo enableAbductionLoop wpl
 
 
 
@@ -159,6 +159,11 @@ generateCounterExampleGraphs
 --------------------------------------------------------------------------------
 generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop = do
   writeGCEInput (af, moduleMap, summaryMap, finfo, enableAbductionLoop)
+  generateCounterExampleGraphsH af moduleMap summaryMap finfo enableAbductionLoop False
+
+generateCounterExampleGraphsH
+  :: AnnotationFile -> ModuleMap -> SummaryMap -> FInfo -> Bool -> Bool -> IO ()
+generateCounterExampleGraphsH af moduleMap summaryMap finfo enableAbductionLoop withPublicLoop = do
   let cm = toConstraintTypes finfo
   fpTrace <- readFixpointTrace
   let fpTraceDiff          = firstNonCT $ calculateSolverTraceDiff fpTrace
@@ -191,10 +196,6 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
         toDotStr (invVariableDependencyNodeMap IM.!) (printf " #%d") edgeStyle
 
   let createDepTreeHelper = createDepTree varNames (varDepMap HM.!) toNode toName isHorn
-
-  -- writeFile "vardep.dot" $
-  --   toDotStr (invVariableDependencyNodeMap IM.!) (const "") edgeStyle variableDependencies
-  -- callDot "vardep.dot" "vardep.pdf"
 
   -- ---------------------------------------------------------------------------
   -- 1. data-flow graph part
@@ -256,7 +257,7 @@ generateCounterExampleGraphs af moduleMap summaryMap finfo enableAbductionLoop =
         srcs
       varDepGraph =
         G.nfilter (\n -> IM.member n ilpCostMap) varDepGraph0
-  let ilpCosts = (ilpCostMap IM.!)
+  let ilpCosts n = fromMaybe 0 $ ilpCostMap ^. at n
 
   secondAndThirdPhase PhaseData{ nonPublicNodes = mempty
                                , ..
@@ -284,6 +285,7 @@ data PhaseData = PhaseData
      , varDepGraph          :: VarDepGraph
      , nonPublicNodes       :: IS.IntSet
      , isHorn               :: Id -> Bool
+     , withPublicLoop       :: Bool
      }
 
 -- -----------------------------------------------------------------------------
@@ -291,7 +293,7 @@ secondAndThirdPhase :: PhaseData -> IO ()
 -- -----------------------------------------------------------------------------
 secondAndThirdPhase PhaseData{..} | not enableAbductionLoop = return ()
 
-secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
+secondAndThirdPhase PhaseData{..} | withPublicLoop || null minCtTreeRoots = do
   let invVarDepGraph = G.grev varDepGraph
       srcs = topmoduleAnnots ^. sources
       registerDependencies v =
@@ -317,61 +319,46 @@ secondAndThirdPhase PhaseData{..} | null minCtTreeRoots = do
   for_ varNames printInfo
 
   let snks = topmoduleAnnots ^. sinks
-      ilpGraph = G.nfilter (`IS.member` nonPublicNodes) varDepGraph
-      cannotMarkFilter v = T.isPrefixOf inlinePrefix v && not (null $ getDeps v)
-      cannotBeMarked =
-        let extraUnmarked1 =
-              if doNotMarkSubmoduleVariables
-              then SQ.filter cannotMarkFilter varNames
-              else mempty
-            extraUnmarked2 = toSequence snks
-        in toList $ fmap toNode $
-           (toSequence $ topmoduleAnnots ^. cannotMarks)
-           <> extraUnmarked1
-           <> extraUnmarked2
-      loops = let (pubSCC, _) = sccGraph ilpGraph
-              in [ IS.toList l
-                 | sccN <- G.nodes pubSCC -- sccN is a components
-                 , null $ G.pre pubSCC sccN -- and it is a root
-                 , let l = fromJust (G.lab pubSCC sccN)
-                 , IS.size l > 1
-                 ]
 
-  unless (nodeSize ilpGraph > maxFeasibleNodeCount) $
-    let dotStr =
-          toDotStr
-          (\n -> toName n <> " " <>
-                 if n `elem` cannotBeMarked then "***" else ""
-          )
-          (const "")
-          edgeStyle
-          ilpGraph
-    in printGraph "nonPubTree2" dotStr
+  let mkILPInput ilpGraph =
+        let cannotMarkFilter v = T.isPrefixOf inlinePrefix v && not (null $ getDeps v)
+            cannotBeMarked =
+              let extraUnmarked1 =
+                    if doNotMarkSubmoduleVariables
+                    then SQ.filter cannotMarkFilter varNames
+                    else mempty
+                  extraUnmarked2 = toSequence snks
+              in toList $ fmap toNode $
+                 (toSequence $ topmoduleAnnots ^. cannotMarks)
+                 <> extraUnmarked1
+                 <> extraUnmarked2
+            loops = let (pubSCC, _) = sccGraph ilpGraph
+                    in [ IS.toList l
+                       | sccN <- G.nodes pubSCC -- sccN is a components
+                       , null $ G.pre pubSCC sccN -- and it is a root
+                       , let l = fromJust (G.lab pubSCC sccN)
+                       , IS.size l > 1
+                       ]
+        in (cannotBeMarked, loops)
 
   putStrLn "-------------------------------------------------------------------"
   putStrLn "\n\n\n"
   putStrLn "minCtTreeRoots is empty ..."
-  putStrLn "enter a variable name to examine it by itself:"
+  putStrLn "enter a variable name to see how to make it public:"
 
   mui <- fmap T.words <$> getUserInput
 
-  -- let validInput = maybe False (`elem` varNames) mui
-  --     mustBePublic = toNode <$> toList mui
-
   case mui of
-    Nothing -> putStrLn "invalid/empty user input"
     Just [v] | v `elem` varNames -> do
       printInfo v
+      let ilpGraph = createDepTreeHelper getHornPubNo
+      let (cannotBeMarked, loops) = mkILPInput ilpGraph
       result <- runILPLoop [toNode v] cannotBeMarked loops ilpGraph ilpCosts toName
-      print result
+      case result of
+        Left errMsg -> putStrLn errMsg
+        _ -> return ()
       secondAndThirdPhase PhaseData{..}
-    Just ["pub", v] | v `elem` varNames -> do
-      printInfo v
-      putStrLn $ toDotStr toName (const "") edgeStyle ilpGraph
-      result <- runILPLoop [toNode v] cannotBeMarked loops ilpGraph ilpCosts toName
-      print result
-      secondAndThirdPhase PhaseData{..}
-    Just _ -> putStrLn "invalid/empty user input"
+    _ -> putStrLn "invalid/empty user input"
 
 secondAndThirdPhase PhaseData{..} = do
   let ModuleSummary{..} = ms

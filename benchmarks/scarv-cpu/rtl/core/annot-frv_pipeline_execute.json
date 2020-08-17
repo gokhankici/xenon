@@ -62,11 +62,18 @@
           "s2_pw",
           "s2_uop",
           "s2_valid",
-          "s3_busy"
+          "s3_busy",
+          "s2_trap",
+          "s2_instr",
+          "s2_size",
+          "s2_rd"
         ],
         "cannot_mark": [],
         "assert_eq": [
-          "s2_busy"
+          "s3_valid",
+          "s2_busy",
+          "rng_req_valid",
+          "rng_rsp_ready"
         ]
       },
       "clock": [
@@ -122,7 +129,17 @@
       "inline": true
     },
     "frv_pipeline_register": {
-      "annotations": {},
+      "annotations": {
+        "instance_initial_eq": [
+          {
+            "parent_module": "frv_pipeline_execute",
+            "instance_name": "i_execute_pipe_reg",
+            "variables": [
+              "o_data"
+            ]
+          }
+        ]
+      },
       "clock": [
         "g_clk"
       ],
