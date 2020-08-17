@@ -58,8 +58,18 @@
           "imem_recv",
           "rng_req_ready",
           "rng_rsp_valid",
+          "rng_rsp_status",
           "int_trap_req",
-          "mmio_error"
+          "mmio_error",
+          "int_extern_cause",
+          "int_external",
+          "mstatus_mie",
+          "int_nmi",
+          "int_software",
+          "ti_pending",
+          "mie_meie",
+          "mie_mtie",
+          "mie_msie"
         ]
       },
       "clock": [
@@ -528,13 +538,31 @@
       "inline": true
     },
     "frv_interrupt": {
+      "annotations": {
+        "initial_eq": [
+          "int_trap_cause",
+          "mip_meip",
+          "mip_msip",
+          "mip_mtip",
+          "mip_nmi"
+        ]
+      },
       "clock": [
         "g_clk"
       ],
       "inline": true
     },
     "frv_counters": {
-      "annotations": {},
+      "annotations": {
+        "initial_eq": [
+          "ctr_cycle",
+          "ctr_instret",
+          "mapped_mtime",
+          "mapped_mtimecmp",
+          "mmio_rdata",
+          "timer_interrupt"
+        ]
+      },
       "clock": [
         "g_clk"
       ],
