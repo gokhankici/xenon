@@ -19,153 +19,14 @@
           "underflow",
           "zero",
           "div_by_zero"
-        ]
-      },
-      "ignore": {
-        "qualifiers": [
-          {
-            "type": "pairs",
-            "variables": [
-              "div_opa_ldz_d",
-              "fpu_op_r2",
-              "M_except_V_expa_00",
-              "M_except_V_expa_ff",
-              "M_except_V_expb_00",
-              "M_except_V_expb_ff",
-              "M_except_V_fracta_00",
-              "M_except_V_fractb_00",
-              "M_except_V_infa_f_r",
-              "M_except_V_infb_f_r",
-              "M_except_V_opa_nan",
-              "M_except_V_opb_nan",
-              "M_except_V_qnan_r_a",
-              "M_except_V_qnan_r_b",
-              "M_except_V_snan_r_a",
-              "M_except_V_snan_r_b",
-              "M_pre_norm_V_add_d",
-              "M_pre_norm_V_add_r",
-              "M_pre_norm_V_exp_dn_out",
-              "M_pre_norm_V_foo_u1",
-              "M_pre_norm_V_fracta_eq_fractb",
-              "M_pre_norm_V_fracta_lt_fractb",
-              "M_pre_norm_V_fracta_out",
-              "M_pre_norm_V_fractb_out",
-              "M_pre_norm_V_sign_d",
-              "M_pre_norm_V_signa_r",
-              "M_pre_norm_V_signb_r",
-              "M_pre_norm_V_sticky",
-              "M_pre_norm_fmul_V_exp_out",
-              "M_pre_norm_fmul_V_exp_ovf",
-              "M_pre_norm_fmul_V_inf",
-              "M_pre_norm_fmul_V_rewrite_fracta",
-              "M_pre_norm_fmul_V_rewrite_fractb",
-              "M_pre_norm_fmul_V_sign_d",
-              "M_pre_norm_fmul_V_sign_exe",
-              "M_pre_norm_fmul_V_underflow",
-              "M_mul_r2_V_prod1",
-              "M_div_r2_V_quo1",
-              "M_div_r2_V_remainder",
-              "opa_r1",
-              "opas_r1",
-              "rmode_r2"
-            ]
-          },
-          {
-            "type": "pairs",
-            "variables": [
-              "div_opa_ldz_r1",
-              "exp_ovf_r",
-              "exp_r",
-              "fpu_op_r3",
-              "fract_i2f",
-              "fract_out_q",
-              "inf_mul2",
-              "inf_mul_r",
-              "M_except_V_ind",
-              "M_except_V_inf",
-              "M_except_V_opa_00",
-              "M_except_V_opa_dn",
-              "M_except_V_opa_inf",
-              "M_except_V_opb_00",
-              "M_except_V_opb_dn",
-              "M_except_V_opb_inf",
-              "M_except_V_qnan",
-              "M_except_V_snan",
-              "M_pre_norm_V_exp_dn_out",
-              "M_pre_norm_V_fasu_op",
-              "M_pre_norm_V_foo_u1",
-              "M_pre_norm_V_fracta_out",
-              "M_pre_norm_V_fractb_out",
-              "M_pre_norm_V_nan_sign",
-              "M_pre_norm_V_result_zero_sign",
-              "M_pre_norm_V_sign",
-              "M_pre_norm_V_sign_d",
-              "M_pre_norm_fmul_V_foo_u2",
-              "M_pre_norm_fmul_V_sign",
-              "M_mul_r2_V_prod",
-              "M_div_r2_V_quo",
-              "M_div_r2_V_quo1",
-              "M_div_r2_V_rem",
-              "M_div_r2_V_remainder",
-              "opa_nan_r",
-              "opas_r2",
-              "rmode_r3",
-              "sign",
-              "sign_exe_r",
-              "underflow_fmul_r"
-            ]
-          },
-          {
-            "type": "pairs",
-            "variables": [
-              "fpu_op_r1",
-              "opa_r",
-              "opb_r",
-              "rmode_r1"
-            ]
-          },
-          {
-            "type": "pairs",
-            "variables": [
-              "div_by_zero",
-              "div_opa_ldz_r2",
-              "exp_r",
-              "fasu_op_r1",
-              "fract_denorm",
-              "fract_i2f",
-              "fract_out_q",
-              "M_pre_norm_V_sign",
-              "M_pre_norm_fmul_V_foo_u2",
-              "M_post_norm_V_rewrite_f2i_out_sign",
-              "M_div_r2_V_quo",
-              "M_div_r2_V_rem",
-              "qnan",
-              "sign",
-              "sign_fasu_r",
-              "sign_mul_r",
-              "snan"
-            ]
-          },
-          {
-            "type": "pairs",
-            "variables": [
-              "fract_denorm",
-              "M_post_norm_V_fi_ldz",
-              "qnan"
-            ]
-          },
-          {
-            "type": "pairs",
-            "variables": [
-              "fasu_op_r2",
-              "fract_denorm",
-              "fract_i2f",
-              "M_post_norm_V_fi_ldz",
-              "M_post_norm_V_rewrite_f2i_out_sign",
-              "sign",
-              "sign_fasu_r"
-            ]
-          }
+        ],
+        "always_eq": [
+          "fpu_op"
+        ],
+        "initial_eq": [
+          "fpu_op_r1",
+          "fpu_op_r2",
+          "fpu_op_r3"
         ]
       },
       "clock": "clk"
@@ -380,6 +241,151 @@
         "opb_r",
         "fpu_op_r1"
       ]
-    }
+    },
+    [
+      {
+        "type": "pairs",
+        "variables": [
+          "div_opa_ldz_d",
+          "fpu_op_r2",
+          "M_except_V_expa_00",
+          "M_except_V_expa_ff",
+          "M_except_V_expb_00",
+          "M_except_V_expb_ff",
+          "M_except_V_fracta_00",
+          "M_except_V_fractb_00",
+          "M_except_V_infa_f_r",
+          "M_except_V_infb_f_r",
+          "M_except_V_opa_nan",
+          "M_except_V_opb_nan",
+          "M_except_V_qnan_r_a",
+          "M_except_V_qnan_r_b",
+          "M_except_V_snan_r_a",
+          "M_except_V_snan_r_b",
+          "M_pre_norm_V_add_d",
+          "M_pre_norm_V_add_r",
+          "M_pre_norm_V_exp_dn_out",
+          "M_pre_norm_V_foo_u1",
+          "M_pre_norm_V_fracta_eq_fractb",
+          "M_pre_norm_V_fracta_lt_fractb",
+          "M_pre_norm_V_fracta_out",
+          "M_pre_norm_V_fractb_out",
+          "M_pre_norm_V_sign_d",
+          "M_pre_norm_V_signa_r",
+          "M_pre_norm_V_signb_r",
+          "M_pre_norm_V_sticky",
+          "M_pre_norm_fmul_V_exp_out",
+          "M_pre_norm_fmul_V_exp_ovf",
+          "M_pre_norm_fmul_V_inf",
+          "M_pre_norm_fmul_V_rewrite_fracta",
+          "M_pre_norm_fmul_V_rewrite_fractb",
+          "M_pre_norm_fmul_V_sign_d",
+          "M_pre_norm_fmul_V_sign_exe",
+          "M_pre_norm_fmul_V_underflow",
+          "M_mul_r2_V_prod1",
+          "M_div_r2_V_quo1",
+          "M_div_r2_V_remainder",
+          "opa_r1",
+          "opas_r1",
+          "rmode_r2"
+        ]
+      },
+      {
+        "type": "pairs",
+        "variables": [
+          "div_opa_ldz_r1",
+          "exp_ovf_r",
+          "exp_r",
+          "fpu_op_r3",
+          "fract_i2f",
+          "fract_out_q",
+          "inf_mul2",
+          "inf_mul_r",
+          "M_except_V_ind",
+          "M_except_V_inf",
+          "M_except_V_opa_00",
+          "M_except_V_opa_dn",
+          "M_except_V_opa_inf",
+          "M_except_V_opb_00",
+          "M_except_V_opb_dn",
+          "M_except_V_opb_inf",
+          "M_except_V_qnan",
+          "M_except_V_snan",
+          "M_pre_norm_V_exp_dn_out",
+          "M_pre_norm_V_fasu_op",
+          "M_pre_norm_V_foo_u1",
+          "M_pre_norm_V_fracta_out",
+          "M_pre_norm_V_fractb_out",
+          "M_pre_norm_V_nan_sign",
+          "M_pre_norm_V_result_zero_sign",
+          "M_pre_norm_V_sign",
+          "M_pre_norm_V_sign_d",
+          "M_pre_norm_fmul_V_foo_u2",
+          "M_pre_norm_fmul_V_sign",
+          "M_mul_r2_V_prod",
+          "M_div_r2_V_quo",
+          "M_div_r2_V_quo1",
+          "M_div_r2_V_rem",
+          "M_div_r2_V_remainder",
+          "opa_nan_r",
+          "opas_r2",
+          "rmode_r3",
+          "sign",
+          "sign_exe_r",
+          "underflow_fmul_r"
+        ]
+      },
+      {
+        "type": "pairs",
+        "variables": [
+          "fpu_op_r1",
+          "opa_r",
+          "opb_r",
+          "rmode_r1"
+        ]
+      },
+      {
+        "type": "pairs",
+        "variables": [
+          "div_by_zero",
+          "div_opa_ldz_r2",
+          "exp_r",
+          "fasu_op_r1",
+          "fract_denorm",
+          "fract_i2f",
+          "fract_out_q",
+          "M_pre_norm_V_sign",
+          "M_pre_norm_fmul_V_foo_u2",
+          "M_post_norm_V_rewrite_f2i_out_sign",
+          "M_div_r2_V_quo",
+          "M_div_r2_V_rem",
+          "qnan",
+          "sign",
+          "sign_fasu_r",
+          "sign_mul_r",
+          "snan"
+        ]
+      },
+      {
+        "type": "pairs",
+        "variables": [
+          "fract_denorm",
+          "M_post_norm_V_fi_ldz",
+          "qnan"
+        ]
+      },
+      {
+        "type": "pairs",
+        "variables": [
+          "fasu_op_r2",
+          "fract_denorm",
+          "fract_i2f",
+          "M_post_norm_V_fi_ldz",
+          "M_post_norm_V_rewrite_f2i_out_sign",
+          "sign",
+          "sign_fasu_r"
+        ]
+      }
+    ]
   ]
 }

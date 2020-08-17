@@ -314,7 +314,7 @@ major = mkCollection "major" ts
     ts = [ T  "mips"        $ mipsDir </> "mips_pipeline.v"
          , T  "yarvi"       $ b </> "yarvi" </> "shared" </> "yarvi.v"
          , T  "sha"         $ c </> "sha_core" </> "trunk" </> "rtl" </> "sha256.v"
-        --  , T  "fpu"         $ b </> "fpu" </> "verilog" </> "fpu.v"
+         , T  "fpu"         $ b </> "fpu" </> "verilog" </> "fpu.v"
          , TF "fpu-divider" $ b </> "fpu2" </> "divider" </> "divider.v"
          , TF "modexp"      $ c </> "RSA4096" </> "ModExp2" </> "ModExp.v"
          , T  "ctalu"       $ b </> "xcrypto-ref" </> "rtl" </> "coprocessor" </> "scarv_cop_palu.v"
