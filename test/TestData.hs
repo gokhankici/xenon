@@ -2,12 +2,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE StrictData          #-}
 
-module TestData
-  ( allTests
-  , TestTree(..)
-  , UnitTest(..)
-  , UnitTestType(..)
-  ) where
+module TestData where
 
 import qualified Iodine.IodineArgs as IA
 import           System.FilePath
@@ -35,6 +30,7 @@ data UnitTest =
                                   -- where "dir/name.v" is the verilog file
   , testType    :: UnitTestType
   }
+  deriving (Show)
 
 -- | default unit test patterns
 pattern T :: String -> FilePath -> UnitTest
@@ -278,31 +274,36 @@ xcryptoStubs = mkCollection "xcrypto" ts
 --------------------------------------------------------------------------------
 scarvCoreStubs :: TestTree
 --------------------------------------------------------------------------------
-scarvCoreStubs = mkCollection "core" ts
+scarvCoreStubs = mkCollection "core" $ mkScarvCoreTest <$> names
   where
+    names =
+      [ "frv_leak_unrolled"
+      , "frv_interrupts"
+      , "frv_rngif"
+      , "frv_gprs_unrolled"
+      , "frv_core_fetch_buffer"
+      , "frv_bitwise_unrolled"
+      , "frv_lsu"
+      , "frv_alu"
+      , "frv_pipeline_register_unrolled"
+      , "frv_counters"
+      , "frv_asi"
+      , "frv_pipeline_fetch"
+      , "frv_pipeline_memory"
+      , "frv_pipeline_writeback"
+      , "frv_csrs"
+      , "frv_pipeline_execute"
+      , "frv_pipeline_decode_unrolled"
+      , "frv_pipeline"
+      , "frv_core"
+      ]
+
+mkScarvCoreTest :: FilePath -> UnitTest
+mkScarvCoreTest filename = T filename filepath
+  where
+    filepath = x </> filename <.> "v"
     d = benchmarkDir </> "scarv-cpu"
     x = d </> "rtl" </> "core"
-    ts = [ T (takeBaseName filename) filename
-         | filename <- [ x </> "frv_leak_unrolled.v"
-                       , x </> "frv_interrupts.v"
-                       , x </> "frv_rngif.v"
-                       , x </> "frv_gprs_unrolled.v"
-                       , x </> "frv_core_fetch_buffer.v"
-                       , x </> "frv_bitwise_unrolled.v"
-                       , x </> "frv_lsu.v"
-                       , x </> "frv_alu.v"
-                       , x </> "frv_pipeline_register_unrolled.v"
-                       , x </> "frv_counters.v"
-                       , x </> "frv_asi.v"
-                       , x </> "frv_pipeline_fetch.v"
-                       , x </> "frv_pipeline_memory.v"
-                       , x </> "frv_pipeline_writeback.v"
-                       , x </> "frv_csrs.v"
-                       , x </> "frv_pipeline_execute.v"
-                       , x </> "frv_pipeline_decode_unrolled.v"
-                       , x </> "frv_pipeline.v"
-                       ]
-         ]
 
 --------------------------------------------------------------------------------
 major :: TestTree
@@ -320,3 +321,7 @@ major = mkCollection "major" ts
          , T  "ctalu"       $ b </> "xcrypto-ref" </> "rtl" </> "coprocessor" </> "scarv_cop_palu.v"
          , T  "aes"         $ c </> "tiny_aes" </> "trunk" </> "rtl" </> "aes_256.v"
          ]
+
+testTreeToUnits :: TestTree -> [UnitTest]
+testTreeToUnits (SingleTest u) = [u]
+testTreeToUnits (TestCollection _ t) = t >>= testTreeToUnits

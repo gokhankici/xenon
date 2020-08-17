@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 -- {-# OPTIONS_GHC -Wno-unused-binds #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
@@ -13,6 +14,7 @@ import           TestData
 
 import qualified Iodine.IodineArgs as IA
 import qualified Iodine.Runner as R
+import           Iodine.Language.Annotation
 
 import           Control.Exception
 import           Control.Lens hiding (simple, (<.>))
@@ -29,6 +31,15 @@ import           Test.Hspec
 import           Test.Hspec.Core.Runner
 import           Test.Hspec.Core.Spec
 import           Text.Printf
+import           System.Directory
+import           System.FilePath
+import           System.Process
+import qualified Data.ByteString.Lazy as B
+import qualified Data.Text as T
+import           System.TimeIt (timeItT)
+import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
+
 
 data TestArgs =
   TestArgs { _verbose      :: Bool
@@ -37,6 +48,7 @@ data TestArgs =
            , _hspecArgs    :: [String] -- | rest of the positional arguments
            , _runAbduction :: Bool
            , _dryRun       :: Bool
+           , _sizeTable    :: Bool
            }
   deriving (Generic, Show)
 
@@ -108,6 +120,8 @@ testArgs = mode programName def detailsText (flagArg argUpd "HSPEC_ARG") flags
               "Display both stdout & stderr of a test."
             , flagNone ["d", "dry-run"] (set dryRun True)
               "Print the calls to Iodine"
+            , flagNone ["size-table"] (set sizeTable True)
+              "Print the Verilog LOC table"
             , flagNone ["h", "help"] (set help True)
               "Displays this help message."
             ]
@@ -125,6 +139,7 @@ testArgs = mode programName def detailsText (flagArg argUpd "HSPEC_ARG") flags
                    , _hspecArgs    = []
                    , _runAbduction = False
                    , _dryRun       = False
+                   , _sizeTable    = False
                    }
 
 parseOpts :: IO TestArgs
@@ -155,11 +170,93 @@ main = do
   -- hack: set the required first two positional arguments to empty list
   templateIA <- updateDef . invalidate <$> IA.parseArgsWithError ("" : "" : opts ^. iodineArgs)
 
-  readConfig defaultConfig (opts^.hspecArgs)
-    >>= withArgs [] . runSpec (spec opts templateIA)
-    >>= evaluateSummary
+  if | opts ^. sizeTable -> printSizeTable
+     | otherwise -> readConfig defaultConfig (opts^.hspecArgs)
+                    >>= withArgs [] . runSpec (spec opts templateIA)
+                    >>= evaluateSummary
   where
     invalidate va = va { IA.fileName   = undefined
                        , IA.annotFile  = undefined
                        , IA.benchmarkMode = True
                        }
+
+printSizeTable :: IO ()
+printSizeTable = do
+  printf "%-15s & %4s & %3s & %3s & %8s & %7s \\\\\n"
+    "Benchmark" "LOC"
+    "#IE" "#AE"
+    "CT?"
+    "Runtime"
+  for_ unitTests printUnitTest
+  where
+    unitTests = testTreeToUnits major ++ testTreeToUnits scarv
+
+printUnitTest :: UnitTest -> IO ()
+printUnitTest u@UnitTest{..} = do
+  cwd <- getCurrentDirectory
+  (testIA, af) <- mkIA u
+  let vf = IA.fileName testIA
+      vfDir = takeDirectory vf
+      vfName = dropExtension $ takeBaseName vf
+      preproc = vfDir </> "" <.> vfName <.> "preproc" <.> "v"
+  case lookup vfName tableTests of
+    Nothing -> return ()
+    Just (isCT, prettyName) -> do
+      let tick = if isCT then "\\tickYes" else "\\tickNo"
+      R.generateIR testIA
+      loc <- (length . lines) <$>
+             readProcess (cwd </> "scripts" </> "remove_comments.sh") [preproc] ""
+      results <-
+        if enableRuns
+          then do let act = timeItT (silence $ R.runner testIA)
+                      acts = replicate runCount act
+                  fmap fst <$> sequence acts
+          else return [0]
+      let ieCount = annotCount initialEquals instanceInitialEquals af
+          aeCount = annotCount alwaysEquals instanceAlwaysEquals af
+      printf "%-15s & %4d & %3d & %3d & %8s & %7.2f \\\\\n"
+        prettyName loc
+        ieCount aeCount
+        tick
+        (mean results)
+  where
+    enableRuns = False
+    runCount = 1
+    annotCount l1 l2 af =
+      let go a = HS.size (a ^. l1) + HS.size (a ^. l2)
+      in sum $ (^. moduleAnnotations . to go) <$> HM.elems (af ^. afAnnotations)
+
+mean :: (Fractional a, Foldable t) => t a -> a
+mean ds = sum ds / fromIntegral (length ds)
+
+
+mkIA :: UnitTest -> IO (IA.IodineArgs, AnnotationFile)
+mkIA UnitTest{..} = do
+  cwd <- getCurrentDirectory
+  let vf = cwd </> verilogFile
+      afName = fromMaybe (IA.defaultAnnotFile vf) annotFile
+  af <- parseAnnotations <$> B.readFile afName
+  let ia = IA.defaultIodineArgs
+           { IA.fileName      = vf
+           , IA.annotFile     = afName
+           , IA.moduleName    = T.unpack $ af ^. afTopModule
+           , IA.benchmarkMode = True
+           , IA.noSave        = True
+           , IA.noFPOutput    = True
+           , IA.iverilogDir   = cwd </> "iverilog-parser"
+           , IA.verbosity     = IA.Quiet
+           }
+  return (ia, af)
+
+tableTests :: [(String, (Bool, String))]
+tableTests =
+  [ ("mips_pipeline"  , (True,  "mips"))
+  , ("yarvi"          , (True,  "riscv"))
+  , ("sha256"         , (True,  "sha-256"))
+  , ("fpu"            , (True,  "FPU-CT"))
+  , ("divider"        , (False, "FPU-NonCT"))
+  , ("ModExp"         , (False, "ModExp-NonCT"))
+  , ("scarv_cop_palu" , (True,  "ALU"))
+  , ("aes_256"        , (True,  "AES-256"))
+  , ("frv_core"       , (True,  "SCARV"))
+  ]
