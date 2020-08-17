@@ -1,71 +1,52 @@
 {
   "modules": {
-    "frv_pipeline": {
+    "frv_core": {
       "annotations": {
+        "source": [
+          "g_resetn",
+          "dmem_error",
+          "dmem_gnt",
+          "dmem_recv",
+          "imem_error",
+          "imem_gnt",
+          "imem_recv",
+          "int_external",
+          "int_nmi",
+          "int_software",
+          "rng_req_ready",
+          "rng_rsp_valid",
+          "rng_rsp_status",
+          "int_extern_cause",
+          "rng_rsp_data",
+          "dmem_rdata",
+          "imem_rdata"
+        ],
         "sink": [
           "dmem_ack",
-          "dmem_addr",
           "dmem_req",
-          "dmem_strb",
-          "dmem_wdata",
           "dmem_wen",
           "imem_ack",
-          "imem_addr",
           "imem_req",
-          "imem_strb",
-          "imem_wdata",
           "imem_wen",
-          "inhibit_cy",
-          "inhibit_ir",
-          "inhibit_tm",
-          "instr_ret",
-          "int_trap_ack",
+          "int_mtime",
           "leak_fence_unc0",
           "leak_fence_unc1",
           "leak_fence_unc2",
-          "leak_prng",
-          "mie_meie",
-          "mie_msie",
-          "mie_mtie",
-          "mmio_addr",
-          "mmio_en",
-          "mmio_wdata",
-          "mmio_wen",
-          "mstatus_mie",
-          "rng_req_data",
-          "rng_req_op",
           "rng_req_valid",
           "rng_rsp_ready",
+          "trs_valid",
+          "rng_req_op",
+          "rng_req_data",
           "trs_instr",
-          "trs_pc",
-          "trs_valid"
+          "dmem_strb",
+          "imem_strb",
+          "dmem_addr",
+          "dmem_wdata",
+          "imem_addr",
+          "imem_wdata",
+          "leak_prng",
+          "trs_pc"
         ],
-        "source": [
-          "ctr_cycle",
-          "ctr_instret",
-          "ctr_time",
-          "dmem_error",
-          "dmem_gnt",
-          "dmem_rdata",
-          "dmem_recv",
-          "g_resetn",
-          "imem_error",
-          "imem_gnt",
-          "imem_rdata",
-          "imem_recv",
-          "int_trap_cause",
-          "int_trap_req",
-          "mip_meip",
-          "mip_msip",
-          "mip_mtip",
-          "mmio_error",
-          "mmio_rdata",
-          "rng_req_ready",
-          "rng_rsp_data",
-          "rng_rsp_status",
-          "rng_rsp_valid"
-        ],
-        "initial_eq": [],
         "always_eq": [
           "dmem_error",
           "dmem_gnt",
@@ -75,10 +56,19 @@
           "imem_gnt",
           "imem_rdata",
           "imem_recv",
-          "int_trap_req",
-          "mmio_error",
           "rng_req_ready",
           "rng_rsp_valid",
+          "int_trap_req",
+          "mmio_error"
+        ]
+      },
+      "clock": [
+        "g_clk"
+      ]
+    },
+    "frv_pipeline": {
+      "annotations": {
+        "always_eq": [
           "cf_ack",
           "cf_req",
           "cf_target",
@@ -124,7 +114,8 @@
       },
       "clock": [
         "g_clk"
-      ]
+      ],
+      "inline": true
     },
     "frv_pipeline_fetch": {
       "annotations": {
@@ -535,6 +526,19 @@
       ],
       "qualifiers": [],
       "inline": true
+    },
+    "frv_interrupt": {
+      "clock": [
+        "g_clk"
+      ],
+      "inline": true
+    },
+    "frv_counters": {
+      "annotations": {},
+      "clock": [
+        "g_clk"
+      ],
+      "inline": true
     }
   },
   "include_dirs": [
@@ -545,8 +549,8 @@
     "../../external/xcrypto/rtl/xc_malu",
     "../../external/xcrypto/rtl/p_addsub",
     "../../external/xcrypto/rtl/p_shfrot",
-    "../../external/xcrypto/rtl/b_bop",
-    "../../external/xcrypto/rtl/b_lut"
+    "../../external/xcrypto/rtl/b_lut",
+    "../../external/xcrypto/rtl/b_bop"
   ],
-  "top_module": "frv_pipeline"
+  "top_module": "frv_core"
 }

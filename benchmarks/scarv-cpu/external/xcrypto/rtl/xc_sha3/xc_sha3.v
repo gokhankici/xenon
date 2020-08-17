@@ -5,6 +5,10 @@
 //  Implements the specialised sha3 indexing functions.
 //  - All of the f_* inputs must be 1-hot.
 //
+
+`ifndef XC_SHA3_DEFINED
+`define XC_SHA3_DEFINED
+
 module xc_sha3 (
 
 input  wire [31:0] rs1      , // Input source register 1
@@ -49,3 +53,5 @@ assign result           = {24'b0,shf_2};
 
 
 endmodule
+
+`endif

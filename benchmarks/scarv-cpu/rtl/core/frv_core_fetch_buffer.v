@@ -5,6 +5,9 @@
 //  A buffer which eats 4-byte memory read data responses, and
 //  emits 2 or 4-byte instructions.
 //
+`ifndef FRV_CORE_FETCH_BUFFER_DEFINED
+`define FRV_CORE_FETCH_BUFFER_DEFINED
+
 module frv_core_fetch_buffer (
 
 input              g_clk        , // Global clock
@@ -111,3 +114,5 @@ always @(posedge g_clk) begin
 end
 
 endmodule
+
+`endif

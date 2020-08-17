@@ -195,7 +195,11 @@ generateCounterExampleGraphsH af moduleMap summaryMap finfo enableAbductionLoop 
   let toCtTreeDotStr =
         toDotStr (invVariableDependencyNodeMap IM.!) (printf " #%d") edgeStyle
 
-  let createDepTreeHelper = createDepTree varNames (varDepMap HM.!) toNode toName isHorn
+  let createDepTreeHelper =
+        let lkpDeps v = case varDepMap ^. at v of
+                          Nothing -> error $ printf "%s not in varDepMap" v
+                          Just ds -> ds
+        in createDepTree varNames lkpDeps toNode toName isHorn
 
   -- ---------------------------------------------------------------------------
   -- 1. data-flow graph part

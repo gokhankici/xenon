@@ -4,6 +4,10 @@
 //
 //  Responsible for keeping control/status registers up to date.
 //
+
+`ifndef FRV_CSRS_DEFINED
+`define FRV_CSRS_DEFINED
+
 module frv_csrs (
 
 input              g_clk            , // global clock
@@ -196,7 +200,7 @@ wire wen_mie = csr_en && csr_wr  && csr_addr == CSR_ADDR_MIE;
 
 wire [31:0] reg_mie = {20'b0,mie_meie,3'b0,mie_mtie,3'b0,mie_msie,3'b0};
 
-wire [31:0] n_reg_mie = 
+wire [31:0] n_reg_mie =
     csr_wr_set ? reg_mie |  csr_wdata :
     csr_wr_clr ? reg_mie & ~csr_wdata :
                             csr_wdata ;
@@ -263,7 +267,7 @@ wire [31:0] reg_mstatus         = {
     reg_mstatus_mie   ,
     reg_mstatus_wpri4 ,
     reg_mstatus_sie   ,
-    reg_mstatus_uie    
+    reg_mstatus_uie
 };
 
 wire        wen_mstatus     = csr_wr && csr_addr == CSR_ADDR_MSTATUS;
@@ -278,7 +282,7 @@ wire        n_mstatus_mie       =
     csr_wr_clr    ? reg_mstatus_mie & ~csr_wdata[3] :
                     csr_wdata[3]                ;
 
-wire        n_mstatus_mpie      = 
+wire        n_mstatus_mpie      =
     int_pulse     ? reg_mstatus_mie                 :
     trap_cpu      ? reg_mstatus_mie                 :
     exec_mret     ? 0                               :
@@ -340,12 +344,12 @@ assign      vector_intrs = reg_mtvec_mode[0];
 
 wire        wen_mtvec    = csr_wr && csr_addr == CSR_ADDR_MTVEC;
 
-wire [29:0] n_mtvec_base = 
+wire [29:0] n_mtvec_base =
     csr_wr_set ? csr_mtvec[31:2] |  csr_wdata[31:2] :
     csr_wr_clr ? csr_mtvec[31:2] & ~csr_wdata[31:2] :
                  csr_wdata[31:2]                    ;
 
-wire [1:0] n_mtvec_mode = 
+wire [1:0] n_mtvec_mode =
     csr_wr_set ? csr_mtvec[ 1:0] |  csr_wdata[ 1:0] :
     csr_wr_clr ? csr_mtvec[ 1:0] & ~csr_wdata[ 1:0] :
                  csr_wdata[ 1:0]                    ;
@@ -372,7 +376,7 @@ end
 
 reg [31:0] reg_mscratch;
 
-wire[31:0] n_reg_mscratch = 
+wire[31:0] n_reg_mscratch =
     csr_wr_set ? reg_mscratch |  csr_wdata :
     csr_wr_clr ? reg_mscratch & ~csr_wdata :
                  csr_wdata                 ;
@@ -465,7 +469,7 @@ wire [30:0] n_mcause_cause =
     csr_wr_clr           ? reg_mcause_cause & ~csr_wdata[30:0]   :
                            csr_wdata[30:0]                       ;
 
-wire        wen_valid_mcause = 
+wire        wen_valid_mcause =
     csr_wdata == {26'b0,TRAP_IALIGN  } ||
     csr_wdata == {26'b0,TRAP_IACCESS } ||
     csr_wdata == {26'b0,TRAP_IOPCODE } ||
@@ -479,7 +483,7 @@ wire        wen_valid_mcause =
 
 always @(posedge g_clk) begin
     if(!g_resetn) begin
-        reg_mcause_cause     <= 0; 
+        reg_mcause_cause     <= 0;
         reg_mcause_interrupt <= 0;
     end else if(wen_mcause && wen_valid_mcause) begin
         reg_mcause_cause     <= n_mcause_cause;
@@ -516,7 +520,7 @@ always @(posedge g_clk) begin
 end
 
 wire [31:0] reg_mcountin = {
-    29'b0, 
+    29'b0,
     mcountin_ir,
     mcountin_tm,
     mcountin_cy
@@ -543,7 +547,7 @@ wire [11:0] uxcrypto_features = {
     XC_CLASS_MULTIARITH ,
     XC_CLASS_SHA3       ,
     XC_CLASS_SHA2       ,
-    XC_CLASS_AES         
+    XC_CLASS_AES
 };
 
 wire [31:0] reg_uxcrypto = {
@@ -556,17 +560,17 @@ wire [31:0] reg_uxcrypto = {
 
 wire       wen_uxcrypto = csr_wr && csr_addr == CSR_ADDR_UXCRYPTO;
 
-wire       n_uxcrypto_ct = 
+wire       n_uxcrypto_ct =
     csr_wr_set ? uxcrypto_ct |  csr_wdata[0] :
     csr_wr_clr ? uxcrypto_ct & ~csr_wdata[0] :
                                 csr_wdata[0] ;
 
-wire [7:0] n_uxcrypto_b0 = 
+wire [7:0] n_uxcrypto_b0 =
     csr_wr_set ? uxcrypto_b0 |  csr_wdata[23:16] :
     csr_wr_clr ? uxcrypto_b0 & ~csr_wdata[23:16] :
                                 csr_wdata[23:16] ;
 
-wire [7:0] n_uxcrypto_b1 = 
+wire [7:0] n_uxcrypto_b1 =
     csr_wr_set ? uxcrypto_b1 |  csr_wdata[31:24] :
     csr_wr_clr ? uxcrypto_b1 & ~csr_wdata[31:24] :
                                 csr_wdata[31:24] ;
@@ -604,11 +608,11 @@ wire          wen_lkgcfg = csr_wr && csr_addr == CSR_ADDR_LKGCFG;
 
 always @(posedge g_clk) begin
     if(!g_resetn) begin
-        
+
         reg_lkgcfg <= 13'b0;
 
     end else if(wen_lkgcfg) begin
-        
+
         reg_lkgcfg <= n_reg_lkgcfg;
 
     end
@@ -647,7 +651,7 @@ wire   read_mcountin  = csr_en && csr_addr == CSR_ADDR_MCOUNTIN ;
 wire   read_uxcrypto  = csr_en && csr_addr == CSR_ADDR_UXCRYPTO ;
 wire   read_lkgcfg    = csr_en && csr_addr == CSR_ADDR_LKGCFG   ;
 
-wire   valid_addr     = 
+wire   valid_addr     =
     read_mstatus   ||
     read_misa      ||
     read_medeleg   ||
@@ -683,7 +687,7 @@ assign csr_error = csr_en && (
     (csr_wr && invalid_addr ) ||
     (mtvec_bad_write        )
 );
-                    
+
 
 assign csr_rdata =
     {32{read_mstatus  }} & reg_mstatus          |
@@ -717,3 +721,4 @@ assign csr_rdata =
 
 endmodule
 
+`endif

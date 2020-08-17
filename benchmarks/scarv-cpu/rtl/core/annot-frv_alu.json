@@ -40,5 +40,9 @@
       "inline": false
     }
   },
+  "include_dirs": [
+    "../../external/xcrypto/rtl/p_addsub",
+    "../../external/xcrypto/rtl/p_shfrot"
+  ],
   "top_module": "frv_alu"
 }

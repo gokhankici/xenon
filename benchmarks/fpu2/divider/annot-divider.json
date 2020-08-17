@@ -1,64 +1,61 @@
 {
-  "clock": "clk",
-  "annotations": [
-    {
-      "type": "source",
-      "variables": [
-        "input_a",
-        "input_a_stb",
-        "input_b",
-        "input_b_stb",
-        "output_z_ack",
-        "rst"
-      ]
-    },
-    {
-      "type": "sink",
-      "variables": [
-        "s_input_a_ack",
-        "s_input_b_ack",
-        "s_output_z",
-        "s_output_z_stb"
-      ]
-    },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "a",
-        "a_e",
-        "a_m",
-        "a_s",
-        "b",
-        "b_e",
-        "b_m",
-        "b_s",
-        "count",
-        "dividend",
-        "divisor",
-        "guard",
-        "quotient",
-        "remainder",
-        "round_bit",
-        "s_input_a_ack",
-        "s_input_b_ack",
-        "s_output_z",
-        "s_output_z_stb",
-        "state",
-        "sticky",
-        "z",
-        "z_e",
-        "z_m",
-        "z_s"
-      ]
-    },
-    {
-      "type": "always_eq",
-      "variables": [
-        "input_a_stb",
-        "input_b_stb",
-        "output_z_ack",
-        "rst"
-      ]
+  "modules": {
+    "divider": {
+      "annotations": {
+        "source": [
+          "input_a",
+          "input_a_stb",
+          "input_b",
+          "input_b_stb",
+          "output_z_ack",
+          "rst"
+        ],
+        "sink": [
+          "input_a_ack",
+          "input_b_ack",
+          "output_z",
+          "output_z_stb"
+        ],
+        "initial_eq": [
+          "s_output_z_stb",
+          "s_output_z",
+          "s_input_a_ack",
+          "s_input_b_ack",
+          "a",
+          "b",
+          "z",
+          "a_m",
+          "b_m",
+          "z_m",
+          "a_e",
+          "b_e",
+          "z_e",
+          "a_s",
+          "b_s",
+          "z_s",
+          "guard",
+          "round_bit",
+          "sticky",
+          "quotient",
+          "divisor",
+          "dividend",
+          "remainder",
+          "count"
+        ],
+        "always_eq": [
+          "rst",
+          "input_a_stb",
+          "input_b_stb",
+          "output_z_ack"
+        ]
+      },
+      "clock": [
+        "clk"
+      ],
+      "qualifiers": [],
+      "inline": false
     }
-  ]
+  },
+  "include_dirs": [],
+  "top_module": "divider"
 }

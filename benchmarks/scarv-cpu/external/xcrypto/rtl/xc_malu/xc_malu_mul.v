@@ -8,6 +8,9 @@
 //  - clmul
 //  - clmulh
 //
+`ifndef XC_MALU_MUL_DEFINED
+`define XC_MALU_MUL_DEFINED
+
 module xc_malu_mul (
 
 input  wire [31:0]  rs1             ,
@@ -39,7 +42,7 @@ input  wire [31:0]  padd_result     ,
 
 output wire [63:0]  n_acc           ,
 output wire [31:0]  n_arg_0         ,
-output wire         ready           
+output wire         ready
 
 );
 
@@ -60,7 +63,7 @@ assign        padd_cin   = 1'b0;
 assign        padd_cen   = !carryless;
 
 wire          add_32     = carryless ? 1'b0 :
-                           add_lhs[32] + 
+                           add_lhs[32] +
                            add_rhs[32] +
                            sub_last    + padd_cout[31];
 
@@ -71,3 +74,5 @@ assign n_acc             = {add_result, acc[31:1]};
 assign n_arg_0           = {1'b0, arg_0[31:1]};
 
 endmodule
+
+`endif

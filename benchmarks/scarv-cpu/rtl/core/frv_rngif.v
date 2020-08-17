@@ -4,6 +4,10 @@
 //
 //  Handles interfacing with the external random number generator.
 //
+
+`ifndef FRV_RNGIF_DEFINED
+`define FRV_RNGIF_DEFINED
+
 module frv_rngif (
 
 input              g_clk            , // global clock
@@ -77,3 +81,5 @@ assign result           = uop_samp ? rng_rsp_data               :
                                      32'b0                      ;
 
 endmodule
+
+`endif

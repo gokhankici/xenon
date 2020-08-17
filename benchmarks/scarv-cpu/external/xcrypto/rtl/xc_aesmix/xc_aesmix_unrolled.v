@@ -4,6 +4,9 @@
 //
 //  Implements the lightweight AES MixColumns instructions.
 //
+`ifndef XC_AESMIX_DEFINED
+`define XC_AESMIX_DEFINED
+
 module xc_aesmix(
 
 input  wire        clock ,
@@ -17,7 +20,7 @@ input  wire [31:0] rs1   , // Input source register 1
 input  wire [31:0] rs2   , // Input source register 2
 input  wire        enc   , // Perform encrypt (set) or decrypt (clear).
 output wire        ready , // Is the instruction complete?
-output wire [31:0] result  // 
+output wire [31:0] result  //
 
 );
 
@@ -48,7 +51,7 @@ function [7:0] xtimeN;
     input[7:0] a;
     input[3:0] b;
 
-    xtimeN = 
+    xtimeN =
         (b[0] ?                         a   : 0) ^
         (b[1] ? xtime2(                 a)  : 0) ^
         (b[2] ? xtime2(xtime2(          a)) : 0) ^
@@ -110,4 +113,4 @@ assign result_r = result;
 
 endmodule
 
-
+`endif

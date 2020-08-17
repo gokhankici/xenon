@@ -300,6 +300,7 @@ scarvCoreStubs = mkCollection "core" ts
                        , x </> "frv_csrs.v"
                        , x </> "frv_pipeline_execute.v"
                        , x </> "frv_pipeline_decode_unrolled.v"
+                       , x </> "frv_pipeline.v"
                        ]
          ]
 
@@ -314,8 +315,8 @@ major = mkCollection "major" ts
          , T  "yarvi"       $ b </> "yarvi" </> "shared" </> "yarvi.v"
          , T  "sha"         $ c </> "sha_core" </> "trunk" </> "rtl" </> "sha256.v"
         --  , T  "fpu"         $ b </> "fpu" </> "verilog" </> "fpu.v"
-        --  , TF "fpu-divider" $ b </> "fpu2" </> "divider" </> "divider.v"
-        --  , TF "modexp"      $ c </> "RSA4096" </> "ModExp2" </> "ModExp.v"
+         , TF "fpu-divider" $ b </> "fpu2" </> "divider" </> "divider.v"
+         , TF "modexp"      $ c </> "RSA4096" </> "ModExp2" </> "ModExp.v"
          , T  "ctalu"       $ b </> "xcrypto-ref" </> "rtl" </> "coprocessor" </> "scarv_cop_palu.v"
          , T  "aes"         $ c </> "tiny_aes" </> "trunk" </> "rtl" </> "aes_256.v"
          ]

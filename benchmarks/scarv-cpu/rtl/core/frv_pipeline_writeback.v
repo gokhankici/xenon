@@ -7,6 +7,10 @@
 //  - CSR accesses
 //  - GPR writeback.
 //
+
+`ifndef FRV_PIPELINE_WRITEBACK_DEFINED
+`define FRV_PIPELINE_WRITEBACK_DEFINED
+
 module frv_pipeline_writeback (
 
 input              g_clk           , // global clock
@@ -281,18 +285,18 @@ assign cf_req       = cf_req_noint || trap_int  ;
 // CFU operation finishing this cycle.
 wire cfu_finish_now = cf_req && cf_ack;
 
-wire [31:0] cf_target_noint = 
+wire [31:0] cf_target_noint =
     {XLEN{cfu_cf_taken}}  & s4_opr_a  |
     {XLEN{cfu_mret    }}  & csr_mepc  ;
 
 
-wire [ 7:0] trap_vector_offset  = 
+wire [ 7:0] trap_vector_offset  =
     (vector_intrs && trap_int) ? ({2'b00,int_trap_cause} << 2) : 8'b0;
 
 wire [XL:0] trap_target_addr    = {24'b0, trap_vector_offset} | csr_mtvec;
 
 // Given a control flow change, this is where we are going.
-assign cf_target    = 
+assign cf_target    =
           cfu_tgt_trap    ? trap_target_addr : cf_target_noint;
 
 // CFU operation finished, but pipeline still stalled.
@@ -300,7 +304,7 @@ reg     cfu_done;
 wire    n_cfu_done = !pipe_progress && (cfu_done || cfu_finish_now) ;
 
 // The CFU operation is complete and the pipeline can progress.
-wire    cfu_busy = fu_cfu && 
+wire    cfu_busy = fu_cfu &&
                    !(cfu_done || cfu_finish_now) &&
                    (cfu_cf_taken ||cfu_trap || cfu_mret);
 
@@ -334,7 +338,7 @@ wire        lsu_txn_recv    = lsu_load               &&
 //
 // Track whether we've already seen the expected memory response for the
 // current writeback stage instruction.
-wire        n_lsu_rsp_seen  = 
+wire        n_lsu_rsp_seen  =
     !pipe_progress && (lsu_rsp_seen || lsu_mmio || (dmem_recv && dmem_ack));
 
 reg         lsu_rsp_seen;
@@ -400,7 +404,7 @@ wire [XL:0] lsu_rdata   = {rdata_h1,rdata_b1,rdata_b0};
 
 reg  dmem_error_seen;
 
-wire n_dmem_error_seen = 
+wire n_dmem_error_seen =
     dmem_error_seen || (lsu_rsp_expected && dmem_error && dmem_recv);
 
 always @(posedge g_clk) begin
@@ -434,12 +438,12 @@ end
 
 assign gpr_rd   = s4_rd;
 
-assign gpr_wide = 
+assign gpr_wide =
     fu_mul && (
         s4_uop == MUL_MMUL ||
         s4_uop == MUL_MADD ||
         s4_uop == MUL_MSUB ||
-        s4_uop == MUL_MACC 
+        s4_uop == MUL_MACC
     )    ||
     fu_bit && (s4_uop == BIT_RORW) ;
 
@@ -517,7 +521,7 @@ assign trs_instr= s4_instr;
 // - The instruction has non-zero size AND
 //   - The pipeline is progressing OR
 //   - A control flow change finished this cycle.
-assign trs_valid= 
+assign trs_valid=
     |s4_size && ((s4_valid && !s4_busy) || (cf_req && cf_ack && !cfu_done));
 
 
@@ -650,7 +654,7 @@ assign rvfi_rd_wdatahi =
 
 assign rvfi_rd_wide  = gpr_wide ;
 
-assign rvfi_pc_rdata = trs_pc   ; 
+assign rvfi_pc_rdata = trs_pc   ;
 assign rvfi_pc_wdata = cf_req_noint ? cf_target_noint            :
                                       s4_pc+{29'b0,s4_size,1'b0} ;
 
@@ -674,3 +678,5 @@ assign rvfi_mode  = 0;
 `endif
 
 endmodule
+
+`endif

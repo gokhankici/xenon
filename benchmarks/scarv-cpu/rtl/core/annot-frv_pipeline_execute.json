@@ -255,7 +255,10 @@
     "../../external/xcrypto/rtl/xc_aessub",
     "../../external/xcrypto/rtl/xc_aesmix",
     "../../external/xcrypto/rtl/xc_malu",
-    "../../external/xcrypto/rtl/p_addsub"
+    "../../external/xcrypto/rtl/p_addsub",
+    "../../external/xcrypto/rtl/b_lut",
+    "../../external/xcrypto/rtl/p_shfrot",
+    "../../external/xcrypto/rtl/b_bop"
   ],
   "top_module": "frv_pipeline_execute"
 }

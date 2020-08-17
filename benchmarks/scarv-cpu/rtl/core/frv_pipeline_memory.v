@@ -5,6 +5,9 @@
 //  Memory stage of the pipeline, responsible making memory requests.
 //
 
+`ifndef FRV_PIPELINE_MEMORY_DEFINED
+`define FRV_PIPELINE_MEMORY_DEFINED
+
 `include "frv_lsu.v"
 `include "frv_pipeline_register_unrolled.v"
 
@@ -408,3 +411,5 @@ end
 `endif // RVFI
 
 endmodule
+
+`endif

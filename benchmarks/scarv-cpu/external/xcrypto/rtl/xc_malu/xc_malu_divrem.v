@@ -6,6 +6,10 @@
 //  - rem
 //  - remu
 //
+
+`ifndef XC_MALU_DIVREM_DEFINED
+`define XC_MALU_DIVREM_DEFINED
+
 module xc_malu_divrem (
 
 input  wire         clock           ,
@@ -26,7 +30,7 @@ input  wire [31:0]  arg_1           , // Quotient
 output wire [63:0]  n_acc           ,
 output wire [31:0]  n_arg_0         ,
 output wire [31:0]  n_arg_1         ,
-output wire         ready           
+output wire         ready
 
 );
 
@@ -45,9 +49,9 @@ wire [31:0] qmask       = (32'b1<<31  ) >> count  ;
 wire        div_less    = acc <= {32'b0,arg_0};
 
 wire [31:0] sub_result = arg_0 - acc[31:0];
-        
 
-wire [63:0] divisor_start = 
+
+wire [63:0] divisor_start =
     {(signed_rhs ? -{rs2[31],rs2} : {1'b0,rs2}), 31'b0};
 
 
@@ -64,11 +68,11 @@ assign      n_arg_1     = div_start           ? 0               :
 
 always @(posedge clock) begin
     if(!resetn   || flush) begin
-        
+
         div_run  <= 1'b0;
 
     end else if(div_start) begin
-        
+
         div_run  <= 1'b1;
 
     end else if(div_run) begin
@@ -83,3 +87,5 @@ always @(posedge clock) begin
 end
 
 endmodule
+
+`endif

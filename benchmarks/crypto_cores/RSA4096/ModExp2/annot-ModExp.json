@@ -1,59 +1,97 @@
 {
-  "annotations": [
-    {
-      "type": "source",
-      "variables": [
-        "e_buf",
-        "getResult",
-        "m_buf",
-        "n_mem_qi",
-        "nprime0_mem_qi",
-        "r_mem_qi",
-        "reset",
-        "startCompute",
-        "startInput",
-        "t_mem_qi"
+  "modules": {
+    "ModExp": {
+      "annotations": {
+        "source": [
+          "e_buf",
+          "getResult",
+          "m_buf",
+          "n_mem_qi",
+          "nprime0_mem_qi",
+          "r_mem_qi",
+          "reset",
+          "startCompute",
+          "startInput",
+          "t_mem_qi"
+        ],
+        "sink": [
+          "exp_state",
+          "res_out",
+          "state"
+        ],
+        "initial_eq": [
+          "m_in",
+          "r_in",
+          "t_in",
+          "e_in",
+          "nprime0",
+          "n_in",
+          "m_bar",
+          "c_bar",
+          "z",
+          "v",
+          "m",
+          "i",
+          "j",
+          "k",
+          "k_e1",
+          "k_e2",
+          "x0",
+          "y0",
+          "z0",
+          "last_c0",
+          "s0",
+          "c0",
+          "addr_buf",
+          "addr_buf2",
+          "r_buf",
+          "t_buf",
+          "nprime0_buf",
+          "n_buf",
+          "res_buf"
+        ],
+        "always_eq": [
+          "reset",
+          "startInput",
+          "startCompute",
+          "getResult"
+        ]
+      },
+      "clock": [
+        "clk"
       ]
     },
-    {
-      "type": "sink",
-      "variables": [
-        "res_out"
-      ]
+    "nprime0_mem": {
+      "clock": [
+        "clock"
+      ],
+      "inline": true
     },
-    {
-      "type": "initial_eq",
-      "variables": [
-        "addr_buf",
-        "addr_buf2",
-        "c0",
-        "c_bar",
-        "e_in",
-        "i",
-        "j",
-        "k",
-        "k_e1",
-        "k_e2",
-        "last_c0",
-        "m",
-        "m_bar",
-        "m_in",
-        "n_buf",
-        "n_in",
-        "nprime0",
-        "nprime0_buf",
-        "r_buf",
-        "r_in",
-        "res_buf",
-        "s0",
-        "t_buf",
-        "t_in",
-        "v",
-        "x0",
-        "y0",
-        "z",
-        "z0"
-      ]
+    "mul_add": {
+      "clock": [
+        "clk"
+      ],
+      "inline": true
+    },
+    "t_mem": {
+      "clock": [
+        "clock"
+      ],
+      "inline": true
+    },
+    "n_mem": {
+      "clock": [
+        "clock"
+      ],
+      "inline": true
+    },
+    "r_mem": {
+      "clock": [
+        "clock"
+      ],
+      "inline": true
     }
-  ]
+  },
+  "include_dirs": [],
+  "top_module": "ModExp"
 }

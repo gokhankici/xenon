@@ -7,6 +7,9 @@
 //  instructions into wider pipeline encodings.
 //
 
+`ifndef FRV_PIPELINE_DECODE_DEFINED
+`define FRV_PIPELINE_DECODE_DEFINED
+
 `include "frv_leak_unrolled.v"
 `include "frv_pipeline_register_unrolled.v"
 
@@ -1091,3 +1094,5 @@ frv_pipeline_register #(
 );
 
 endmodule
+
+`endif

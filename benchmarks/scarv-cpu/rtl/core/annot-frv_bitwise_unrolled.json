@@ -31,5 +31,9 @@
       "inline": false
     }
   },
+  "include_dirs": [
+    "../../external/xcrypto/rtl/b_lut",
+    "../../external/xcrypto/rtl/b_bop"
+  ],
   "top_module": "frv_bitwise"
 }

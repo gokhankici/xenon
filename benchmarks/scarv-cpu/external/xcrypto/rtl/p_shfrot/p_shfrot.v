@@ -4,6 +4,9 @@
 //
 //  Barrel implementation of the packed shift/rotate instructions.
 //
+`ifndef P_SHFROT_DEFINED
+`define P_SHFROT_DEFINED
+
 module p_shfrot (
 
 input  [31:0] crs1  , // Source register 1
@@ -109,7 +112,7 @@ wire [31:0] l1_2_right  = {rotate && l0[30], l0[31],
                            rotate && l0[ 4], l0[ 5],
                            rotate && l0[ 2], l0[ 3],
                            rotate && l0[ 0], l0[ 1]};
-    
+
 wire ld_l1_l_32 =left  && w_32 && shamt[0];
 wire ld_l1_r_32 =right && w_32 && shamt[0];
 
@@ -183,7 +186,7 @@ wire [31:0] l2_4_right  = {{2{rotate}} & l1[29:28], l1[31:30],
                            {2{rotate}} & l1[ 1: 0], l1[ 3: 2]};
 
 wire [31:0] l2_2        = rotate ? l1 : 32'b0;
-    
+
 wire ld_l2_l_32 =left  && w_32 && shamt[1];
 wire ld_l2_r_32 =right && w_32 && shamt[1];
 
@@ -200,7 +203,7 @@ wire ld_l2_2    =         w_2  && shamt[1];
 
 wire ld_l2_n_n  =                !shamt[1];
 
-assign l2 = 
+assign l2 =
     {32{ld_l2_l_32}} & l2_32_left    |
     {32{ld_l2_r_32}} & l2_32_right   |
     {32{ld_l2_l_16}} & l2_16_left    |
@@ -237,7 +240,7 @@ wire [31:0] l4_8_right  = {{4{rotate}} & l2[27:24], l2[31:28],
 wire [31:0] l4_4        = rotate ? l2 : 32'b0;
 
 wire [31:0] l4_2        = rotate ? l2 : 32'b0;
-    
+
 wire ld_l4_l_32 =left  && w_32 && shamt[2];
 wire ld_l4_r_32 =right && w_32 && shamt[2];
 
@@ -285,7 +288,7 @@ wire [31:0] l8_8        = rotate ? l4 : 32'b0;
 wire [31:0] l8_4        = rotate ? l4 : 32'b0;
 
 wire [31:0] l8_2        = rotate ? l4 : 32'b0;
-    
+
 wire ld_l8_l_32 =left  && w_32 && shamt[3];
 wire ld_l8_r_32 =right && w_32 && shamt[3];
 
@@ -329,7 +332,7 @@ wire [31:0] l16_8        = rotate ? l8 : 32'b0;
 wire [31:0] l16_4        = rotate ? l8 : 32'b0;
 
 wire [31:0] l16_2        = rotate ? l8 : 32'b0;
-    
+
 wire ld_l16_l_32 =left  && w_32 && shamt[4];
 wire ld_l16_r_32 =right && w_32 && shamt[4];
 
@@ -367,3 +370,5 @@ reg [31:0] result_r;
 assign result_r = result;
 
 endmodule
+
+`endif

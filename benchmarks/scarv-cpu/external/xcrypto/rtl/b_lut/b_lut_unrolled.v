@@ -4,6 +4,10 @@
 //
 //  Implements the core logic for the xc.lut instruction.
 //
+
+`ifndef B_LUT_DEFINED
+`define B_LUT_DEFINED
+
 module b_lut (
 
 input  wire [31:0] crs1  , // Source register 1 (LUT input)
@@ -49,3 +53,5 @@ reg [31:0] result_r;
 assign result_r = result;
 
 endmodule
+
+`endif

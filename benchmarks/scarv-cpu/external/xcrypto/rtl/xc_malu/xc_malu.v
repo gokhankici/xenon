@@ -13,6 +13,9 @@
 //  - madd, msub, macc, mmul
 //
 
+`ifndef XC_MALU_DEFINED
+`define XC_MALU_DEFINED
+
 `include "p_addsub_unrolled.v"
 `include "xc_malu_muldivrem.v"
 `include "xc_malu_long.v"
@@ -377,3 +380,5 @@ xc_malu_long i_xc_malu_long (
 );
 
 endmodule
+
+`endif

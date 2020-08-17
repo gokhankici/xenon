@@ -4,6 +4,10 @@
 //
 //  General purpose registers
 //
+
+`ifndef FRV_GPRS_DEFINED
+`define FRV_GPRS_DEFINED
+
 module frv_gprs (
 
 input  wire         g_clk   , //
@@ -55,10 +59,10 @@ generate for(i = 0; i < 16; i = i+1) begin
     if(i == 0) begin
 
         always @(*) gprs_even[i] = 0;
-        
+
         assign gprs[2*i+0] = 32'b0;
         assign gprs[2*i+1] = gprs_odd [i];
-        
+
         always @(posedge g_clk) if(rd_wen_odd && rd_top == i) begin
 
             gprs_odd[i] <= rd_wdata_odd;
@@ -66,7 +70,7 @@ generate for(i = 0; i < 16; i = i+1) begin
         end
 
     end else begin
-        
+
         assign gprs[2*i+0] = gprs_even[i];
         assign gprs[2*i+1] = gprs_odd [i];
 
@@ -87,3 +91,5 @@ generate for(i = 0; i < 16; i = i+1) begin
 end endgenerate
 
 endmodule
+
+`endif

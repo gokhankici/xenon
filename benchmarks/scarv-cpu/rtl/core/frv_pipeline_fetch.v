@@ -5,6 +5,9 @@
 //  Fetch pipeline stage.
 //
 
+`ifndef FRV_PIPELINE_FETCH_DEFINED
+`define FRV_PIPELINE_FETCH_DEFINED
+
 `include "frv_core_fetch_buffer.v"
 
 module frv_pipeline_fetch (
@@ -32,7 +35,7 @@ input  wire         s1_busy        , // Stall stage
 
 output wire         s1_valid        , // Stage ready to progress
 output wire [XL:0]  s1_data         , // Data to be decoded.
-output wire         s1_error 
+output wire         s1_error
 
 );
 
@@ -225,3 +228,5 @@ frv_core_fetch_buffer i_core_fetch_buffer (
 
 
 endmodule
+
+`endif

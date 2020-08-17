@@ -4,6 +4,10 @@
 //  - pmul
 //  - pmulh
 //
+
+`ifndef XC_MALU_PMUL_DEFINED
+`define XC_MALU_PMUL_DEFINED
+
 module xc_malu_pmul (
 
 input  wire [31:0]  rs1             ,
@@ -32,7 +36,7 @@ output wire [31:0]  n_arg_0         ,
 
 output wire [63:0]  result          ,
 
-output wire         ready        
+output wire         ready
 
 );
 
@@ -119,7 +123,7 @@ wire [ 1:0] addm_2_12   = {2{add_en_2_12}};
 wire [ 1:0] addm_2_13   = {2{add_en_2_13}};
 wire [ 1:0] addm_2_14   = {2{add_en_2_14}};
 wire [ 1:0] addm_2_15   = {2{add_en_2_15}};
-wire [31:0] addm_2      = {addm_2_15, addm_2_14, addm_2_13, addm_2_12, 
+wire [31:0] addm_2      = {addm_2_15, addm_2_14, addm_2_13, addm_2_12,
                            addm_2_11, addm_2_10, addm_2_9 , addm_2_8 ,
                            addm_2_7 , addm_2_6 , addm_2_5 , addm_2_4 ,
                            addm_2_3 , addm_2_2 , addm_2_1 , addm_2_0 };
@@ -137,17 +141,17 @@ wire [31:0] padd_lhs_16 = {acc[63:48], acc[31:16]};
 wire [31:0] padd_lhs_8  =
     {acc[63:56], acc[47:40], acc[31:24], acc[15:8]};
 
-wire [31:0] padd_lhs_4  = 
-    {acc[63:60], acc[55:52], acc[47:44], acc[39:36], 
+wire [31:0] padd_lhs_4  =
+    {acc[63:60], acc[55:52], acc[47:44], acc[39:36],
      acc[31:28], acc[23:20], acc[15:12], acc[ 7: 4]};
 
 wire [31:0] padd_lhs_2  =
-    {acc[63:62], acc[59:58], acc[55:54], acc[51:50], 
-     acc[47:46], acc[43:42], acc[39:38], acc[35:34], 
-     acc[31:30], acc[27:26], acc[23:22], acc[19:18], 
+    {acc[63:62], acc[59:58], acc[55:54], acc[51:50],
+     acc[47:46], acc[43:42], acc[39:38], acc[35:34],
+     acc[31:30], acc[27:26], acc[23:22], acc[19:18],
      acc[15:14], acc[11:10], acc[ 7: 6], acc[ 3: 2]};
 
-assign padd_lhs    = 
+assign padd_lhs    =
     {32{pw_16}} & padd_lhs_16 |
     {32{pw_8 }} & padd_lhs_8  |
     {32{pw_4 }} & padd_lhs_4  |
@@ -163,45 +167,45 @@ wire [31:0] cadd_carry  = 32'b0; //
 wire [31:0] add_result =  padd_result;
 wire [31:0] add_carry  =  padd_cout [31:0] ;
 
-wire [63:0] n_acc_16 = 
-                        {add_carry[31],add_result[31:16],acc[47:33], 
+wire [63:0] n_acc_16 =
+                        {add_carry[31],add_result[31:16],acc[47:33],
                          add_carry[15],add_result[15: 0],acc[15:1 ]};
 
 wire [63:0] n_acc_8  =
-                        {add_carry[31],add_result[31:24],acc[55:49], 
-                         add_carry[23],add_result[23:16],acc[39:33], 
-                         add_carry[15],add_result[15: 8],acc[23:17], 
+                        {add_carry[31],add_result[31:24],acc[55:49],
+                         add_carry[23],add_result[23:16],acc[39:33],
+                         add_carry[15],add_result[15: 8],acc[23:17],
                          add_carry[ 7],add_result[ 7: 0],acc[ 7: 1]};
 
 wire [63:0] n_acc_4  =
-                        {add_carry[31],add_result[31:28],acc[59:57], 
-                         add_carry[27],add_result[27:24],acc[51:49], 
-                         add_carry[23],add_result[23:20],acc[43:41], 
-                         add_carry[19],add_result[19:16],acc[35:33], 
-                         add_carry[15],add_result[15:12],acc[27:25], 
-                         add_carry[11],add_result[11: 8],acc[19:17], 
-                         add_carry[ 7],add_result[ 7: 4],acc[11: 9], 
+                        {add_carry[31],add_result[31:28],acc[59:57],
+                         add_carry[27],add_result[27:24],acc[51:49],
+                         add_carry[23],add_result[23:20],acc[43:41],
+                         add_carry[19],add_result[19:16],acc[35:33],
+                         add_carry[15],add_result[15:12],acc[27:25],
+                         add_carry[11],add_result[11: 8],acc[19:17],
+                         add_carry[ 7],add_result[ 7: 4],acc[11: 9],
                          add_carry[ 3],add_result[ 3: 0],acc[ 3: 1]};
 
 wire [63:0] n_acc_2  =
-                        {add_carry[31],add_result[31:30],acc[61], 
-                         add_carry[29],add_result[29:28],acc[57], 
-                         add_carry[27],add_result[27:26],acc[53], 
-                         add_carry[25],add_result[25:24],acc[49], 
-                         add_carry[23],add_result[23:22],acc[45], 
-                         add_carry[21],add_result[21:20],acc[41], 
-                         add_carry[19],add_result[19:18],acc[37], 
-                         add_carry[17],add_result[17:16],acc[33], 
-                         add_carry[15],add_result[15:14],acc[29], 
-                         add_carry[13],add_result[13:12],acc[25], 
-                         add_carry[11],add_result[11:10],acc[21], 
-                         add_carry[ 9],add_result[ 9: 8],acc[17], 
-                         add_carry[ 7],add_result[ 7: 6],acc[13], 
-                         add_carry[ 5],add_result[ 5: 4],acc[ 9], 
-                         add_carry[ 3],add_result[ 3: 2],acc[ 5], 
+                        {add_carry[31],add_result[31:30],acc[61],
+                         add_carry[29],add_result[29:28],acc[57],
+                         add_carry[27],add_result[27:26],acc[53],
+                         add_carry[25],add_result[25:24],acc[49],
+                         add_carry[23],add_result[23:22],acc[45],
+                         add_carry[21],add_result[21:20],acc[41],
+                         add_carry[19],add_result[19:18],acc[37],
+                         add_carry[17],add_result[17:16],acc[33],
+                         add_carry[15],add_result[15:14],acc[29],
+                         add_carry[13],add_result[13:12],acc[25],
+                         add_carry[11],add_result[11:10],acc[21],
+                         add_carry[ 9],add_result[ 9: 8],acc[17],
+                         add_carry[ 7],add_result[ 7: 6],acc[13],
+                         add_carry[ 5],add_result[ 5: 4],acc[ 9],
+                         add_carry[ 3],add_result[ 3: 2],acc[ 5],
                          add_carry[ 1],add_result[ 1: 0],acc[ 1]};
 
-assign n_acc = 
+assign n_acc =
     {64{pw_16}} & n_acc_16 |
     {64{pw_8 }} & n_acc_8  |
     {64{pw_4 }} & n_acc_4  |
@@ -256,3 +260,5 @@ wire [31:0] pmul_result_1     = {32{pw_16}} & pmul_result_1_16 |
 assign result = {pmul_result_1, pmul_result_0};
 
 endmodule
+
+`endif

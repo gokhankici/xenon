@@ -11,7 +11,7 @@ input  wire [31:0] rs1      ,
 input  wire [31:0] rs2      ,
 input  wire [ 7:0] lut      ,
 
-output wire [31:0] result    
+output wire [31:0] result
 
 );
 

@@ -4,6 +4,18 @@
 //
 //  The top level of the CPU
 //
+
+`include "frv_pipeline_fetch.v"
+`include "frv_pipeline_decode_unrolled.v"
+`include "frv_pipeline_execute.v"
+`include "frv_pipeline_memory.v"
+`include "frv_pipeline_writeback.v"
+`include "frv_csrs.v"
+`include "frv_gprs_unrolled.v"
+`include "frv_pipeline.v"
+`include "frv_interrupts.v"
+`include "frv_counters.v"
+
 module frv_core(
 
 input               g_clk           , // global clock
@@ -205,7 +217,7 @@ frv_pipeline #(
 .XC_CLASS_LEAK_BUBBLE(XC_CLASS_LEAK_BUBBLE),
 .AES_SUB_FAST       (AES_SUB_FAST       ),
 .AES_MIX_FAST       (AES_MIX_FAST       ),
-.BITMANIP_BASELINE  (BITMANIP_BASELINE  ), 
+.BITMANIP_BASELINE  (BITMANIP_BASELINE  ),
 .CSR_MIMPID         (CSR_MIMPID         )
 ) i_pipeline(
 .g_clk         (g_clk         ), // global clock
@@ -225,8 +237,8 @@ frv_pipeline #(
 .rvfi_rs2_rdata(rvfi_rs2_rdata),
 .rvfi_rs3_rdata(rvfi_rs3_rdata),
 .rvfi_aux      (rvfi_aux      ),
-.rvfi_rng_data (rvfi_rng_data ), 
-.rvfi_rng_stat (rvfi_rng_stat ), 
+.rvfi_rng_data (rvfi_rng_data ),
+.rvfi_rng_stat (rvfi_rng_stat ),
 .rvfi_rd_addr  (rvfi_rd_addr  ),
 .rvfi_rd_wide  (rvfi_rd_wide  ),
 .rvfi_rd_wdata (rvfi_rd_wdata ),

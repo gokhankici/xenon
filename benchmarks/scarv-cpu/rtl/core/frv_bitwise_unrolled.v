@@ -6,8 +6,11 @@
 //  core performs, both from XCrypto and Bitmanip
 //
 
-`include "../../external/xcrypto/rtl/b_lut/b_lut_unrolled.v"
-`include "../../external/xcrypto/rtl/b_bop/b_bop_unrolled.v"
+`ifndef FRV_BITWISE_DEFINED
+`define FRV_BITWISE_DEFINED
+
+`include "b_lut_unrolled.v"
+`include "b_bop_unrolled.v"
 
 module frv_bitwise (
 
@@ -56,10 +59,10 @@ wire [63:0] r_in    = uop_fsl ? rword_l : rword_r;
 
 wire [63:0] rt_5    = ramt[5] ? {r_in[31:0], r_in[63:32]} : r_in;   // 32
 wire [63:0] rt_4    = ramt[4] ? {rt_5[15:0], rt_5[63:16]} : rt_5;   // 16
-wire [63:0] rt_3    = ramt[3] ? {rt_4[ 7:0], rt_4[63: 8]} : rt_4;   // 8 
-wire [63:0] rt_2    = ramt[2] ? {rt_3[ 3:0], rt_3[63: 4]} : rt_3;   // 4 
-wire [63:0] rt_1    = ramt[1] ? {rt_2[ 1:0], rt_2[63: 2]} : rt_2;   // 2 
-wire [63:0] rt_0    = ramt[0] ? {rt_1[   0], rt_1[63: 1]} : rt_1;   // 1 
+wire [63:0] rt_3    = ramt[3] ? {rt_4[ 7:0], rt_4[63: 8]} : rt_4;   // 8
+wire [63:0] rt_2    = ramt[2] ? {rt_3[ 3:0], rt_3[63: 4]} : rt_3;   // 4
+wire [63:0] rt_1    = ramt[1] ? {rt_2[ 1:0], rt_2[63: 2]} : rt_2;   // 2
+wire [63:0] rt_0    = ramt[0] ? {rt_1[   0], rt_1[63: 1]} : rt_1;   // 1
 
 wire [63:0] rout_l  ;
 
@@ -130,7 +133,7 @@ assign rword_l_61 = rword_r[2 ];
 assign rword_l_62 = rword_r[1 ];
 assign rword_l_63 = rword_r[0 ];
 
-assign rword_l = { rword_l_0 , rword_l_1 , rword_l_2 , rword_l_3 , rword_l_4 , rword_l_5 , rword_l_6 , rword_l_7 , rword_l_8 , rword_l_9 
+assign rword_l = { rword_l_0 , rword_l_1 , rword_l_2 , rword_l_3 , rword_l_4 , rword_l_5 , rword_l_6 , rword_l_7 , rword_l_8 , rword_l_9
                  , rword_l_10 , rword_l_11 , rword_l_12 , rword_l_13 , rword_l_14 , rword_l_15 , rword_l_16 , rword_l_17 , rword_l_18 , rword_l_19
                  , rword_l_20 , rword_l_21 , rword_l_22 , rword_l_23 , rword_l_24 , rword_l_25 , rword_l_26 , rword_l_27 , rword_l_28 , rword_l_29
                  , rword_l_30 , rword_l_31 , rword_l_32 , rword_l_33 , rword_l_34 , rword_l_35 , rword_l_36 , rword_l_37 , rword_l_38 , rword_l_39
@@ -204,7 +207,7 @@ assign rout_l_61 = rt_0[2 ];
 assign rout_l_62 = rt_0[1 ];
 assign rout_l_63 = rt_0[0 ];
 
-assign rout_l = { rout_l_0 , rout_l_1 , rout_l_2 , rout_l_3 , rout_l_4 , rout_l_5 , rout_l_6 , rout_l_7 , rout_l_8 , rout_l_9 
+assign rout_l = { rout_l_0 , rout_l_1 , rout_l_2 , rout_l_3 , rout_l_4 , rout_l_5 , rout_l_6 , rout_l_7 , rout_l_8 , rout_l_9
                 , rout_l_10 , rout_l_11 , rout_l_12 , rout_l_13 , rout_l_14 , rout_l_15 , rout_l_16 , rout_l_17 , rout_l_18 , rout_l_19
                 , rout_l_20 , rout_l_21 , rout_l_22 , rout_l_23 , rout_l_24 , rout_l_25 , rout_l_26 , rout_l_27 , rout_l_28 , rout_l_29
                 , rout_l_30 , rout_l_31 , rout_l_32 , rout_l_33 , rout_l_34 , rout_l_35 , rout_l_36 , rout_l_37 , rout_l_38 , rout_l_39
@@ -238,7 +241,7 @@ b_bop i_b_bop(
 .rs2   (rs2         ),
 .rd    (rs3         ),
 .lut   (bop_lut     ),
-.result(result_bop  ) 
+.result(result_bop  )
 );
 
 
@@ -259,3 +262,5 @@ assign result =
 assign ready = valid;
 
 endmodule
+
+`endif

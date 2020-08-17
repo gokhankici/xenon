@@ -4,6 +4,10 @@
 //
 //  Implements the ternary bitwise `bop` instruction
 //
+
+`ifndef B_BOP_DEFINED
+`define B_BOP_DEFINED
+
 module b_bop (
 
 input  wire [31:0] rd       ,
@@ -11,7 +15,7 @@ input  wire [31:0] rs1      ,
 input  wire [31:0] rs2      ,
 input  wire [ 7:0] lut      ,
 
-output wire [31:0] result    
+output wire [31:0] result
 
 );
 
@@ -86,3 +90,5 @@ reg [31:0] result_r;
 assign result_r = result;
 
 endmodule
+
+`endif

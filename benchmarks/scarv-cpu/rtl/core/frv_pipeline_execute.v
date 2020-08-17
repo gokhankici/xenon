@@ -4,6 +4,10 @@
 //
 //  Execute stage of the pipeline, responsible for ALU / LSU / Branch compare.
 //
+
+`ifndef FRV_PIPELINE_EXECUTE_DEFINED
+`define FRV_PIPELINE_EXECUTE_DEFINED
+
 `include "frv_asi.v"
 `include "frv_alu.v"
 `include "xc_malu.v"
@@ -755,3 +759,5 @@ end
 `endif
 
 endmodule
+
+`endif

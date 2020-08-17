@@ -4,6 +4,10 @@
 //
 //  Load store unit. Responsible for all data accesses.
 //
+
+`ifndef FRV_LSU_DEFINED
+`define FRV_LSU_DEFINED
+
 module frv_lsu (
 
 input  wire        g_clk       , // Global clock
@@ -52,7 +56,7 @@ parameter   MMIO_BASE_MASK        = 32'hFFFF_F000;
 // MMIO Handling
 // -------------------------------------------------------------------------
 
-assign      lsu_mmio   = lsu_valid && 
+assign      lsu_mmio   = lsu_valid &&
                          (lsu_addr & MMIO_BASE_MASK) == MMIO_BASE_ADDR;
 
 reg         mmio_done;
@@ -82,7 +86,7 @@ wire dmem_txn_done = !lsu_mmio && dmem_req && dmem_gnt  ||
 
 reg  lsu_finished;
 
-wire n_lsu_finished = 
+wire n_lsu_finished =
     (lsu_finished || ((lsu_valid && dmem_txn_done) || lsu_a_error)) &&
     !pipe_prog;
 
@@ -110,7 +114,7 @@ assign dmem_req     = lsu_valid && !lsu_finished && !lsu_a_error &&
 assign dmem_wen     = lsu_store ;
 assign dmem_addr    = lsu_addr  & 32'hFFFF_FFFC;
 
-assign dmem_wdata   = 
+assign dmem_wdata   =
     {32{lsu_byte && lsu_addr[1:0]==2'b00}} & {24'b0, lsu_wdata[ 7:0]       } |
     {32{lsu_byte && lsu_addr[1:0]==2'b01}} & {16'b0, lsu_wdata[ 7:0],  8'b0} |
     {32{lsu_byte && lsu_addr[1:0]==2'b10}} & { 8'b0, lsu_wdata[ 7:0], 16'b0} |
@@ -142,3 +146,5 @@ assign dmem_strb = { dmem_strb_3
 				   };
 
 endmodule
+
+`endif

@@ -1,13 +1,16 @@
 
 //
-// module: frv_alu 
+// module: frv_alu
 //
 //  ALU for the execute stage.
 //  - add/sub/bitwise/shift
 //
 
-`include "../../external/xcrypto/rtl/p_addsub/p_addsub_unrolled.v"
-`include "../../external/xcrypto/rtl/p_shfrot/p_shfrot.v"
+`ifndef FRV_ALU_DEFINED
+`define FRV_ALU_DEFINED
+
+`include "p_addsub_unrolled.v"
+`include "p_shfrot.v"
 
 module frv_alu (
 
@@ -19,16 +22,16 @@ input               alu_flush       , // flush the stage
 output              alu_ready       , // stage ready to progress
 
 input        [PW:0] alu_pw          , // Pack width specifer.
-input               alu_op_add      , // 
-input               alu_op_sub      , // 
-input               alu_op_xor      , // 
-input               alu_op_or       , // 
-input               alu_op_and      , // 
-input               alu_op_shf      , // 
-input               alu_op_rot      , // 
-input               alu_op_shf_left , // 
-input               alu_op_shf_arith, // 
-input               alu_op_cmp      , // 
+input               alu_op_add      , //
+input               alu_op_sub      , //
+input               alu_op_xor      , //
+input               alu_op_or       , //
+input               alu_op_and      , //
+input               alu_op_shf      , //
+input               alu_op_rot      , //
+input               alu_op_shf_left , //
+input               alu_op_shf_arith, //
+input               alu_op_cmp      , //
 input               alu_op_unsigned , //
 
 output wire         alu_lt          , // Is LHS < RHS?
@@ -135,11 +138,12 @@ wire out_shift  = alu_op_shf || alu_op_rot ;
 wire out_bw     = alu_op_xor || alu_op_or || alu_op_and;
 wire out_cmp    = alu_op_cmp ;
 
-assign alu_result = 
+assign alu_result =
     out_adder ? adder_result[XL:0] :
     {XLEN{out_shift}} & shift_result[XL:0]    |
-    {XLEN{out_bw   }} & bw_result             | 
-    {XLEN{out_cmp  }} & {31'b0, alu_lt}       ; 
+    {XLEN{out_bw   }} & bw_result             |
+    {XLEN{out_cmp  }} & {31'b0, alu_lt}       ;
 
 endmodule
 
+`endif

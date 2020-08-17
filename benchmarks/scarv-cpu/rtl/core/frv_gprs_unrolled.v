@@ -4,6 +4,10 @@
 //
 //  General purpose registers
 //
+
+`ifndef FRV_GPRS_DEFINED
+`define FRV_GPRS_DEFINED
+
 module frv_gprs (
 
 input  wire         g_clk   , //
@@ -85,7 +89,7 @@ assign gprs_31  = gprs_odd[15]   ;
 
 
 always @(*)
-	gprs = { gprs_0 , gprs_1 , gprs_2 , gprs_3 , gprs_4 , gprs_5 , gprs_6 , gprs_7 , gprs_8 , gprs_9 
+	gprs = { gprs_0 , gprs_1 , gprs_2 , gprs_3 , gprs_4 , gprs_5 , gprs_6 , gprs_7 , gprs_8 , gprs_9
            , gprs_10 , gprs_11 , gprs_12 , gprs_13 , gprs_14 , gprs_15 , gprs_16 , gprs_17 , gprs_18 , gprs_19
            , gprs_20 , gprs_21 , gprs_22 , gprs_23 , gprs_24 , gprs_25 , gprs_26 , gprs_27 , gprs_28 , gprs_29
            , gprs_30 , gprs_31
@@ -93,22 +97,22 @@ always @(*)
 
 
 always @(posedge g_clk) begin
-	                                gprs_even[ 0] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  1) gprs_even[ 1] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  2) gprs_even[ 2] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  3) gprs_even[ 3] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  4) gprs_even[ 4] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  5) gprs_even[ 5] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  6) gprs_even[ 6] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  7) gprs_even[ 7] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  8) gprs_even[ 8] <= rd_wdata; 
-	if(rd_wen_even && rd_top ==  9) gprs_even[ 9] <= rd_wdata; 
-	if(rd_wen_even && rd_top == 10) gprs_even[10] <= rd_wdata; 
-	if(rd_wen_even && rd_top == 11) gprs_even[11] <= rd_wdata; 
-	if(rd_wen_even && rd_top == 12) gprs_even[12] <= rd_wdata; 
-	if(rd_wen_even && rd_top == 13) gprs_even[13] <= rd_wdata; 
-	if(rd_wen_even && rd_top == 14) gprs_even[14] <= rd_wdata; 
-	if(rd_wen_even && rd_top == 15) gprs_even[15] <= rd_wdata; 
+	                                gprs_even[ 0] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  1) gprs_even[ 1] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  2) gprs_even[ 2] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  3) gprs_even[ 3] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  4) gprs_even[ 4] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  5) gprs_even[ 5] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  6) gprs_even[ 6] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  7) gprs_even[ 7] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  8) gprs_even[ 8] <= rd_wdata;
+	if(rd_wen_even && rd_top ==  9) gprs_even[ 9] <= rd_wdata;
+	if(rd_wen_even && rd_top == 10) gprs_even[10] <= rd_wdata;
+	if(rd_wen_even && rd_top == 11) gprs_even[11] <= rd_wdata;
+	if(rd_wen_even && rd_top == 12) gprs_even[12] <= rd_wdata;
+	if(rd_wen_even && rd_top == 13) gprs_even[13] <= rd_wdata;
+	if(rd_wen_even && rd_top == 14) gprs_even[14] <= rd_wdata;
+	if(rd_wen_even && rd_top == 15) gprs_even[15] <= rd_wdata;
 end
 
 
@@ -132,3 +136,5 @@ always @(posedge g_clk) begin
 end
 
 endmodule
+
+`endif

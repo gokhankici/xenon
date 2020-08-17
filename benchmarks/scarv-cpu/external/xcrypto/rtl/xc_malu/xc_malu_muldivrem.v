@@ -8,6 +8,10 @@
 //  - remainder (signed/unsigned)
 //  - packed multiplication (16,8,4,2)
 //
+
+`ifndef XC_MALU_MULDIVREM_DEFINED
+`define XC_MALU_MULDIVREM_DEFINED
+
 `include "xc_malu_mul.v"
 `include "xc_malu_divrem.v"
 `include "xc_malu_pmul.v"
@@ -247,3 +251,5 @@ xc_malu_pmul i_malu_pmul(
 );
 
 endmodule
+
+`endif

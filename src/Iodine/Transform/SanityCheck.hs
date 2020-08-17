@@ -137,8 +137,8 @@ checkSameAssignmentType =
                    "%s does not match the event in %s" (show stmt) blockStr
             err2 = throw $ printf
                    "continuous assignment should not appear in an always block %s" blockStr
-            blockStr = let maxLength = 200
-                           str = show ab
+            blockStr = let maxLength = 400
+                           str = prettyShow ab
                        in if length str > maxLength
                           then take maxLength str ++ " ..."
                           else str

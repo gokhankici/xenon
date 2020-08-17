@@ -5,6 +5,10 @@
 //  Handles the leakage barrier instruction state and some functionality.
 //  Contains the configuration register and pseudo random number source.
 //
+
+`ifndef FRV_LEAK_DEFINED
+`define FRV_LEAK_DEFINED
+
 module frv_leak (
 
 input  wire         g_clk           ,
@@ -49,3 +53,5 @@ always @(posedge g_clk) begin
 end
 
 endmodule
+
+`endif

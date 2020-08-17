@@ -10,6 +10,7 @@
 `include "frv_pipeline_memory.v"
 `include "frv_pipeline_writeback.v"
 `include "frv_csrs.v"
+`include "frv_alu.v"
 `include "frv_gprs_unrolled.v"
 
 module frv_pipeline (
@@ -462,7 +463,7 @@ frv_pipeline_decode #(
 .XC_CLASS_LEAK      (XC_CLASS_LEAK      ),
 .XC_CLASS_LEAK_STRONG(XC_CLASS_LEAK_STRONG),
 .XC_CLASS_LEAK_BUBBLE(XC_CLASS_LEAK_BUBBLE),
-.BITMANIP_BASELINE  (BITMANIP_BASELINE  ) 
+.BITMANIP_BASELINE  (BITMANIP_BASELINE  )
 ) i_pipeline_s1_decode (
 .g_clk              (g_clk              ), // global clock
 .g_resetn           (g_resetn           ), // synchronous reset
@@ -522,7 +523,7 @@ frv_pipeline_execute #(
 .XC_CLASS_SHA3      (XC_CLASS_SHA3      ),
 .AES_SUB_FAST       (AES_SUB_FAST       ),
 .AES_MIX_FAST       (AES_MIX_FAST       ),
-.BITMANIP_BASELINE  (BITMANIP_BASELINE  ) 
+.BITMANIP_BASELINE  (BITMANIP_BASELINE  )
 ) i_pipeline_s2_execute (
 .g_clk            (g_clk            ), // global clock
 .g_resetn         (g_resetn         ), // synchronous reset
@@ -572,8 +573,8 @@ frv_pipeline_execute #(
 .rvfi_s3_rs2_addr (rvfi_s3_rs2_addr ), // Source register address 2
 .rvfi_s3_rs3_addr (rvfi_s3_rs3_addr ), // Source register address 2
 .rvfi_s3_aux      (rvfi_s3_aux      ), // Auxiliary data
-.rvfi_s3_rng_data (rvfi_s3_rng_data ), 
-.rvfi_s3_rng_stat (rvfi_s3_rng_stat ), 
+.rvfi_s3_rng_data (rvfi_s3_rng_data ),
+.rvfi_s3_rng_stat (rvfi_s3_rng_stat ),
 `endif // RVFI
 .s3_rd            (s3_rd            ), // Destination register address
 .s3_opr_a         (s3_opr_a         ), // Operand A
@@ -629,8 +630,8 @@ frv_pipeline_memory #(
 .rvfi_s3_rs2_addr (rvfi_s3_rs2_addr ), // Source register address 2
 .rvfi_s3_rs3_addr (rvfi_s3_rs3_addr ), // Source register address 3
 .rvfi_s3_aux      (rvfi_s3_aux      ), // Auxiliary data
-.rvfi_s3_rng_data (rvfi_s3_rng_data ), 
-.rvfi_s3_rng_stat (rvfi_s3_rng_stat ), 
+.rvfi_s3_rng_data (rvfi_s3_rng_data ),
+.rvfi_s3_rng_stat (rvfi_s3_rng_stat ),
 .rvfi_s4_rs1_rdata(rvfi_s4_rs1_rdata), // Source register data 1
 .rvfi_s4_rs2_rdata(rvfi_s4_rs2_rdata), // Source register data 2
 .rvfi_s4_rs3_rdata(rvfi_s4_rs3_rdata), // Source register data 3
@@ -638,8 +639,8 @@ frv_pipeline_memory #(
 .rvfi_s4_rs2_addr (rvfi_s4_rs2_addr ), // Source register address 2
 .rvfi_s4_rs3_addr (rvfi_s4_rs3_addr ), // Source register address 3
 .rvfi_s4_aux      (rvfi_s4_aux      ), // Auxiliary data
-.rvfi_s4_rng_data (rvfi_s4_rng_data ), 
-.rvfi_s4_rng_stat (rvfi_s4_rng_stat ), 
+.rvfi_s4_rng_data (rvfi_s4_rng_data ),
+.rvfi_s4_rng_stat (rvfi_s4_rng_stat ),
 .rvfi_s4_mem_wdata(rvfi_s4_mem_wdata), // Memory write data.
 `endif // RVFI
 .hold_lsu_req     (hold_lsu_req     ), // Disallow LSU requests when set.
@@ -694,8 +695,8 @@ frv_pipeline_writeback #(
 .rvfi_rs2_rdata   (rvfi_rs2_rdata   ),
 .rvfi_rs3_rdata   (rvfi_rs3_rdata   ),
 .rvfi_aux         (rvfi_aux         ), // Auxiliary data
-.rvfi_rng_data    (rvfi_rng_data    ), 
-.rvfi_rng_stat    (rvfi_rng_stat    ), 
+.rvfi_rng_data    (rvfi_rng_data    ),
+.rvfi_rng_stat    (rvfi_rng_stat    ),
 .rvfi_rd_addr     (rvfi_rd_addr     ),
 .rvfi_rd_wide     (rvfi_rd_wide     ),
 .rvfi_rd_wdata    (rvfi_rd_wdata    ),
@@ -714,8 +715,8 @@ frv_pipeline_writeback #(
 .rvfi_s4_rs2_addr (rvfi_s4_rs2_addr ), // Source register address 2
 .rvfi_s4_rs3_addr (rvfi_s4_rs3_addr ), // Source register address 2
 .rvfi_s4_aux      (rvfi_s4_aux      ), // Auxiliary trace data.
-.rvfi_s4_rng_data (rvfi_s4_rng_data ), 
-.rvfi_s4_rng_stat (rvfi_s4_rng_stat ), 
+.rvfi_s4_rng_data (rvfi_s4_rng_data ),
+.rvfi_s4_rng_stat (rvfi_s4_rng_stat ),
 .rvfi_s4_mem_wdata(rvfi_s4_mem_wdata), // Memory write data.
 `endif // RVFI
 .s4_rd            (s4_rd            ), // Destination register address
@@ -854,4 +855,3 @@ frv_gprs #(
 );
 
 endmodule
-

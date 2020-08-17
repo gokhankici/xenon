@@ -1,12 +1,15 @@
 
 //
-// module: frv_asi 
+// module: frv_asi
 //
 //  Handles all algorithm specific instructions.
 //  - AES
 //  - SHA2
 //  - SHA3
 //
+
+`ifndef FRV_ASI_DEFINED
+`define FRV_ASI_DEFINED
 
 `include "xc_sha3.v"
 `include "xc_sha256.v"
@@ -107,8 +110,8 @@ assign asi_result =
 wire aes_sub_ready;
 wire aes_mix_ready;
 
-assign asi_ready = insn_sha2                       || 
-                   insn_sha3                       || 
+assign asi_ready = insn_sha2                       ||
+                   insn_sha3                       ||
                    (insn_aes_sub && aes_sub_ready) ||
                    (insn_aes_mix && aes_mix_ready) ;
 
@@ -142,7 +145,7 @@ xc_sha3 i_xc_sha3(
 xc_sha256 i_xc_sha256 (
 .rs1   (sha2_rs1    ), // Input source register 1
 .ss    (sha2_ss     ), // Exactly which transformation to perform?
-.result(result_sha2 )  // 
+.result(result_sha2 )  //
 );
 
 //
@@ -163,7 +166,7 @@ xc_aessub  #(
 .enc   (aes_sub_enc     ), // Perform encrypt (set) or decrypt (clear).
 .rot   (aes_sub_rot     ), // Perform encrypt (set) or decrypt (clear).
 .ready (aes_sub_ready   ), // Is the instruction complete?
-.result(result_aessub   )  // 
+.result(result_aessub   )  //
 );
 
 //
@@ -183,7 +186,9 @@ xc_aesmix #(
 .rs2   (aes_mix_rs2     ), // Input source register 2
 .enc   (aes_mix_enc     ), // Perform encrypt (set) or decrypt (clear).
 .ready (aes_mix_ready   ), // Is the instruction complete?
-.result(result_aesmix   )  // 
+.result(result_aesmix   )  //
 );
 
 endmodule
+
+`endif
