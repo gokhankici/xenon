@@ -36,7 +36,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import           Data.Maybe
 import qualified Data.Sequence as SQ
-import qualified Data.Text as T
+-- import qualified Data.Text as T
 
 
 -- #############################################################################
@@ -298,9 +298,9 @@ normalizeExpr = \case
     <*> traverse normalizeExpr selectIndices
     <*> freshId ExprId
 
-  VFCall {..} -> do
-    mn <- asks getModuleName
-    CET.trace $ "normalize vfcall in " <> T.unpack mn
+  VFCall {..} -> -- do
+    -- mn <- asks getModuleName
+    -- CET.trace $ "normalize vfcall in " <> T.unpack mn
     VFCall vfCallFunction
       <$> traverse normalizeExpr vfCallArgs
       <*> freshId ExprId
@@ -411,9 +411,9 @@ inlineVerilogFunction VFCall {..} = do
   let VerilogFunction{..} =
         case HM.lookup vfCallFunction vfs of
           Just r -> r
-          Nothing -> error $ 
+          Nothing -> error $
             "could not find "
-            <> show vfCallFunction 
+            <> show vfCallFunction
             <> " in "
             <> show (HM.keys vfs)
   toBeReplaced <-

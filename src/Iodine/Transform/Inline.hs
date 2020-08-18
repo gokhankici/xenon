@@ -90,14 +90,16 @@ inlineInstancesM Module{..} = do
   let mergeVFs = HM.unionWithKey (\k _ _ -> error $ T.unpack k <> " appears in multiple vfs")
   let verilogFunctions' = foldl' mergeVFs verilogFunctions ((^._6) <$> newData)
 
-  return $ Module { variables        = variables          <> foldMap (^._1) newData
-                  , constantInits    = constantInits      <> foldMap (^._2) newData
-                  , gateStmts        = gateStmts          <> foldMap (^._3) newData
-                  , alwaysBlocks     = alwaysBlocks       <> foldMap (^._4) newData
-                  , moduleInstances  = remainingInstances <> foldMap (^._5) newData
-                  , verilogFunctions = verilogFunctions'
-                  , ..
-                  }
+  let m = Module { variables        = variables          <> foldMap (^._1) newData
+                 , constantInits    = constantInits      <> foldMap (^._2) newData
+                 , gateStmts        = gateStmts          <> foldMap (^._3) newData
+                 , alwaysBlocks     = alwaysBlocks       <> foldMap (^._4) newData
+                 , moduleInstances  = remainingInstances <> foldMap (^._5) newData
+                 , verilogFunctions = verilogFunctions'
+                 , ..
+                 }
+  -- let m = DT.trace (prettyShow _m) _m
+  return m
 
 type NewData = ( L Variable
                , L (Id, Expr A)
@@ -172,14 +174,37 @@ inlineInstance mi@ModuleInstance{..} = do
   cmn <- asks getCurrentModuleName
   modify $ over afAnnotations $ HM.alter updateMA cmn
 
-  extraVFs <- 
+  extraVFs <-
     HM.fromList <$>
     (forM (HM.toList verilogFunctions) $ \(vfn,vf) -> do
        vfn' <- fixVerilogFunctionName vfn
-       let vf' = vf { verilogFunctionName = vfn' }
+       vfe' <- fixVerilogFunctionExpr (verilogFunctionExpr vf)
+       let vf' = vf { verilogFunctionName = vfn'
+                    , verilogFunctionExpr = vfe'
+                    }
        return (vfn', vf'))
 
   return (vs, cis, gs <> extraGS, as <> extraABs, mis, extraVFs)
+
+fixVerilogFunctionExpr :: Has (Reader InlineSt) sig m => Expr A -> m (Expr A)
+fixVerilogFunctionExpr = \case
+  e@Constant{} -> return e
+  e@Str{}      -> return e
+  e@Variable{} -> return e
+  UF{..}       -> UF ufOp <$> traverse fixVerilogFunctionExpr ufArgs <*> return exprData
+  IfExpr{..}   -> IfExpr
+                  <$> fixVerilogFunctionExpr ifExprCondition
+                  <*> fixVerilogFunctionExpr ifExprThen
+                  <*> fixVerilogFunctionExpr ifExprElse
+                  <*> return exprData
+  Select{..}   -> Select
+                  <$> fixVerilogFunctionExpr selectVar
+                  <*> traverse fixVerilogFunctionExpr selectIndices
+                  <*> return exprData
+  VFCall{..}   -> VFCall
+                  <$> fixVerilogFunctionName vfCallFunction
+                  <*> traverse fixVerilogFunctionExpr vfCallArgs
+                  <*> return exprData
 
 freshABIndex :: Has (State ABCounter) sig m => m Int
 freshABIndex = do
@@ -223,7 +248,7 @@ fixExpr Select{..}   = Select
                        <$> fixExpr selectVar
                        <*> traverse fixExpr selectIndices
                        <*> return exprData
-fixExpr VFCall{..}   = VFCall 
+fixExpr VFCall{..}   = VFCall
                        <$> fixVerilogFunctionName vfCallFunction
                        <*> traverse fixExpr vfCallArgs
                        <*> return exprData
@@ -231,7 +256,7 @@ fixExpr VFCall{..}   = VFCall
 fixVerilogFunctionName :: Has (Reader InlineSt) sig m => Id -> m Id
 fixVerilogFunctionName vfn = do
   InlineSt{..} <- ask
-  return $ "M_" <> getMIType <> "_" <> vfn 
+  return $ "M_" <> getMIType <> "_" <> vfn
 
 
 fixStmt :: Has (Reader InlineSt) sig m => Stmt a -> m (Stmt a)
