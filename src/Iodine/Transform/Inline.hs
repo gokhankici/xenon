@@ -87,11 +87,15 @@ inlineInstancesM Module{..} = do
                 nd <- inlineInstance mi & runReader rst
                 return (mis, nds |> nd)
         else return (mis |> mi, nds)
-  return $ Module { variables       = variables          <> foldMap (^._1) newData
-                  , constantInits   = constantInits      <> foldMap (^._2) newData
-                  , gateStmts       = gateStmts          <> foldMap (^._3) newData
-                  , alwaysBlocks    = alwaysBlocks       <> foldMap (^._4) newData
-                  , moduleInstances = remainingInstances <> foldMap (^._5) newData
+  let mergeVFs = HM.unionWithKey (\k _ _ -> error $ T.unpack k <> " appears in multiple vfs")
+  let verilogFunctions' = foldl' mergeVFs verilogFunctions ((^._6) <$> newData)
+
+  return $ Module { variables        = variables          <> foldMap (^._1) newData
+                  , constantInits    = constantInits      <> foldMap (^._2) newData
+                  , gateStmts        = gateStmts          <> foldMap (^._3) newData
+                  , alwaysBlocks     = alwaysBlocks       <> foldMap (^._4) newData
+                  , moduleInstances  = remainingInstances <> foldMap (^._5) newData
+                  , verilogFunctions = verilogFunctions'
                   , ..
                   }
 
@@ -100,6 +104,7 @@ type NewData = ( L Variable
                , L (Stmt A)
                , L (AlwaysBlock A)
                , L MI
+               , HM.HashMap Id (VerilogFunction A)
                )
 
 data InlineSt = InlineSt { getCurrentModuleName :: Id
@@ -119,7 +124,7 @@ inlineInstance mi@ModuleInstance{..} = do
   inlineSt <- ask
   m@Module{..} :: M <- gets (HM.! moduleInstanceType)
   vs  <- traverse fixVariable variables
-  cis <- traverse (\(v,e) -> (,) <$> fixName v <*> return e) constantInits
+  cis <- traverse (\(v,e) -> (,) <$> fixName v <*> fixExpr e) constantInits
   gs  <- traverse fixStmt gateStmts
   as  <- traverse fixAB alwaysBlocks
   mis <- traverse fixMI moduleInstances
@@ -167,7 +172,14 @@ inlineInstance mi@ModuleInstance{..} = do
   cmn <- asks getCurrentModuleName
   modify $ over afAnnotations $ HM.alter updateMA cmn
 
-  return (vs, cis, gs <> extraGS, as <> extraABs, mis)
+  extraVFs <- 
+    HM.fromList <$>
+    (forM (HM.toList verilogFunctions) $ \(vfn,vf) -> do
+       vfn' <- fixVerilogFunctionName vfn
+       let vf' = vf { verilogFunctionName = vfn' }
+       return (vfn', vf'))
+
+  return (vs, cis, gs <> extraGS, as <> extraABs, mis, extraVFs)
 
 freshABIndex :: Has (State ABCounter) sig m => m Int
 freshABIndex = do
@@ -211,7 +223,16 @@ fixExpr Select{..}   = Select
                        <$> fixExpr selectVar
                        <*> traverse fixExpr selectIndices
                        <*> return exprData
-fixExpr VFCall{..}   = notSupported
+fixExpr VFCall{..}   = VFCall 
+                       <$> fixVerilogFunctionName vfCallFunction
+                       <*> traverse fixExpr vfCallArgs
+                       <*> return exprData
+
+fixVerilogFunctionName :: Has (Reader InlineSt) sig m => Id -> m Id
+fixVerilogFunctionName vfn = do
+  InlineSt{..} <- ask
+  return $ "M_" <> getMIType <> "_" <> vfn 
+
 
 fixStmt :: Has (Reader InlineSt) sig m => Stmt a -> m (Stmt a)
 fixStmt Block{..}      = Block <$> traverse fixStmt blockStmts <*> return stmtData
