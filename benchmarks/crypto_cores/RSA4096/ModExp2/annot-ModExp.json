@@ -40,14 +40,8 @@
           "y0",
           "z0",
           "last_c0",
-          "s0",
-          "c0",
           "addr_buf",
           "addr_buf2",
-          "r_buf",
-          "t_buf",
-          "nprime0_buf",
-          "n_buf",
           "res_buf"
         ],
         "always_eq": [

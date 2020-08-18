@@ -53,13 +53,6 @@
         ]
       }
     },
-    "mux2": {
-      "annotations": {
-        "initial_eq": [
-          "y"
-        ]
-      }
-    },
     "mem32": {
       "clock": "clk"
     },
