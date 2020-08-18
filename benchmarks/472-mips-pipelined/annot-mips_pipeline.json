@@ -11,22 +11,33 @@
           "WB_wd_reg"
         ],
         "always_eq": [
+          "reset",
           "IF_PC_d_out",
-          "MEM_MemRead",
-          "MEM_MemWrite",
-          "MEM_address",
-          "WB_RegWrite",
-          "WB_RegRd",
-          "reset"
+          "MEM_address"
         ],
         "initial_eq": [
           "EX_MemRead",
-          "EX_rt",
-          "ID_instr",
-          "Stall",
+          "EX_MemWrite",
           "EX_MemtoReg",
+          "EX_RegDst",
+          "EX_RegWrite",
+          "EX_extend",
+          "EX_rd",
+          "EX_rs",
+          "EX_rt",
+          "ForwardA",
+          "ForwardB",
+          "ID_instr",
+          "ID_pc4",
+          "MEM_MemRead",
+          "MEM_MemWrite",
           "MEM_MemtoReg",
-          "WB_MemtoReg"
+          "MEM_RegRd",
+          "MEM_RegWrite",
+          "Stall",
+          "WB_MemtoReg",
+          "WB_RegRd",
+          "WB_RegWrite"
         ]
       },
       "clock": "clk"
@@ -36,15 +47,12 @@
         "initial_eq": [
           "ALUOp",
           "ALUSrc",
-          "Branch",
-          "Jump",
-          "MemRead",
           "MemWrite",
-          "MemtoReg",
           "RegDst",
           "RegWrite"
         ]
-      }
+      },
+      "inline": false
     },
     "rom32": {
       "annotations": {
@@ -54,51 +62,12 @@
       }
     },
     "mem32": {
-      "clock": "clk"
+      "clock": "clk",
+      "inline": false
     },
     "reg_file": {
-      "clock": "clk"
+      "clock": "clk",
+      "inline": false
     }
-  },
-  "blocklist": [
-    {
-      "type": "initial_eq",
-      "variables": [
-        "m_MEM_DMEM_mem_array",
-        "m_RFILE_file_array"
-      ]
-    },
-    {
-      "type": "always_eq",
-      "variables": [
-        "EX_rd1",
-        "EX_rd2",
-        "EX_rs",
-        "EX_rt",
-        "ID_rd1",
-        "ID_rd2",
-        "ID_rs",
-        "ID_rt",
-        "MEM_ALUOut",
-        "MEM_RegRd",
-        "MEM_memout",
-        "MuxA_out",
-        "MuxB_out",
-        "WB_memout",
-        "m_ALUMUX_a",
-        "m_EX_ALU_a",
-        "m_EX_ALU_a",
-        "m_EX_ALU_b",
-        "m_EX_ALU_result",
-        "m_FMUXA_a",
-        "m_FMUXA_y",
-        "m_FMUXB_a",
-        "m_FMUXB_y",
-        "m_MEM_DMEM_data_out",
-        "m_RFILE_RD1",
-        "m_RFILE_RD2",
-        "m_WB_WRMUX_b"
-      ]
-    }
-  ]
+  }
 }

@@ -15,5 +15,9 @@
         "**/dist-newstyle": true,
         "*.bak": true,
         "*~": true
-    }
+    },
+    "cSpell.words": [
+        "SCARV",
+        "YARVI"
+    ]
 }

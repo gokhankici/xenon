@@ -510,7 +510,7 @@ computeMinCTRoots nonCtTree toName = do
   let nonCtTreeSCCRoots = fmap (first toName) <$> getRootLikeNodes nonCtTree
 
   putStrLn "### NON CT TREE ROOTS #############################################"
-  for_ nonCtTreeSCCRoots (traverse_ print) >> putStrLn ""
+  for_ (zip [1..] (concat nonCtTreeSCCRoots)) print >> putStrLn ""
 
   let minCtTreeRoots :: [(Id, Int)] =
         let getMin = minimum . fmap snd
@@ -523,7 +523,8 @@ computeMinCTRoots nonCtTree toName = do
            , l <- c
            ]
 
-  printf "Min roots: %s\n\n" $ show $ fst <$> minCtTreeRoots
+  printf "Min roots (%d): %s\n\n"
+    (length minCtTreeRoots) (show $ fst <$> minCtTreeRoots)
 
   return minCtTreeRoots
 

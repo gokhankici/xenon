@@ -45,6 +45,25 @@ import qualified Data.Map as M
 -- import           Debug.Trace
 
 
+tableTests :: M.Map String String
+tableTests = M.fromList
+  [ ("mips_pipeline"  , "MIPS")
+  , ("yarvi"          , "RISC-V")
+  , ("sha256"         , "SHA-256")
+  , ("fpu"            , "FPU")
+  , ("scarv_cop_palu" , "ALU")
+  , ("divider"        , "FPU2")
+  , ("ModExp"         , "RSA")
+  , ("aes_256"        , "AES-256")
+  , ("frv_core"       , "SCARV")
+  ]
+
+enableRuns :: Bool
+enableRuns = False
+
+runCount :: Int
+runCount = 10
+
 data TestArgs =
   TestArgs { _verbose      :: Bool
            , _help         :: Bool
@@ -230,8 +249,6 @@ printUnitTest b = do
     u@UnitTest{..} = benchmarkTest b
     prettyName     = benchmarkName b
     isCT = testType == Succ
-    enableRuns = True
-    runCount = 10
     annotCount l1 l2 af =
       let go a = HS.size (a ^. l1) + HS.size (a ^. l2)
       in sum $ (^. moduleAnnotations . to go) <$> HM.elems (af ^. afAnnotations)
@@ -295,16 +312,3 @@ benchmarks =
   ]
   where
     us = testTreeToUnits major ++ testTreeToUnits scarv
-
-tableTests :: M.Map String String
-tableTests = M.fromList
-  [ ("mips_pipeline"  , "MIPS")
-  , ("yarvi"          , "RISC-V")
-  , ("sha256"         , "SHA-256")
-  , ("fpu"            , "FPU")
-  , ("scarv_cop_palu" , "ALU")
-  , ("divider"        , "FPU2")
-  , ("ModExp"         , "RSA")
-  , ("aes_256"        , "AES-256")
-  , ("frv_core"       , "SCARV")
-  ]

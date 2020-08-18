@@ -1,0 +1,31 @@
+{
+  "modules": {
+    "divider": {
+      "annotations": {
+        "source": [
+          "input_a",
+          "input_a_stb",
+          "input_b",
+          "input_b_stb",
+          "output_z_ack",
+          "rst"
+        ],
+        "sink": [
+          "input_a_ack",
+          "input_b_ack",
+          "output_z",
+          "output_z_stb"
+        ],
+        "initial_eq": [
+        ],
+        "always_eq": [
+        ]
+      },
+      "clock": [
+        "clk"
+      ]
+    }
+  },
+  "include_dirs": [],
+  "top_module": "divider"
+}

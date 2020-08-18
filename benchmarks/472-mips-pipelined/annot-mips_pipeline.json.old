@@ -14,14 +14,14 @@
           "IF_PC_d_out",
           "MEM_MemRead",
           "MEM_MemWrite",
-          "MEM_ALUOut",
+          "MEM_address",
           "WB_RegWrite",
           "WB_RegRd",
           "reset"
         ],
         "initial_eq": [
-          "EX_rt",
           "EX_MemRead",
+          "EX_rt",
           "ID_instr",
           "Stall",
           "EX_MemtoReg",
@@ -30,9 +30,6 @@
         ]
       },
       "clock": "clk"
-    },
-    "alu_ctl": {
-      "inline": true
     },
     "control_pipeline": {
       "annotations": {
@@ -56,18 +53,52 @@
         ]
       }
     },
-    "mux2": {
-      "annotations": {
-        "initial_eq": [
-          "y"
-        ]
-      }
-    },
     "mem32": {
       "clock": "clk"
     },
     "reg_file": {
       "clock": "clk"
     }
-  }
+  },
+  "blocklist": [
+    {
+      "type": "initial_eq",
+      "variables": [
+        "m_MEM_DMEM_mem_array",
+        "m_RFILE_file_array"
+      ]
+    },
+    {
+      "type": "always_eq",
+      "variables": [
+        "EX_rd1",
+        "EX_rd2",
+        "EX_rs",
+        "EX_rt",
+        "ID_rd1",
+        "ID_rd2",
+        "ID_rs",
+        "ID_rt",
+        "MEM_ALUOut",
+        "MEM_RegRd",
+        "MEM_memout",
+        "MuxA_out",
+        "MuxB_out",
+        "WB_memout",
+        "m_ALUMUX_a",
+        "m_EX_ALU_a",
+        "m_EX_ALU_a",
+        "m_EX_ALU_b",
+        "m_EX_ALU_result",
+        "m_FMUXA_a",
+        "m_FMUXA_y",
+        "m_FMUXB_a",
+        "m_FMUXB_y",
+        "m_MEM_DMEM_data_out",
+        "m_RFILE_RD1",
+        "m_RFILE_RD2",
+        "m_WB_WRMUX_b"
+      ]
+    }
+  ]
 }
