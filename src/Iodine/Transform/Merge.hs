@@ -17,6 +17,7 @@ import           Iodine.Utils
 import           Control.Carrier.State.Strict
 import           Control.Effect.Error
 import           Control.Effect.Reader
+import           Control.Effect.Writer
 import           Control.Lens
 import           Control.Monad
 import           Data.Foldable
@@ -28,7 +29,7 @@ import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import qualified Data.Sequence as SQ
 import           Control.Effect.Lift
-import           Data.List (sortOn)
+import           Data.List (sortOn, partition)
 import qualified Data.Text as T
 
 type A = Int
@@ -46,6 +47,7 @@ makeLenses ''St
 type OldG sig m = ( Has (Reader AnnotationFile) sig m
                   , Has (Reader ModuleMap) sig m
                   , Has (Error IodineException) sig m
+                  , Has (Writer Output) sig m
                   , Has (Lift IO) sig m
                   )
 type G sig m = (OldG sig m, Has (State Int) sig m)
@@ -62,20 +64,31 @@ mergeModule :: G sig m => Module A -> m (Module A)
 mergeModule Module {..} = do
   gateBlocks <- traverse  makeStarBlock gateStmts
   alwaysBlocks' <- mergeAlwaysBlocks $ alwaysBlocks <> gateBlocks
+  let alwaysBlocks'' = fix alwaysBlocks'
   return $
     Module { gateStmts    = mempty
-           , alwaysBlocks = fix alwaysBlocks'
+           , alwaysBlocks = alwaysBlocks''
            , ..
            }
   where
-    fix Empty                       = Empty
-    fix (a SQ.:<| Empty)            = return a
-    fix (a1 SQ.:<| a2 SQ.:<| Empty) = return $ mrg a1 a2
-    fix _                           = error "unreachable"
+    fix SQ.Empty = SQ.Empty
+    fix as@(_ SQ.:<| SQ.Empty) = as
+    fix (a1 SQ.:<| a2 SQ.:<| SQ.Empty) = SQ.singleton $ mrg a1 a2
+    fix (a1 SQ.:<| a2 SQ.:<| a3 SQ.:<| SQ.Empty) =
+      case partition ((== Star) . abEvent) [a1,a2,a3] of
+        ([aStar], [aClk1, aClk2])
+          | eventExpr (abEvent aClk1) == eventExpr (abEvent aClk2) ->
+            SQ.singleton $
+            combineAB aStar (combineAB aClk1 aClk2)
+        _ -> error "unreachable"
+    fix _ = error "unreachable"
 
-    mrg a1 a2 | abEvent a1 == Star =
+    mrg a1 a2
+      | abEvent a1 == Star = combineAB a1 a2
+      | otherwise          = mrg a2 a1
+
+    combineAB a1 a2 =
       a2 { abStmt = Block (abStmt a1 |:> abStmt a2) 0 }
-    mrg a1 a2 = mrg a2 a1
 
 {- |
 All blocks with the same non-star event are merged into a single block (with

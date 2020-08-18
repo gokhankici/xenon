@@ -12,6 +12,7 @@ module Iodine.Runner
   , main
   , readIRFile
   , verilogToIR
+  , computeFInfo
   ) where
 
 import           Iodine.IodineArgs
@@ -163,10 +164,10 @@ checkIR (ia@IodineArgs{..}, af)
                                               sep = replicate 80 '-'
         Left e      -> errorHandle e
       return True
-  | onlyVCGen = do computeFInfo >>= FCons.saveQuery config . fst
+  | onlyVCGen = do computeFInfo ia af >>= FCons.saveQuery config . fst
                    return True
   | otherwise = do
-      (finfo, (threadTypes, af', moduleMap, summaryMap)) <- computeFInfo
+      (finfo, (threadTypes, af', moduleMap, summaryMap)) <- computeFInfo ia af
       result <- F.solve config finfo
       let stat = FT.resStatus result
           statStr = render . FT.resultDoc
@@ -193,17 +194,6 @@ checkIR (ia@IodineArgs{..}, af)
         `E.catch` (\(_ :: E.IOException) -> return ())
       return safe
   where
-    computeFInfo = do
-      print verbosity
-      irFileContents <- readIRFile ia fileName
-      let irReader = parse (fileName, irFileContents)
-      mFInfo <- pipeline af irReader ia
-                & handleTrace ia
-                & handleMonads ia
-      case mFInfo of
-        Right res -> return res
-        Left e    -> errorHandle e
-
     config :: FC.Config
     config = FC.defConfig { FC.eliminate = FC.Some
                           , FC.save      = not noSave
@@ -218,10 +208,22 @@ checkIR (ia@IodineArgs{..}, af)
       let (dir, base) = splitFileName fileName
       in dir </> ".liquid" </> (base <.> "fqout")
 
+-- | given file name should be and IR file
+computeFInfo :: IodineArgs -> AnnotationFile -> IO PipelineOutput
+computeFInfo ia@IodineArgs{..} af = do
+  irFileContents <- readIRFile ia fileName
+  let irReader = parse (fileName, irFileContents)
+  mFInfo <- pipeline af irReader ia
+            & handleTrace ia
+            & handleMonads ia
+  case mFInfo of
+    Right res -> return res
+    Left e    -> errorHandle e
+
 handleMonads :: IodineArgs
-             -> WriterC Output (ErrorC IodineException IO) a
+             -> ErrorC IodineException (WriterC Output IO) a
              -> IO (Either IodineException a)
-handleMonads ia act = runError $ handleOutput ia act
+handleMonads ia act = handleOutput ia $ runError act
 
 handleTrace :: IodineArgs -> TraceC m a -> m a
 handleTrace IodineArgs{..} =

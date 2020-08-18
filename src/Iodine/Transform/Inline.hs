@@ -41,7 +41,7 @@ inlineInstances (af, ms) = (af', ms')
       in maximum (go <$> ms)
 
     (mm', af') =
-      second (over afAnnotations (HM.filterWithKey (\mn _ -> canKeepModule mn))) $
+      second (over afAnnotations (HM.filterWithKey (\mn _ -> keepModule mn))) $
       run $
       runState mm $ execState af $
       execState (ABCounter (maxCtr + 1)) $
@@ -50,12 +50,15 @@ inlineInstances (af, ms) = (af', ms')
         modify (HM.insert (moduleName m') m')
 
     toNewM m = mm' HM.! moduleName m
-    ms' = toNewM <$> SQ.filter (canKeepModule . moduleName) ms
+    ms' = toNewM <$> SQ.filter (keepModule . moduleName) ms
+    topmn = af ^. afTopModule
 
-    -- canKeepModule mn = mn == af ^. afTopModule
-    canKeepModule mn = fromMaybe True $ do
+    -- keep the module if
+    -- 1. it is the top module, or
+    -- 2. inline annotation is missing or false
+    keepModule mn = fromMaybe True $ do
       ma <- af ^. (afAnnotations . at mn)
-      return $ not $ ma ^. canInline
+      return $ not (ma ^. canInline) || mn == topmn
 
 newtype ABCounter = ABCounter { getABCounter :: Int }
 

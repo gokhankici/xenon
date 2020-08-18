@@ -1,5 +1,5 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE MultiWayIf #-}
--- {-# OPTIONS_GHC -Wno-unused-binds #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -15,6 +15,8 @@ import           TestData
 import qualified Iodine.IodineArgs as IA
 import qualified Iodine.Runner as R
 import           Iodine.Language.Annotation
+
+import qualified Language.Fixpoint.Types as FT
 
 import           Control.Exception
 import           Control.Lens hiding (simple, (<.>))
@@ -39,6 +41,8 @@ import qualified Data.Text as T
 import           System.TimeIt (timeItT)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import qualified Data.Map as M
+-- import           Debug.Trace
 
 
 data TestArgs =
@@ -48,7 +52,8 @@ data TestArgs =
            , _hspecArgs    :: [String] -- | rest of the positional arguments
            , _runAbduction :: Bool
            , _dryRun       :: Bool
-           , _sizeTable    :: Bool
+           , _evalTable    :: Bool
+           , _consTable    :: Bool
            }
   deriving (Generic, Show)
 
@@ -120,7 +125,9 @@ testArgs = mode programName def detailsText (flagArg argUpd "HSPEC_ARG") flags
               "Display both stdout & stderr of a test."
             , flagNone ["d", "dry-run"] (set dryRun True)
               "Print the calls to Iodine"
-            , flagNone ["size-table"] (set sizeTable True)
+            , flagNone ["eval-table"] (set evalTable True)
+              "Print the Verilog LOC table"
+            , flagNone ["constraint-table"] (set consTable True)
               "Print the Verilog LOC table"
             , flagNone ["h", "help"] (set help True)
               "Displays this help message."
@@ -139,7 +146,8 @@ testArgs = mode programName def detailsText (flagArg argUpd "HSPEC_ARG") flags
                    , _hspecArgs    = []
                    , _runAbduction = False
                    , _dryRun       = False
-                   , _sizeTable    = False
+                   , _evalTable    = False
+                   , _consTable    = False
                    }
 
 parseOpts :: IO TestArgs
@@ -170,7 +178,8 @@ main = do
   -- hack: set the required first two positional arguments to empty list
   templateIA <- updateDef . invalidate <$> IA.parseArgsWithError ("" : "" : opts ^. iodineArgs)
 
-  if | opts ^. sizeTable -> printSizeTable
+  if | opts ^. evalTable -> printSizeTable
+     | opts ^. consTable -> for_ benchmarks printConstraintSizes
      | otherwise -> readConfig defaultConfig (opts^.hspecArgs)
                     >>= withArgs [] . runSpec (spec opts templateIA)
                     >>= evaluateSummary
@@ -187,44 +196,64 @@ printSizeTable = do
     "#IE" "#AE"
     "CT?"
     "Runtime"
-  for_ unitTests printUnitTest
-  where
-    unitTests = testTreeToUnits major ++ testTreeToUnits scarv
+  for_ benchmarks printUnitTest
 
-printUnitTest :: UnitTest -> IO ()
-printUnitTest u@UnitTest{..} = do
-  cwd <- getCurrentDirectory
+printUnitTest :: Benchmark -> IO ()
+printUnitTest b = do
   (testIA, af) <- mkIA u
   let vf = IA.fileName testIA
       vfDir = takeDirectory vf
       vfName = dropExtension $ takeBaseName vf
       preproc = vfDir </> "" <.> vfName <.> "preproc" <.> "v"
-  case lookup vfName tableTests of
-    Nothing -> return ()
-    Just (isCT, prettyName) -> do
-      let tick = if isCT then "\\tickYes" else "\\tickNo"
-      R.generateIR testIA
-      loc <- (length . lines) <$>
-             readProcess (cwd </> "scripts" </> "remove_comments.sh") [preproc] ""
-      results <-
-        if enableRuns
-          then do let act = timeItT (silence $ R.runner testIA)
-                      acts = replicate runCount act
-                  fmap fst <$> sequence acts
-          else return [0]
-      let ieCount = annotCount initialEquals instanceInitialEquals af
-          aeCount = annotCount alwaysEquals instanceAlwaysEquals af
-      printf "%-15s & %4d & %3d & %3d & %8s & %7.2f \\\\\n"
-        prettyName loc
-        ieCount aeCount
-        tick
-        (mean results)
+      slnc = if IA.verbosity testIA == IA.Quiet then silence else id
+  let tick = if isCT then "\\tickYes" else "\\tickNo"
+  R.generateIR testIA
+  loc <- (length . lines) <$>
+         readProcess ("scripts" </> "remove_comments.sh") [preproc] ""
+  results <-
+    if enableRuns
+      then do let act = timeItT (slnc $ R.runner testIA)
+                  acts = replicate runCount act
+              (runtimes, rcs) <- unzip <$> sequence acts
+              unless (all (== isCT) rcs) $
+                error $ printf "%s did not match the expected result" prettyName
+              return runtimes
+      else return [0]
+  let ieCount = annotCount initialEquals instanceInitialEquals af
+      aeCount = annotCount alwaysEquals instanceAlwaysEquals af
+  printf "%-15s & %4d & %3d & %3d & %8s & %7.2f \\\\\n"
+    prettyName loc
+    ieCount aeCount
+    tick
+    (mean results)
   where
-    enableRuns = False
-    runCount = 1
+    u@UnitTest{..} = benchmarkTest b
+    prettyName     = benchmarkName b
+    isCT = testType == Succ
+    enableRuns = True
+    runCount = 10
     annotCount l1 l2 af =
       let go a = HS.size (a ^. l1) + HS.size (a ^. l2)
       in sum $ (^. moduleAnnotations . to go) <$> HM.elems (af ^. afAnnotations)
+
+printConstraintSizes :: Benchmark -> IO ()
+printConstraintSizes (Benchmark u@UnitTest{..} prettyName) = do
+  testIA0 <- fst <$> mkIA u
+  let testIA = testIA0 { IA.verbosity     = IA.Quiet
+                       , IA.noSave        = False
+                       , IA.benchmarkMode = False
+                       , IA.onlyVCGen     = True
+                       }
+  (finfo, _) <- R.generateIR testIA >>= uncurry R.computeFInfo
+  rc <- silence $ R.runner testIA
+  unless rc $ error "expecting vcgen to finish"
+  let vf = IA.fileName testIA
+      bfqFile =
+        takeDirectory vf </>
+        ".liquid" </>
+        "" <.> (dropExtension $ takeBaseName vf) <.> "pl" <.> "bfq"
+  fs <- withFile bfqFile ReadMode hFileSize
+  printf "%-15s %3d %10d\n" prettyName (HM.size $ FT.cm finfo) fs
 
 mean :: (Fractional a, Foldable t) => t a -> a
 mean ds = sum ds / fromIntegral (length ds)
@@ -240,23 +269,42 @@ mkIA UnitTest{..} = do
            { IA.fileName      = vf
            , IA.annotFile     = afName
            , IA.moduleName    = T.unpack $ af ^. afTopModule
-           , IA.benchmarkMode = True
            , IA.noSave        = True
            , IA.noFPOutput    = True
            , IA.iverilogDir   = cwd </> "iverilog-parser"
-           , IA.verbosity     = IA.Quiet
+           , IA.benchmarkMode = bm
+           , IA.verbosity     = vrb
            }
   return (ia, af)
+  where
+    enableOutput = False
+    bm = not enableOutput
+    vrb = if enableOutput then IA.Loud else IA.Quiet
 
-tableTests :: [(String, (Bool, String))]
-tableTests =
-  [ ("mips_pipeline"  , (True,  "mips"))
-  , ("yarvi"          , (True,  "riscv"))
-  , ("sha256"         , (True,  "sha-256"))
-  , ("fpu"            , (True,  "FPU-CT"))
-  , ("divider"        , (False, "FPU-NonCT"))
-  , ("ModExp"         , (False, "ModExp-NonCT"))
-  , ("scarv_cop_palu" , (True,  "ALU"))
-  , ("aes_256"        , (True,  "AES-256"))
-  , ("frv_core"       , (True,  "SCARV"))
+data Benchmark = Benchmark
+  { benchmarkTest :: UnitTest
+  , benchmarkName :: String
+  }
+
+benchmarks :: [Benchmark]
+benchmarks =
+  [ Benchmark u n
+  | u <- us
+  , let vfName = dropExtension $ takeBaseName $ verilogFile u
+  , n <- toList (M.lookup vfName tableTests)
+  ]
+  where
+    us = testTreeToUnits major ++ testTreeToUnits scarv
+
+tableTests :: M.Map String String
+tableTests = M.fromList
+  [ ("mips_pipeline"  , "MIPS")
+  , ("yarvi"          , "RISC-V")
+  , ("sha256"         , "SHA-256")
+  , ("fpu"            , "FPU")
+  , ("scarv_cop_palu" , "ALU")
+  , ("divider"        , "FPU2")
+  , ("ModExp"         , "RSA")
+  , ("aes_256"        , "AES-256")
+  , ("frv_core"       , "SCARV")
   ]

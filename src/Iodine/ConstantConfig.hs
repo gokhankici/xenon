@@ -18,3 +18,6 @@ maxFeasibleNodeCount = 50
 
 doNotMarkSubmoduleVariables :: Bool
 doNotMarkSubmoduleVariables = True
+
+inlineAllModules :: Bool
+inlineAllModules = False

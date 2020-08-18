@@ -41,7 +41,7 @@
     },
     "mul_r2": {
       "clock": "clk",
-      "inline": true
+      "inline": false
     },
     "div_r2": {
       "clock": "clk",

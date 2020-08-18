@@ -9,6 +9,7 @@
 module Iodine.Language.Annotation where
 
 import           Iodine.Types
+import           Iodine.ConstantConfig
 
 import           Control.Effect.Reader
 import           Control.Lens
@@ -189,13 +190,17 @@ instance ToJSON Qualifier where
 
 instance FromJSON ModuleAnnotations where
   parseJSON = withObject "ModuleAnnotation" $ \o ->
+    fmap fixInline $
     ModuleAnnotations
     <$> o .:? "annotations" .!= emptyAnnotations
     <*> o .:? "qualifiers"  .!= mempty
     <*> parseClock o "clock"
     <*> o .:? "inline"      .!= False
-    -- where
-    --   objKeys = ["annotations", "qualifiers", "clock", "inline", "blocklist", "qualifiers-history"]
+    where
+      fixInline :: ModuleAnnotations -> ModuleAnnotations
+      fixInline = if inlineAllModules
+                  then canInline .~ True
+                  else id
 
 instance ToJSON ModuleAnnotations where
   toJSON ma =

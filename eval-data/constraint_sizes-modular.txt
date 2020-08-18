@@ -1,0 +1,10 @@
+benchmark   #cons    size of bfq
+MIPS          22        719787
+RISC-V         8       1282288
+SHA-256        6        669448
+FPU           17       1697704
+FPU2           8        374971
+RSA            7        808274
+ALU           12        791552
+AES-256       32       1176920
+SCARV         45      17255413
