@@ -1,4 +1,6 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS_GHC -Wno-unused-binds #-}
+{-# OPTIONS_GHC -Wno-unused-matches #-}
 
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -18,25 +20,26 @@ module Iodine.Runner
 import           Iodine.IodineArgs
 import           Iodine.Analyze.CounterExample (generateCounterExampleGraphs)
 import           Iodine.Language.Annotation
-import           Iodine.Language.IR (prettyShow)
+import           Iodine.Language.IR (prettyShow, Module(..))
 import           Iodine.Language.IRParser
 import           Iodine.Language.PrologParser
 import           Iodine.Pipeline
 import           Iodine.Transform.Fixpoint.Common
 import           Iodine.Transform.Horn
 import           Iodine.Types
+import           Iodine.Analyze.ModuleSummary (SummaryMap)
+import           Iodine.Utils
 
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Trace.Print
 import           Control.Carrier.Writer.Strict
 import qualified Control.Exception as E
-import           Control.Lens (view)
+import           Control.Lens hiding ((<.>))
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Char
 import qualified Data.ByteString.Lazy as B
 import           Data.Foldable
-import           Data.Function
 import qualified Data.IntMap.Strict as IM
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
@@ -47,6 +50,7 @@ import qualified Language.Fixpoint.Solver as F
 import qualified Language.Fixpoint.Types as FT
 import qualified Language.Fixpoint.Types.Config as FC
 import qualified Language.Fixpoint.Types.Constraints as FCons
+import qualified Language.Fixpoint.Solver.Monad as FSM
 import           System.Directory
 import           System.Environment
 import           System.Exit
@@ -56,6 +60,8 @@ import           System.Process
 import           Text.PrettyPrint.HughesPJ (render)
 import           Text.Printf
 import           Data.List (intersperse, foldl1')
+import qualified Data.HashSet as HS
+import qualified Data.Sequence as SQ
 
 -- -----------------------------------------------------------------------------
 main :: IO ()
@@ -187,6 +193,7 @@ checkIR (ia@IodineArgs{..}, af)
               mds
         for_ (IS.toList tids) $ \tid ->
           printf "Thread #%d: %s\n" tid (show $ threadTypes IM.! tid)
+      printResultAnalysis af' moduleMap summaryMap finfo threadTypes result
       unless (safe || benchmarkMode) $
         generateCounterExampleGraphs af' moduleMap summaryMap finfo abduction
       when printSolution $
@@ -207,6 +214,37 @@ checkIR (ia@IodineArgs{..}, af)
     fqoutFile =
       let (dir, base) = splitFileName fileName
       in dir </> ".liquid" </> (base <.> "fqout")
+
+printResultAnalysis :: AnnotationFile
+                    -> HM.HashMap Id (Module Int)
+                    -> SummaryMap
+                    -> FInfo
+                    -> IM.IntMap ThreadType
+                    -> FT.Result (Integer, HornClauseId)
+                    -> IO ()
+printResultAnalysis af moduleMap summaryMap finfo threadTypes = \case
+  FT.Result FT.Safe _ _        -> return ()
+  FT.Result (FT.Crash _ _) _ _ -> return ()
+  FT.Result (FT.Unsafe ids) sol _ -> do
+    let invNo = case nub' id $ (hcStmtId . snd) <$> ids of
+                  [n] -> n
+                  ns  -> error $ show ns
+        invExpr = sol HM.! (FT.KV $ FT.symbol $ "inv" <> show invNo)
+        qualifs = FSM.toTracePred invExpr
+        go acc = \case
+          FSM.TraceConstantTime (FSM.TraceVar _ v _) ->
+            acc & _1 %~ HS.insert v
+          FSM.TracePublic (FSM.TraceVar _ v _) ->
+            acc & _2 %~ HS.insert v
+          _ -> acc
+        (ctVars, pubVars) = foldl' go (mempty, mempty) qualifs
+        noVars = SQ.length $ variables m
+    printf "# variables    : %3d\n" noVars
+    printf "# non-ct  vars : %3d\n" (noVars - HS.size ctVars)
+    printf "# non-pub vars : %3d\n" (noVars - HS.size pubVars)
+    where
+      topModuleName = af ^. afTopModule
+      m = moduleMap HM.! topModuleName
 
 -- | given file name should be and IR file
 computeFInfo :: IodineArgs -> AnnotationFile -> IO PipelineOutput

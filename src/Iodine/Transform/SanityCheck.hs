@@ -27,6 +27,7 @@ import           Data.List
 import qualified Data.Sequence as SQ
 import qualified Data.Text as T
 import           Text.Printf
+import Data.Maybe (isJust)
 
 type A  = Int
 type S  = Stmt A
@@ -226,16 +227,27 @@ checkVariables =
             areVars vs = vs `subset` vars
             isInputVar v = v `HS.member` inputs
             isOutputVar v = v `HS.member` outputs
+            ieVars =
+              (af ^. initialEquals) <>
+              foldMap (^. instanceEqualsVariables) (af ^. instanceInitialEquals)
+            aeVars =
+              (af ^. alwaysEquals) <>
+              foldMap (^. instanceEqualsVariables) (af ^. instanceAlwaysEquals)
+            isReg v = isJust $ Register v `SQ.elemIndexL` variables
 
         -- all annotation variables actually exist
         forM_ [ srcs
               , snks
-              , af ^. initialEquals
-              , af ^. alwaysEquals
+              , ieVars
+              , aeVars
               , af ^. assertEquals
               ] $ \vs ->
           unless (areVars vs) $
           throw $ printf "element(s) in %s is not a valid variable" (show vs)
+
+        forM_ ieVars $ \v ->
+          unless (isReg v) $
+          throw $ printf "initial equal variable must be a register : %s" v
 
         clks  <- getClocks moduleName
         let isNotClock name = name `notElem` clks
