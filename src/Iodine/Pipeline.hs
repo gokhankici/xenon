@@ -53,6 +53,7 @@ import qualified Data.Text as T
 normalizeIR
   :: ( Has (Error IodineException) sig m
      , Has (Writer Output) sig m
+     , Has CET.Trace sig m
      , Has (Lift IO) sig m
      )
   => AnnotationFile                      -- ^ annotation file

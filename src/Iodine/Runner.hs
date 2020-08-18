@@ -162,6 +162,7 @@ checkIR (ia@IodineArgs{..}, af)
       irFileContents <- readIRFile ia fileName
       mNormalizedOutput <-
         normalizeIR af (parse (fileName, irFileContents)) ia
+        & handleTrace ia
         & handleMonads ia
       case mNormalizedOutput of
         Right (_, (normalizedIR, _)) -> do traverse_ (putStrLn . toStr) normalizedIR

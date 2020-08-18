@@ -27,6 +27,7 @@ import           Iodine.Types
 import           Control.Carrier.Reader
 import           Control.Carrier.State.Strict
 import           Control.Effect.Error
+import qualified Control.Effect.Trace as CET
 import           Control.Lens
 import           Control.Monad
 import           Data.Functor
@@ -35,6 +36,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap as IM
 import           Data.Maybe
 import qualified Data.Sequence as SQ
+import qualified Data.Text as T
 
 
 -- #############################################################################
@@ -70,8 +72,8 @@ data StmtSt =
 
 makeLenses ''St
 makeLenses ''StmtSt
-
-type FD sig m  = (Has (State St) sig m) --, Effect sig)
+type G sig m = (Has (Error IodineException) sig m, Has CET.Trace sig m)
+type FD sig m  = (Has (State St) sig m, Has CET.Trace sig m)
 type FDM sig m = (FD sig m, Has (Reader ModuleName) sig m, Has (Reader VFM) sig m)
 type FDS sig m = (FDM sig m, Has (State StmtSt) sig m)
 type FDR sig m = (FDM sig m, Has (Reader StmtSt) sig m)
@@ -92,12 +94,10 @@ assigned only in one of the branches of an if statement, the missing assignment
 is added to the corresponding branch. This way the substitutions that implement
 the transition relation in the kvars become simple.
 -}
-normalize :: Has (Error IodineException) sig m
-          => L (Module Int) -> m NormalizeOutput
+normalize :: G sig m => L (Module Int) -> m NormalizeOutput
 normalize modules = traverse normalizeModule modules & runNormalize
 
-normalize2 :: Has (Error IodineException) sig m
-           => L (Module Int) -> m NormalizeOutput2
+normalize2 :: G sig m => L (Module Int) -> m NormalizeOutput2
 normalize2 modules = traverse normalizeModule modules & runNormalize2
 
 -- | Run normalize on all the statements inside the given module.
@@ -298,11 +298,13 @@ normalizeExpr = \case
     <*> traverse normalizeExpr selectIndices
     <*> freshId ExprId
 
-  VFCall {..} ->
+  VFCall {..} -> do
+    mn <- asks getModuleName
+    CET.trace $ "normalize vfcall in " <> T.unpack mn
     VFCall vfCallFunction
-    <$> traverse normalizeExpr vfCallArgs
-    <*> freshId ExprId
-    >>= inlineVerilogFunction
+      <$> traverse normalizeExpr vfCallArgs
+      <*> freshId ExprId
+      >>= inlineVerilogFunction
 
 -- #############################################################################
 
@@ -405,7 +407,15 @@ updateLastNonBlocking var =
 
 inlineVerilogFunction :: FDM sig m => Expr Int -> m (Expr Int)
 inlineVerilogFunction VFCall {..} = do
-  VerilogFunction{..} <- (HM.! vfCallFunction) <$> ask @VFM
+  vfs <- ask @VFM
+  let VerilogFunction{..} =
+        case HM.lookup vfCallFunction vfs of
+          Just r -> r
+          Nothing -> error $ 
+            "could not find "
+            <> show vfCallFunction 
+            <> " in "
+            <> show (HM.keys vfs)
   toBeReplaced <-
     toList . SQ.zip verilogFunctionPorts <$>
     traverse inlineVerilogFunction vfCallArgs
