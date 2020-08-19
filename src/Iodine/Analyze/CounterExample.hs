@@ -356,6 +356,17 @@ secondAndThirdPhase PhaseData{..} | withPublicLoop || null minCtTreeRoots = do
     Just [v] | v `elem` varNames -> do
       printInfo v
       let ilpGraph = createDepTreeHelper getHornPubNo
+
+      putStrLn "### NON PUBLIC TREE REGISTERS #####################################"
+      for_ (G.nodes ilpGraph) $ \n -> do
+        let ilp_v = toName n
+            isIE = ilp_v `elem` topmoduleAnnots ^. initialEquals
+            isAE = ilp_v `elem` topmoduleAnnots ^. alwaysEquals
+            mkFlag b s = if b then " " <> s else "" :: String
+        when (isReg ilp_v && not isAE) $
+          printf " - %s%s\n" ilp_v (mkFlag isIE "(I)")
+      putStrLn "\n"
+
       let (cannotBeMarked, loops) = mkILPInput ilpGraph
       result <- runILPLoop [toNode v] cannotBeMarked loops ilpGraph ilpCosts toName
       case result of
