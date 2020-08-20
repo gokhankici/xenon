@@ -388,6 +388,10 @@ secondAndThirdPhase PhaseData{..} = do
   -- first create the cfg for every variable
   let nonPubTree0 = createDepTreeHelper getHornPubNo
 
+  -- unless (nodeSize nonPubTree0 > maxFeasibleNodeCount) $
+  --   printGraph "nonPubTree0" $
+  --     toDotStr toName (\n -> " #" <> show n) edgeStyle nonPubTree0
+
   -- then pick the ones that are the implicit dependencies of the causes to be
   -- the leaves
   let nonPubTreeNodes0 = IS.fromList $ G.nodes nonPubTree0
