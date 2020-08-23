@@ -4,7 +4,7 @@
 
 module TestData where
 
-import qualified Iodine.IodineArgs as IA
+import qualified Xenon.XenonArgs as IA
 import           System.FilePath
 
 allTests :: [TestTree]

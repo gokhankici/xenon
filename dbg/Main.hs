@@ -15,25 +15,25 @@ module Main where
 
 import           AnnotationFileGenerator
 
-import           Iodine.Analyze.CounterExample
-import           Iodine.Analyze.FQOutAnalysis
-import           Iodine.Analyze.GuessQualifiers (guessQualifiers)
-import           Iodine.Analyze.ModuleSummary
-import           Iodine.Analyze.DependencyGraph
-import           Iodine.IodineArgs
-import           Iodine.Language.Annotation
-import           Iodine.Language.IR            as IR
-import           Iodine.Language.IRParser
-import           Iodine.Pipeline
-import           Iodine.Runner                  ( generateIR
+import           Xenon.Analyze.CounterExample
+import           Xenon.Analyze.FQOutAnalysis
+import           Xenon.Analyze.GuessQualifiers (guessQualifiers)
+import           Xenon.Analyze.ModuleSummary
+import           Xenon.Analyze.DependencyGraph
+import           Xenon.XenonArgs
+import           Xenon.Language.Annotation
+import           Xenon.Language.IR            as IR
+import           Xenon.Language.IRParser
+import           Xenon.Pipeline
+import           Xenon.Runner                  ( generateIR
                                                 , readIRFile
                                                 )
-import           Iodine.Transform.Fixpoint.Query
-import           Iodine.Transform.VCGen2
-import           Iodine.Transform.InitialEquals
-import           Iodine.Types
-import           Iodine.Utils
-import           Iodine.Transform.Fixpoint.Common (HornClauseId)
+import           Xenon.Transform.Fixpoint.Query
+import           Xenon.Transform.VCGen2
+import           Xenon.Transform.InitialEquals
+import           Xenon.Types
+import           Xenon.Utils
+import           Xenon.Transform.Fixpoint.Common (HornClauseId)
 
 import           Control.Carrier.Error.Either
 import           Control.Carrier.Reader
@@ -76,9 +76,9 @@ import           Text.Printf
 -- #############################################################################
 -- Debug Configuration
 -- #############################################################################
--- | iodine arguments
-iodineVerbosity :: Verbosity
-iodineVerbosity = Loud
+-- | xenon arguments
+xenonVerbosity :: Verbosity
+xenonVerbosity = Loud
 disableFQSave :: Bool
 disableFQSave = False
 
@@ -94,7 +94,7 @@ debugAnnotationFile =
 debug :: D sig m => Debug4 sig m
 debug = debug4
 
--- | takes the iodine args and successful result of the 'debug' as an input
+-- | takes the xenon args and successful result of the 'debug' as an input
 runPipeline :: RunFixpoint
 runPipeline = runFixpoint
 -- #############################################################################
@@ -213,7 +213,7 @@ type M = Module A
 type IRs = L (Module Int)
 type ModuleMap = HM.HashMap Id (Module Int)
 type G sig m
-  = ( Has (Error IodineException) sig m
+  = ( Has (Error XenonException) sig m
     , Has Trace sig m
     , Has (Writer Output) sig m
     )
@@ -226,12 +226,12 @@ type D sig m
     , Has (Reader IRs) sig m
     )
 
-type IRReaderM = PT.TraceC (WriterC Output (ErrorC IodineException IO))
+type IRReaderM = PT.TraceC (WriterC Output (ErrorC XenonException IO))
 
 debugPipeline
   :: AnnotationFile
   -> IRReaderM (L (Module ()))
-  -> IodineArgs
+  -> XenonArgs
   -> IRReaderM PipelineData
 debugPipeline af irReader ia = do
   (finfo, (tt, af', mm, sm)) <- pipeline af irReader ia
@@ -253,11 +253,11 @@ type FixpointResult = FT.Result (Integer, HornClauseId)
 type ModuleSummaries = HM.HashMap Id [FSM.TraceQualif]
 type PipelineData = (FInfo, ConstraintTypes, PipelineData2)
 type PipelineData2 = (AnnotationFile, ModuleMap, SummaryMap)
-type RunFixpoint = IodineArgs -> PipelineData -> IO (FixpointResult, FQOutAnalysisOutput, ModuleSummaries)
+type RunFixpoint = XenonArgs -> PipelineData -> IO (FixpointResult, FQOutAnalysisOutput, ModuleSummaries)
 type DebugOutput = (PipelineData2, ConstraintTypes, FQOutAnalysisOutput, ModuleSummaries)
 
 runFixpoint :: RunFixpoint
-runFixpoint IodineArgs {..} (finfo, cm, (af, mm, sm)) = do
+runFixpoint XenonArgs {..} (finfo, cm, (af, mm, sm)) = do
   result <- F.solve config finfo
   let toSummaries (FT.PAnd es) = catMaybes (FSM.toTraceSummary <$> es)
       toSummaries _            = undefined
@@ -294,7 +294,7 @@ runFixpoint IodineArgs {..} (finfo, cm, (af, mm, sm)) = do
 
 runner :: IO (Bool, DebugOutput)
 runner = do
-  (ia@IodineArgs {..}, af) <- debugArgs >>= generateIR
+  (ia@XenonArgs {..}, af) <- debugArgs >>= generateIR
   irFileContents           <- readIRFile ia fileName
   res                      <-
     debugPipeline af (parse (fileName, irFileContents)) ia
@@ -302,7 +302,7 @@ runner = do
     & (runWriter >=> appendToOutput)
     & runError
   case res of
-    Left (err :: IodineException) -> E.throwIO err
+    Left (err :: XenonException) -> E.throwIO err
     Right out@(_, cm, z) -> (\(r, x, y) -> (FT.isSafe r, (z, cm, x, y))) <$> runPipeline ia out
  where
   appendToOutput (logs, result) = do
@@ -375,15 +375,15 @@ printSummaries = traverse_ go
   go2 _                         = undefined
 
 
-debugArgs :: IO IodineArgs
+debugArgs :: IO XenonArgs
 debugArgs = do
   args <- getArgs
   case args of
-    [] -> normalizeIodineArgs $ defaultIodineArgs
+    [] -> normalizeXenonArgs $ defaultXenonArgs
       { fileName    = debugVerilogFile
       , annotFile   = debugAnnotationFile
       , iverilogDir = "iverilog-parser"
-      , verbosity   = iodineVerbosity
+      , verbosity   = xenonVerbosity
       , noSave      = disableFQSave
       }
     _ -> parseArgsWithError args

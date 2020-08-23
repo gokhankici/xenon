@@ -19,5 +19,13 @@
     "cSpell.words": [
         "SCARV",
         "YARVI"
+    ],
+    "cSpell.ignoreWords": [
+        "cop",
+        "palu",
+        "scarv",
+        "scarv cop palu",
+        "timeit",
+        "xcrypto"
     ]
 }

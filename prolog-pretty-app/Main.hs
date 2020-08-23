@@ -2,7 +2,7 @@ module Main where
 
 import           Data.Foldable
 import qualified Data.Text.IO as TIO
-import Iodine.Language.PrologParser
+import Xenon.Language.PrologParser
 import           System.Environment
 import           System.Exit
 import           System.IO

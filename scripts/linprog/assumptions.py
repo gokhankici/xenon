@@ -238,7 +238,7 @@ class AssumptionSolver:
 
     def update_annotation_file(self, solution):
         """
-        Convert the MILP solution to a set of assumptions that Iodine can
+        Convert the MILP solution to a set of assumptions that Xenon can
         understand
         """
         marked, always_eq, initial_eq = set(), set(), set()

@@ -2,7 +2,7 @@ import collections
 import os.path as p
 import subprocess
 import sys
-from config import BENCHMARK_DIR, IODINE_SCRIPT, DEBUG
+from config import BENCHMARK_DIR, XENON_SCRIPT, DEBUG
 
 
 class Benchmark(collections.namedtuple("Benchmark",
@@ -10,8 +10,8 @@ class Benchmark(collections.namedtuple("Benchmark",
     """
     Contains the information required to run a benchmark.
     """
-    def run_iodine(self, extra_args=[], **kwargs):
-        args = [IODINE_SCRIPT] + extra_args
+    def run_xenon(self, extra_args=[], **kwargs):
+        args = [XENON_SCRIPT] + extra_args
         args.extend([p.realpath(self.filename),
                      self.module,
                      p.realpath(self.annotfile)])
@@ -23,8 +23,8 @@ class Benchmark(collections.namedtuple("Benchmark",
         return subprocess.run(args, **kwargs).returncode
 
     def run_abduction(self):
-        """ Run Iodine but with the abduction feature """
-        return self.run_iodine(["--abduction"])
+        """ Run Xenon but with the abduction feature """
+        return self.run_xenon(["--abduction"])
 
     def with_annotfile(self, annotfile):
         """ Returns a new benchmark with the given annotation file """

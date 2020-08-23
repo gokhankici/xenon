@@ -12,9 +12,9 @@ module Main (main) where
 
 import           TestData
 
-import qualified Iodine.IodineArgs as IA
-import qualified Iodine.Runner as R
-import           Iodine.Language.Annotation
+import qualified Xenon.XenonArgs as IA
+import qualified Xenon.Runner as R
+import           Xenon.Language.Annotation
 
 import qualified Language.Fixpoint.Types as FT
 
@@ -67,7 +67,7 @@ runCount = 10
 data TestArgs =
   TestArgs { _verbose      :: Bool
            , _help         :: Bool
-           , _iodineArgs   :: [String]
+           , _xenonArgs   :: [String]
            , _hspecArgs    :: [String] -- | rest of the positional arguments
            , _runAbduction :: Bool
            , _dryRun       :: Bool
@@ -79,24 +79,24 @@ data TestArgs =
 makeLenses ''TestArgs
 
 --------------------------------------------------------------------------------
-runTestTree :: TestArgs -> IA.IodineArgs -> TestTree -> Spec
+runTestTree :: TestArgs -> IA.XenonArgs -> TestTree -> Spec
 --------------------------------------------------------------------------------
 runTestTree ta templateIA = \case
   TestCollection name tests ->
     describe name $ traverse_ (runTestTree ta templateIA) tests
   SingleTest u@UnitTest{..} ->
     it testName $ do
-    ia <- getIodineArgs ta u templateIA
+    ia <- getXenonArgs ta u templateIA
     if ta ^. dryRun
-      then printf "./iodine %s %s\n" (IA.fileName ia) (IA.annotFile ia)
+      then printf "./xenon %s %s\n" (IA.fileName ia) (IA.annotFile ia)
       else withSilence $ R.runner ia `shouldReturn` expected
     where
       expected    = testType == Succ
       withSilence = if ta ^. verbose then id else silence
 
-getIodineArgs :: TestArgs -> UnitTest -> IA.IodineArgs -> IO IA.IodineArgs
-getIodineArgs ta UnitTest{..} templateIA =
-  IA.normalizeIodineArgs $
+getXenonArgs :: TestArgs -> UnitTest -> IA.XenonArgs -> IO IA.XenonArgs
+getXenonArgs ta UnitTest{..} templateIA =
+  IA.normalizeXenonArgs $
   templateIA
   { IA.fileName   = verilogFile
   , IA.annotFile  = fromMaybe (IA.defaultAnnotFile verilogFile) annotFile
@@ -104,7 +104,7 @@ getIodineArgs ta UnitTest{..} templateIA =
   , IA.verbosity  = if ta ^. verbose then IA.Loud else IA.Normal
   }
 
-spec :: TestArgs -> IA.IodineArgs -> Spec
+spec :: TestArgs -> IA.XenonArgs -> Spec
 spec ta templateIA = sequential $ traverse_ (runTestTree ta templateIA) allTests
 
 silence :: IO a -> IO a
@@ -136,14 +136,14 @@ silence action = withFile "/dev/null" AppendMode prepareAndRun
 testArgs :: Mode TestArgs
 testArgs = mode programName def detailsText (flagArg argUpd "HSPEC_ARG") flags
   where
-    flags = [ flagReq ["iodine"] (\s -> Right . over iodineArgs (++ words s)) "IODINE_ARG"
-              "This is passed to the Iodine script directly."
+    flags = [ flagReq ["xenon"] (\s -> Right . over xenonArgs (++ words s)) "XENON_ARG"
+              "This is passed to the Xenon script directly."
             , flagNone ["a", "abduction"] (set runAbduction True)
               "Only run the abduction tests, otherwise they are disabled."
             , flagNone ["v", "verbose"] (set verbose True)
               "Display both stdout & stderr of a test."
             , flagNone ["d", "dry-run"] (set dryRun True)
-              "Print the calls to Iodine"
+              "Print the calls to Xenon"
             , flagNone ["eval-table"] (set evalTable True)
               "Print the Verilog LOC table"
             , flagNone ["constraint-table"] (set consTable True)
@@ -154,14 +154,14 @@ testArgs = mode programName def detailsText (flagArg argUpd "HSPEC_ARG") flags
 
     argUpd s = Right . over hspecArgs (++ [s])
 
-    programName = "iodine-test"
+    programName = "xenon-test"
     detailsText = unlines [ "Runs the benchmarks."
                           , "The positional arguments (e.g. after --) are passed into hspec."
                           ]
 
     def = TestArgs { _verbose      = False
                    , _help         = False
-                   , _iodineArgs   = []
+                   , _xenonArgs   = []
                    , _hspecArgs    = []
                    , _runAbduction = False
                    , _dryRun       = False
@@ -186,16 +186,16 @@ main :: IO ()
 main = do
   opts <- parseOpts
 
-  -- if no Iodine argument is given, use the following default ones
+  -- if no Xenon argument is given, use the following default ones
   let updateDef va =
-        if null $  opts ^. iodineArgs
+        if null $  opts ^. xenonArgs
         then va { IA.noSave     = True
                 , IA.noFPOutput = view (verbose . to not) opts
                 }
         else va
 
   -- hack: set the required first two positional arguments to empty list
-  templateIA <- updateDef . invalidate <$> IA.parseArgsWithError ("" : "" : opts ^. iodineArgs)
+  templateIA <- updateDef . invalidate <$> IA.parseArgsWithError ("" : "" : opts ^. xenonArgs)
 
   if | opts ^. evalTable -> printSizeTable
      | opts ^. consTable -> for_ benchmarks printConstraintSizes
@@ -276,13 +276,13 @@ mean :: (Fractional a, Foldable t) => t a -> a
 mean ds = sum ds / fromIntegral (length ds)
 
 
-mkIA :: UnitTest -> IO (IA.IodineArgs, AnnotationFile)
+mkIA :: UnitTest -> IO (IA.XenonArgs, AnnotationFile)
 mkIA UnitTest{..} = do
   cwd <- getCurrentDirectory
   let vf = cwd </> verilogFile
       afName = fromMaybe (IA.defaultAnnotFile vf) annotFile
   af <- parseAnnotations <$> B.readFile afName
-  let ia = IA.defaultIodineArgs
+  let ia = IA.defaultXenonArgs
            { IA.fileName      = vf
            , IA.annotFile     = afName
            , IA.moduleName    = T.unpack $ af ^. afTopModule

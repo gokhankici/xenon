@@ -36,11 +36,11 @@ def run(b, args):
     if not args.skip:
         create_tmp_annotfile(b)
 
-    # re-run iodine with the new annot file
+    # re-run xenon with the new annot file
     b2 = b.with_annotfile(TMP_ANNOTFILE)
-    rc = b2.run_iodine(stdout=subprocess.DEVNULL)
+    rc = b2.run_xenon(stdout=subprocess.DEVNULL)
     if rc != 0:
-        print("ERROR: Iodine rejected {} !".format(TMP_ANNOTFILE),
+        print("ERROR: Xenon rejected {} !".format(TMP_ANNOTFILE),
               file=sys.stderr)
         sys.exit(1)
 

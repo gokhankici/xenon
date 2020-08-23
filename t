@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path 
 
-PACKAGE_NAME = "iodine"
+PACKAGE_NAME = "xenon"
 O0 = True
 USE_STACK = False
 THIS_DIR = Path(__file__).parent.resolve()
@@ -31,7 +31,7 @@ def run_tests(test_args, stack_args=[]):
         return 1
 
 def run_tests_cabal(test_args):
-    cmd = ["cabal", "v2-run", "iodine-test"]
+    cmd = ["cabal", "v2-run", "xenon-test"]
     if test_args:
         cmd += ["--"] + test_args
     try:

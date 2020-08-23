@@ -1,31 +1,31 @@
 cradle:
   cabal:
     - path: "./src"
-      component: "lib:iodine"
+      component: "lib:xenon"
 
     - path: "./app/Main.hs"
-      component: "iodine:exe:iodine"
+      component: "xenon:exe:xenon"
 
-    - path: "./app/Paths_iodine.hs"
-      component: "iodine:exe:iodine"
+    - path: "./app/Paths_xenon.hs"
+      component: "xenon:exe:xenon"
 
     - path: "./dbg/Main.hs"
-      component: "iodine:exe:iodine-debug"
+      component: "xenon:exe:xenon-debug"
 
     - path: "./dbg/AnnotationFileGenerator.hs"
-      component: "iodine:exe:iodine-debug"
+      component: "xenon:exe:xenon-debug"
 
-    - path: "./dbg/Paths_iodine.hs"
-      component: "iodine:exe:iodine-debug"
+    - path: "./dbg/Paths_xenon.hs"
+      component: "xenon:exe:xenon-debug"
 
     - path: "./prolog-pretty-app/Main.hs"
-      component: "iodine:exe:prolog-pretty"
+      component: "xenon:exe:prolog-pretty"
 
-    - path: "./prolog-pretty-app/Paths_iodine.hs"
-      component: "iodine:exe:prolog-pretty"
+    - path: "./prolog-pretty-app/Paths_xenon.hs"
+      component: "xenon:exe:prolog-pretty"
 
     - path: "./test"
-      component: "iodine:test:iodine-test"
+      component: "xenon:test:xenon-test"
 
     - path: "./liquid-fixpoint/src"
       component: "lib:liquid-fixpoint"

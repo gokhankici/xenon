@@ -39,7 +39,7 @@ def add_dependencies(data, g, node, current_set):
     return current_set
 
 if __name__ == "__main__":
-    cplex_file = "/home/rami/work/ctverilog/iodine_master/cplex.json"
+    cplex_file = "/home/rami/work/ctverilog/xenon_master/cplex.json"
     data = parse_cplex_input(cplex_file)
     g = data["graph"]
 

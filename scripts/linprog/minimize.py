@@ -17,7 +17,7 @@ def go(b, af, getter, setter):
         setter(af, needed - {v})
         with open(TMP_FILE, "w") as f:
             json.dump(af.to_json(), f)
-        rc = new_b.run_iodine(stdout=subprocess.DEVNULL,
+        rc = new_b.run_xenon(stdout=subprocess.DEVNULL,
                               stderr=subprocess.DEVNULL)
         if rc == 0:
             print("Skipping {}".format(v))

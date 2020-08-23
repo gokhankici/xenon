@@ -73,5 +73,5 @@ if [ -n "${PRINT_FQ_INFO}" ]; then
 	exit 0
 fi
 
-./iodine --build $ARGS && \
-	./iodine "${TEST_FILE}" "${TEST_ANNOT}" --verbose --print-solution $ARGS
+./xenon --build $ARGS && \
+	./xenon "${TEST_FILE}" "${TEST_ANNOT}" --verbose --print-solution $ARGS

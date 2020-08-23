@@ -8,7 +8,7 @@
           "key"
         ],
         "sink": [
-          "iodine_out"
+          "xenon_out"
         ]
       },
       "clock": "clk"

@@ -10,12 +10,12 @@ import           Control.Exception
 import           Data.Foldable
 import           Data.Maybe
 import qualified Data.Text as T
-import           Iodine.Analyze.ModuleDependency
-import           Iodine.Language.Annotation
-import           Iodine.Language.IR
-import qualified Iodine.Language.IRParser      as IRP
-import           Iodine.Runner (verilogToIR)
-import           Iodine.Types
+import           Xenon.Analyze.ModuleDependency
+import           Xenon.Language.Annotation
+import           Xenon.Language.IR
+import qualified Xenon.Language.IRParser      as IRP
+import           Xenon.Runner (verilogToIR)
+import           Xenon.Types
 import           System.Directory
 import           System.FilePath
 import           Control.Lens
@@ -41,7 +41,7 @@ generateAnnotationFile filename topModule outputfile includeDirs = do
   absFilename <- makeAbsolute filename
   irFile <- verilogToIR iverilogDir absFilename topModule includeDirs
   mir <- readFile irFile >>= (runError . IRP.parse . (filename, ))
-  let modules = either (\(e :: IodineException) -> throw e)
+  let modules = either (\(e :: XenonException) -> throw e)
                        (topsortModules $ T.pack topModule)
                        mir
   let af = AnnotationFile { _afAnnotations = HM.fromList $ (\m -> (moduleName m, mkMA m)) <$> toList modules

@@ -36,7 +36,7 @@ if not args.annotation_file:
     args.annotation_file = vf.parent / ('annot-' + vf.stem + '.json')
 
 r = subprocess.run(
-      ["cabal", "v2-run", "iodine-debug", "--", "generate-annotation-file",
+      ["cabal", "v2-run", "xenon-debug", "--", "generate-annotation-file",
        vf, args.topmodule, to_abs(args.annotation_file)] + args.include_dir,
       cwd=ROOT_DIR)
 
@@ -45,6 +45,6 @@ if r.returncode == 0:
 
 if args.check:
     subprocess.run(
-        ["./iodine", to_abs(args.verilog_file), to_abs(args.annotation_file)],
+        ["./xenon", to_abs(args.verilog_file), to_abs(args.annotation_file)],
         cwd=ROOT_DIR
         )

@@ -5,7 +5,7 @@
 THIS_DIR="${0:A:h}"
 
 # build the project in profile mode and run the executable `-p` option
-"${THIS_DIR}/iodine" +RTS -p -RTS $@
+"${THIS_DIR}/xenon" +RTS -p -RTS $@
 
 PROF_FILE=$(ls -t ${THIS_DIR}/*.prof | head -n1)
 [ -f "${PROF_FILE}" ] || exit 1

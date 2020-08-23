@@ -32,8 +32,8 @@ module aes_256 (clk, state, key, out);
                    k9b, k10b, k11b, k12b, k13b;
 
     // REWRITE
-    reg [127:0] iodine_out;
-	assign iodine_out = out;
+    reg [127:0] xenon_out;
+	assign xenon_out = out;
 
     always @ (posedge clk)
       begin

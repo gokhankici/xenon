@@ -1,4 +1,4 @@
-# Iodine
+# Xenon
 
 ## Installation
 
@@ -22,20 +22,20 @@ Install `ghcup` (GHC version 8.8.3) and run `cabal v2-build`.
 ### Building
 
 ```sh
-git clone --recursive https://github.com/gokhankici/iodine.git
-cd iodine
+git clone --recursive https://github.com/gokhankici/xenon.git
+cd xenon
 make -C iverilog-parser
 cabal v2-build
 ```
 
 ## Usage
 
-When installed, just run `./iodine`. For the test suite, run `./t`.
+When installed, just run `./xenon`. For the test suite, run `./t`.
 
 ### Command Line Options
 
 ```
-iodine v2.0, (C) Rami Gokhan Kici 2020
+xenon v2.0, (C) Rami Gokhan Kici 2020
 
 Verifies whether the given Verilog file runs in constant time under the given
 assumptions.
@@ -43,7 +43,7 @@ assumptions.
 First positional argument is the verilog file to analyze.
 Second positional argument is the JSON file that contains the annotations.
 
-iodine [OPTIONS] VERILOG-FILE ANNOTATION-FILE
+xenon [OPTIONS] VERILOG-FILE ANNOTATION-FILE
 
      --iverilog-dir=DIR  path of the iverilog-parser directory
      --print-ir          just run the verilog parser
@@ -60,7 +60,7 @@ iodine [OPTIONS] VERILOG-FILE ANNOTATION-FILE
 
 --------------------------------------------------------------------------------
 Extra arguments:
-usage: iodine [-b] [--profile] [--debug] [--help]
+usage: xenon [-b] [--profile] [--debug] [--help]
 
 optional arguments:
   -b, --build  Build the project
@@ -72,5 +72,5 @@ optional arguments:
 ### Example
 
 ```sh
-./iodine -- examples/verilog/stall.v examples/verilog/annot-stall.json
+./xenon -- examples/verilog/stall.v examples/verilog/annot-stall.json
 ```

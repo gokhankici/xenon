@@ -1,6 +1,6 @@
-# Verilog -> Iodine IR
+# Verilog -> Xenon IR
 
-Transforms Verilog into Iodine intermediate representation. The implementation
+Transforms Verilog into Xenon intermediate representation. The implementation
 is based on [Icarus Verilog](https://github.com/steveicarus/iverilog).
 
 ## Dependencies

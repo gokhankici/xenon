@@ -104,7 +104,7 @@ class QualifierSolver:
 
         if not args.skip:
             b2 = self.benchmark.with_annotfile(TMP_ANNOTFILE)
-            rc = b2.run_iodine(extra_args=["--no-save", "--verbose"])
+            rc = b2.run_xenon(extra_args=["--no-save", "--verbose"])
             print("SUCCESS" if rc == 0 else "FAIL")
             sys.exit(rc)
 
@@ -118,6 +118,6 @@ if __name__ == "__main__":
                     required=True,
                     help="Benchmark name")
     ap.add_argument("--skip", action="store_true",
-                    help="Do not run Iodine to check the qualifiers")
+                    help="Do not run Xenon to check the qualifiers")
     args = ap.parse_args()
     QualifierSolver(BENCHMARKS[args.benchmark]).run(args)
