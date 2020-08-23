@@ -1,6 +1,3 @@
-DOT_FILES = $(wildcard *.dot)
-PDF_FILES = $(patsubst %.dot,%.pdf,$(DOT_FILES))
-
 all: build
 
 build:
@@ -12,9 +9,7 @@ test:
 clean:
 	cabal v2-clean
 
-graphs: $(PDF_FILES)
+parser:
+	make -C iverilog-parser
 
-$(PDF_FILES): %.pdf: %.dot
-	dot -Tpdf -Gmargin=0 $< -o $@
-
-.PHONY: all build test clean graphs
+.PHONY: all build test clean parser
