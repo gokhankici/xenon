@@ -1,0 +1,76 @@
+1. Getting Started: Stalled Pipeline
+
+We will now use Xenon to verify a simplified version of a pipelined
+processor---given in examples/stalling_cpu.v---which only contains two pipline
+stages (instruction-fetch and instruction-decode). The pipeline either stalls if
+flag Stall is set, or else forwards values to the next stage. To avoid a
+data-hazard, the Stall flag is set, if the instructions in the execute and
+decode stage have the same target registers. The target register is calculated
+from the current instruction, and the instruction is, in turn, fetched from
+memory using the current program counter. 
+
+When using this circuit in a security-critical context, we want to make sure
+that it avoids leaking secrets through timing, i.e., that it is constant-time.
+Unfortunately, it is not constant-time without any further restrictions on its
+usage. For example, the execution time for a given instruction depends on
+whether the pipeline is stalled before the instruction is retired. Let us model
+an attacker that can measure how long an instruction takes to move through the
+pipeline, from source IF_pc to sink ID_instr. Such an attacker can distinguish
+any two runs such that one run triggers a stall while the other doesn't. As a
+result, any attempt to verify constant-time execution results in a failure. We
+can check this by running Xenon with the following command.
+
+$ ./xenon examples/stalling_cpu.v examples/stall-annot.json
+
+As expected, Xenon produces result "Unsafe" which indicates it failed to verify
+constant time execution of the circuit. 
+
+We may, however, still be able to use this processor safely, if we can find a
+suitable set of secrecy assumptions. For example, we could assume that register
+"Stall" is public (i.e., does not contain any secrets). In this case, the timing
+difference in Figure 4 would only leak information that the attacker is already
+aware of. However, assuming that Stall is public may not be the best choice.
+Stall is defined deep inside the pipeline which makes it hard to translate this
+assumption into a restriction on the kind of software we are allowed to execute
+on the processor. Instead, we want to pick assumptions as closely as possible to
+the externally visible computation inputs. For example, restricting program
+counter IF_pc to be public directly translates into the obligation that the
+executed program’s control flow be independent of secrets.
+
+To tell Xenon about this assumption, we can modify annotation file 
+
+                examples/stall-annot.json 
+
+by adding IF_pc to the set of assumptions listed under "always_eq". Running
+Xenon again should yield result "Safe", which indicates Xenon was able to prove
+constant-time execution.
+
+
+2. Trial
+
+Your task is now to come up with a suitable set of secrecy assumptions for three
+example in order to allow Xenon to verify that they execute in constant-time.
+Please pick assumptions that appear reasonable to you, as usage assumptions in
+the context of constant-time; the fewer assumptions the better.
+
+You have a total of 30 minutes to complete all three tasks (please set a timer).
+Please also note down after how many minutes (if at all) you were able to find
+the solution for each program.
+
+Programs:
+
+1. Multiplier
+
+You can find the first program under "trial/multiplier.v" and its annotation
+file under "trial/multiplier-annot.v". The program is a simple multiplier taken
+from the ALU of the SCARV processor.
+
+2. FPU
+
+The second program is "trial/fpu.v" and its annotation file is at
+"trial/fpu-annot.v". This circuit implements a floating point unit.
+
+3. MIPS
+
+The last program contains a full MIPS processor and can be found under 
+"trial/mips.v" with annotation file "trial/mips-annot.v".
