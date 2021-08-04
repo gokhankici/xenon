@@ -1,0 +1,24 @@
+{
+  "top_module": "stalling_cpu",
+  "modules": {
+    "stalling_cpu": {
+      "annotations": {
+        "source": [
+          "IF_pc"
+        ],
+        "sink": [
+          "ID_instr"
+        ],
+          "always_eq": [
+        ],
+          "initial_eq": [
+	      "ID_instr",
+	      "EX_rt",
+	      "ID_rt",
+	      "IF_instr"
+        ]
+      },
+      "clock": "clk"
+    }
+  }
+}
