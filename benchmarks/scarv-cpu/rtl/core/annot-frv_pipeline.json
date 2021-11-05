@@ -98,7 +98,7 @@
           "s2_uop",
           "s2_valid",
           "s3_fu",
-          "s3_opr_a",
+          "lsu_addr",
           "s3_rd",
           "s3_uop",
           "s3_valid",
